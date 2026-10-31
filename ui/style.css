@@ -61,10 +61,13 @@
         padding:10px 12px;border-radius:6px;
         border:none;background:transparent;color:var(--fg);font-size:13px;cursor:pointer;
         position:relative;white-space:nowrap}
-  .nav button .nav-ico{font-size:13px;width:18px;text-align:center;flex:none}
+  .nav button .nav-ico{font-size:13px;width:18px;text-align:center;flex:none;
+        overflow:hidden;transition:width .18s ease, opacity .18s ease}
   .nav button:hover{background:var(--hover)}
   .nav button.on{background:var(--nav-on);color:var(--nav-on-fg);font-weight:600}
   .nav button.on .nav-ico{color:var(--nav-on-fg)}
+  /* 选中态交互（借鉴 SRA 侧栏）：图标淡出收起、文字平滑左移补位 */
+  .nav button.on .nav-ico{width:0;opacity:0}
   .side-foot{margin-top:auto;padding:10px 8px 4px;
         font-size:11px;color:var(--muted)}
   .theme-btn{display:flex;align-items:center;gap:6px;width:100%;
