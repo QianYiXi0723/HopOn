@@ -2058,6 +2058,11 @@ function renderLive(d){
   liveRendered = true;
   window.__liveMap = Object.assign(window.__liveMap || {}, buildLiveMap(d));
   const games = d.games || [];
+  /* 只读曝光原始结果（含失败/待更新/未创建角色），供概览卡判断"查询失败"。
+     buildLiveMap 会把这些态过滤掉（KPI/表格的既有语义不动）。
+     2026-11-01：失败态原本在概览卡回落成灰字"今日无数据"，把
+     "需要动手查凭证"伪装成了"没有信息"，所以必须留一份原文。 */
+  window.__liveAll = games;
   if (!games.length) {
     box.innerHTML = '<div class="emptybox">没有启用的账号。</div>';
   } else {
@@ -2606,22 +2611,37 @@ function gameCardHtml(g){
   const gid = g.game;
   const today = todayCellFor(lastHistory, gid);
   const live = (window.__liveMap || {})[gid];
+  const raw = (window.__liveAll || []).filter(function(x){
+    return x && x.game === gid && x.placeholder !== true;
+  })[0];
 
-  // 今日状态：live 查询成功以 live 为准（与 KPI/表格同一套判定），
-  // 没有实时数据时回落巡检历史。正常 = 灰字，异常 = 橙色徽章（色彩纪律）
-  let todayHtml;
-  if (live && live.finished != null) {
-    todayHtml = live.finished ? '<span class="dim">✔ 今日已完成</span>'
-                              : '<span class="badge warn">未完成</span>';
+  /* 今日状态（一眼层）：今天要不要动手。
+     优先级：查询失败（红，需要行动）> 数据待更新/未创建角色（灰，非失败）
+             > 实时判定 > 巡检历史 > 无数据。
+     彩色徽章只给异常，已完成/待更新/无数据一律灰字（项目色彩纪律）。 */
+  let badge, why = '';
+  if (raw && raw.ok === false) {
+    badge = '<span class="badge err">查询失败</span>';
+    why = String(raw.error || '查询失败');
+  } else if (raw && raw.stale) {
+    badge = '<span class="dim">数据待更新</span>';
+    why = String(raw.stale);
+  } else if (raw && raw.no_account) {
+    badge = '<span class="dim">未创建角色</span>';
+    why = String(raw.no_account);
+  } else if (live && live.finished != null) {
+    const miss = (live.tasks || []).filter(function(t){ return !t.done; }).length;
+    badge = live.finished ? '<span class="dim">✔ 今日已完成</span>'
+                          : '<span class="badge warn">未完成 ' + miss + ' 项</span>';
   } else if (!today || !today.known) {
-    todayHtml = '<span class="dim">今日无数据</span>';
+    badge = '<span class="dim">今日无数据</span>';
   } else if (today.finished) {
-    todayHtml = '<span class="dim">✔ 今日已完成</span>';
+    badge = '<span class="dim">✔ 今日已完成</span>';
   } else {
-    todayHtml = '<span class="badge warn">未完成 ' + (today.unfinished_tasks || 0) + ' 项</span>';
+    badge = '<span class="badge warn">未完成 ' + (today.unfinished_tasks || 0) + ' 项</span>';
   }
 
-  // 体力：来自「信息查询」最近一次结果（未查过则提示）
+  /* 体力（一眼层）：数值/进度条/预计回满，实时化成果原样保留 */
   let stamina;
   if (live && live.percent != null) {
     const hot = live.percent >= 85;
@@ -2636,23 +2656,37 @@ function gameCardHtml(g){
       '<span class="dim">到「信息查询」查询后显示</span></div>';
   }
 
+  /* 回顾信息（悬浮层）：上次检查｜每日任务明细｜本月统计。
+     顺序固定，一项都不删；#tip 是 textContent，换成「｜」分隔让它自然折行。 */
+  let taskTip;
+  if (why) {
+    taskTip = why;                       // 失败/待更新/未建号的原因（长文只进 tip）
+  } else if (live && (live.tasks || []).length) {
+    taskTip = live.tasks.map(function(t){
+      const hit = /(\d+)\s*\/\s*(\d+)/.exec(t.progress || '');
+      const val = hit ? (parseInt(hit[1], 10) + '/' + parseInt(hit[2], 10))
+                      : (t.progress ? String(t.progress) : (t.done ? '✓' : '✗'));
+      return t.name + ' ' + val;
+    }).join(' · ');
+  } else if (today && today.known) {
+    taskTip = today.finished ? '今日已完成'
+      : '无实时明细 · 历史未完成 ' + (today.unfinished_tasks || 0) + ' 项';
+  } else {
+    taskTip = '无实时明细';
+  }
   const missed = Number(g.month_missed || 0);
-  return '<div class="card gcard">' +
+  const tip = '上次检查 ' + (today && today.last ? shortStamp(today.last) : '—') +
+    ' ｜ 每日任务：' + taskTip +
+    ' ｜ 本月完成 ' + Number(g.month_done || 0) + ' 天' + (missed > 0 ? ' · 漏 ' + missed : '');
+
+  return '<div class="card gcard" data-tip="' + escHtml(tip) + '">' +
     '<div class="gcard-head">' + gameIconHtml(gid) +
-      '<div class="gcard-name"><b>' + escHtml(gameBaseName(g)) + '</b>' +
-        /* 上次检查时间带标签（裸时刻会被当成乱码线）；无数据不渲染占位线 */
-        (today && today.last
-          ? '<small>上次检查 ' + escHtml(shortStamp(today.last)) + '</small>'
-          : '') + '</div>' +
+      '<div class="gcard-name"><b>' + escHtml(gameBaseName(g)) + '</b></div>' +
+      '<span class="gcard-today" style="flex:none">' + badge + '</span>' +
       '<div class="gcard-streak"><b class="value">' + Number(g.streak || 0) + '</b><small>连续天数</small></div>' +
     '</div>' +
-    '<div class="gcard-today">' + todayHtml + '</div>' +
-    /* 进度透明化：直接展示每条判定任务的进度（live 优先） */
-    taskProgressHtml(live && live.tasks) +
     stamina +
-    '<div class="gcard-foot">本月完成 <b>' + Number(g.month_done || 0) + '</b> 天' +
-      (missed > 0 ? ' · <span class="err-t">漏 ' + missed + '</span>' : '') +
-    '</div></div>';
+    '</div>';
 }
 
 /* GitHub 式热力图：行 = 游戏，列 = 日期；绿=完成 红=未完成 灰=无数据 */
