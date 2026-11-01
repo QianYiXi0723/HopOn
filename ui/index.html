@@ -35,6 +35,10 @@
   <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="11.5" rx="1.5"/><path d="M9.5 20h5M12 16v4"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.2 5.2l1.7 1.7M17.1 17.1l1.7 1.7M18.8 5.2l-1.7 1.7M6.9 17.1l-1.7 1.7"/></symbol>
   <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M13.5 3.5H7A1.5 1.5 0 005.5 5v14A1.5 1.5 0 007 20.5h10a1.5 1.5 0 001.5-1.5V8.5l-5-5z"/><path d="M13.5 3.5v5h5M9 12.5h6M9 16h6"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.5l2.5 5.1 5.6.8-4 3.9.9 5.6-5-2.6-5 2.6.9-5.6-4-3.9 5.6-.8z"/></symbol>
+  <symbol id="i-island" viewBox="0 0 24 24"><path d="M11.5 21c.2-4 .9-7.2 2.3-9.8"/><path d="M13.8 11.2C12.4 8.3 10 6.8 6.8 7c1.1 2.5 3.5 4 7 4.2z"/><path d="M13.8 11.2c.2-3.3 2-5.7 5-6.4-.3 2.9-2.1 5.3-5 6.4z"/><path d="M13.8 11.2c2.7-1.7 5.4-1.6 7.7.4-2.5 1.5-5.2 1.3-7.7-.4z"/><path d="M4.5 21h15"/></symbol>
+  <symbol id="i-sprout" viewBox="0 0 24 24"><path d="M12 21v-7.5"/><path d="M12 13.5C12 10 9.5 7.5 6 7.5c0 3.5 2.5 6 6 6z"/><path d="M12 12c0-3 2.4-5.5 5.8-5.5 0 3-2.4 5.5-5.8 5.5z"/></symbol>
+  <symbol id="i-tray" viewBox="0 0 24 24"><path d="M4.5 13.5h4.3l1.5 2.5h3.4l1.5-2.5h4.3"/><path d="M6.1 5.5h11.8l1.6 8v4a1.5 1.5 0 01-1.5 1.5H6a1.5 1.5 0 01-1.5-1.5v-4l1.6-8z"/></symbol>
 </svg>
 <div class="app">
   <div class="app-body">
@@ -103,19 +107,19 @@
         <h2><svg class="ico"><use href="#i-calendar"/></svg> 本周汇总</h2>
         <span class="q" data-tip="过去 7 天各游戏的完成天数，与每周日晚 21:00 推送的周报同口径"></span>
         <span class="spacer"></span>
-        <button type="button" class="btn sm" id="btn-hist-refresh" style="height:24px" data-tip="重新查询一遍所有启用账号，并立即更新本页数据">刷新</button>
         <span class="badge" id="week-badge">-</span>
+        <button type="button" class="btn sm" id="btn-hist-refresh" style="height:24px" data-tip="重新查询一遍所有启用账号，并立即更新本页数据">刷新</button>
       </div>
       <div id="week-body"><div class="emptybox">读取中…</div></div>
     </section>
 
-    <section class="card s12">
+    <!-- 报表页主角卡（Oil UI「一屏一主角」）：主色顶条标识，次卡保持安静 -->
+    <section class="card s12 card--protagonist">
       <div class="card-head">
-        <h2><svg class="ico"><use href="#i-grid"/></svg> 游戏概览</h2>
-        <span class="q" data-tip="每款游戏一张卡：今日完成状态、当前体力与连续完成天数"></span>
+        <h2><svg class="ico"><use href="#i-grid"/></svg> 游戏概览
+          <span class="q" data-tip="每款游戏一张卡：今日完成状态、当前体力与连续完成天数"></span>
+        </h2>
         <span class="badge" id="h-month">-</span>
-        <span class="spacer"></span>
-        <button type="button" class="btn sm" id="btn-history-refresh">刷新</button>
       </div>
       <div id="h-stats"></div>
     </section>
@@ -144,9 +148,14 @@
 
     <section class="card s12">
       <div class="card-head">
-        <h2><svg class="ico"><use href="#i-gift"/></svg> 活动日历</h2>
-        <span class="q" data-tip="只保留给抽卡资源的活动（原石/星琼/菲林/合成玉·源石）；剩余 ≤72 小时时在推送末尾提醒"></span>
+        <h2><svg class="ico"><use href="#i-gift"/></svg> 活动日历
+          <span class="q" data-tip="只保留给抽卡资源的活动（原石/星琼/菲林/合成玉·源石）；剩余 ≤72 小时时在推送末尾提醒。右上角可切换「按时间 / 按游戏」两种排布"></span>
+        </h2>
         <span class="spacer"></span>
+        <div class="seg-mini" id="act-view" role="group" aria-label="活动排序方式">
+          <button type="button" data-view="time">按时间</button>
+          <button type="button" data-view="game">按游戏</button>
+        </div>
         <button type="button" class="btn sm" id="btn-act-refresh">刷新</button>
       </div>
       <div id="act-list"><div class="emptybox">读取中…</div></div>
@@ -172,12 +181,12 @@
           <div class="caps-row">
             <button type="button" class="scan-cap" id="cap-m" onclick="startMihoyo()">
               <span class="cap-dot" id="cap-dot-m"></span>
-              <span class="cap-ico" data-plat="miyoushe">⭐</span>
+              <span class="cap-ico" data-plat="miyoushe"><svg class="ico"><use href="#i-star"/></svg></span>
               <span class="cap-txt"><b>米游社</b><small>更新凭证</small></span>
             </button>
             <button type="button" class="scan-cap" id="cap-s" onclick="startSkland()">
               <span class="cap-dot" id="cap-dot-s"></span>
-              <span class="cap-ico" data-plat="skland">🏝️</span>
+              <span class="cap-ico" data-plat="skland"><svg class="ico"><use href="#i-island"/></svg></span>
               <span class="cap-txt"><b>森空岛</b><small>更新凭证</small></span>
             </button>
             <div class="btn-note caps-note">扫码只更新登录凭证；是否参与每日巡检由下方监控开关决定。</div>
@@ -248,7 +257,6 @@
             <span class="q" data-tip="每台电脑首次启动会随机分配一台常见机型，之后固定不变。风控多数是出口网络被标记，换设备只在新装或长期异常时才有用；频繁更换会被当成陌生设备，反而更容易触发风控"></span>
           </h2>
           <span class="spacer"></span>
-          <span class="badge" id="dev-badge">读取中</span>
           <svg class="dev-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
       </section>
@@ -268,7 +276,7 @@
                   <div class="dstep"><b>3</b><span>将复制的内容粘贴至右侧输入框，再点击保存</span></div>
                 </div>
                 <div class="apk" id="apk-box">
-                  <div class="apk-qr" id="apk-qr"><span class="ph" style="font-size:11px">二维码生成中…</span></div>
+                  <div class="apk-qr" id="apk-qr"><span class="ph" style="font-size:12px">二维码生成中…</span></div>
                   <div class="apk-meta" id="apk-meta"></div>
                 </div>
               </div>
@@ -445,10 +453,9 @@
       </div>
       <div class="daemon-bar">
         <span class="daemon-title"><i class="dot" id="d-dot"></i><svg class="ico"><use href="#i-shield"/></svg> 守护进程</span>
-        <span class="badge" id="d-state">读取中</span>
+        <span class="badge" id="d-state" title="">运行中</span>
         <span class="daemon-kv"><span>下次</span><b id="d-next">-</b></span>
         <span class="daemon-kv"><span>最近</span><b id="d-last">-</b></span>
-        <span class="daemon-kv daemon-kv--opt"><span>PID</span><b id="d-pid">-</b></span>
         <span class="daemon-kv daemon-kv--opt"><span>运行</span><b id="d-since">-</b></span>
         <span class="daemon-kv"><span>参与检查</span><b id="d-games">-</b></span>
         <span class="daemon-kv"><span title="守护进程每 30 秒汇报一次运行状态；超过 2 分钟没汇报会显示为未运行">最后活跃</span><b id="d-heart">-</b></span>
@@ -467,25 +474,26 @@
       </div>
       <div class="card__body">
         <div class="rule-list">
-          <div class="set-item static" id="acc-autostart">
-            <div class="set-head">
+          <details class="set-item" id="acc-autostart">
+            <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-laptop"/></svg></i>
-                <span class="set-txt"><b>开机自启动</b>
-                  <small>登录后自动在后台运行并挂载托盘</small></span>
+                <span class="set-txt"><b>开机自启动</b></span>
               </span>
+              <span class="set-sum" id="autostart-state">读取中</span>
               <span class="set-end">
-                <span class="badge" id="autostart-state">读取中</span>
                 <label class="toggle"><input type="checkbox" id="autostart-toggle"><i></i></label>
               </span>
+            </summary>
+            <div class="set-body">
+              <div class="hint">登录后自动在后台运行并挂载托盘。</div>
+              <div class="hint" id="autostart-hint" hidden>读取中…</div>
             </div>
-            <div class="hint" id="autostart-hint" hidden style="padding:0 16px 10px">读取中…</div>
-          </div>
+          </details>
 
           <details class="set-item" id="acc-catchup">
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-moon"/></svg></i>
-                <span class="set-txt"><b>休眠提醒</b>
-                  <small>休眠或关机错过时间点后，在窗口内补跑一次</small></span>
+                <span class="set-txt"><b>休眠提醒</b></span>
               </span>
               <span class="set-sum" id="sum-catchup"></span>
               <span class="set-end">
@@ -497,15 +505,14 @@
                 <input type="number" id="catch-up-minutes" min="0" max="720" step="30">
                 <button id="btn-catch-up" class="btn">保存</button>
               </div>
-              <div class="hint">单位：分钟，最大 720；0 = 不补发。</div>
+              <div class="hint">休眠或关机错过时间点后，在窗口内补跑一次。单位：分钟，最大 720；0 = 不补发。</div>
             </div>
           </details>
 
           <details class="set-item" id="acc-resource">
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-bell"/></svg></i>
-                <span class="set-txt"><b>体力溢出提醒</b>
-                  <small>当前体力 ≥ 阈值时额外推送一条；0 = 关闭该游戏</small></span>
+                <span class="set-txt"><b>体力溢出提醒</b></span>
               </span>
               <span class="set-sum" id="sum-resin"></span>
               <span class="set-end">
@@ -513,6 +520,7 @@
               </span>
             </summary>
             <div class="set-body">
+              <div class="hint">当前体力 ≥ 阈值时额外推送一条；0 = 关闭该游戏。</div>
               <div class="resin-row">
                 <label><span>原神 · 树脂</span>
                   <input type="number" id="resin-genshin" min="0" max="1000" step="10"
@@ -538,8 +546,7 @@
           <details class="set-item" id="acc-activity">
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-hourglass"/></svg></i>
-                <span class="set-txt"><b>活动结束提醒</b>
-                  <small>活动结束前设定天数时，在推送末尾追加提醒</small></span>
+                <span class="set-txt"><b>活动结束提醒</b></span>
               </span>
               <span class="set-sum" id="sum-activity"></span>
               <span class="set-end">
@@ -552,22 +559,24 @@
                        inputmode="numeric" placeholder="3">
                 <button id="btn-activity-days" class="btn">保存</button>
               </div>
-              <div class="hint">活动结束前多少天开始提醒，1–30 天。</div>
+              <div class="hint">活动结束前设定天数时，在推送末尾追加提醒，1–30 天。</div>
             </div>
           </details>
 
-          <div class="set-item static" id="acc-alwaysnotify">
-            <div class="set-head">
+          <details class="set-item" id="acc-alwaysnotify">
+            <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-upload"/></svg></i>
-                <span class="set-txt"><b>完成也推送</b>
-                  <small>默认仅在存在未完成项时推送；开启后全部完成也发一条平安通知</small></span>
+                <span class="set-txt"><b>完成也推送</b></span>
               </span>
               <span class="set-sum" id="sum-alwaysnotify">读取中…</span>
               <span class="set-end">
                 <label class="toggle"><input type="checkbox" id="always-notify"><i></i></label>
               </span>
+            </summary>
+            <div class="set-body">
+              <div class="hint">默认仅在存在未完成项时推送；开启后全部完成也发一条平安通知。</div>
             </div>
-          </div>
+          </details>
         </div><!-- /rule-list -->
       </div><!-- /card__body -->
     </section>

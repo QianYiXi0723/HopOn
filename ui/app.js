@@ -572,10 +572,7 @@ try { welcomeDismissed = localStorage.getItem('rl_welcome_dismissed') === '1'; }
 function renderDevice(d){
   if (!d.ok) { toast(d.message || '读取设备档案失败', true); return; }
   const p = d.profile || {};
-  const label = d.label || '';
-  document.getElementById('dev-badge').textContent =
-    d.custom ? '真机档案' : (label || '随机机型');
-  document.getElementById('dev-badge').className = 'badge ' + (d.custom ? 'ok' : '');
+  /* 2026-11-01：卡头不再显示当前机型徽章（机型详情只在弹窗内展示） */
   /* 档案字段来自用户粘贴的第三方导出文本（设备伪装页的核心工作流），
      落盘持久化后每次启动都回显——此处必须转义，否则是持久化 XSS */
   document.getElementById('dev-current').innerHTML =
@@ -605,7 +602,7 @@ function renderDevice(d){
   } else {
     qrBox.innerHTML =
       '<div style="padding:10px 8px;text-align:center">' +
-      '<div style="font-size:11px;color:var(--muted);line-height:1.5">二维码不可用</div>' +
+      '<div style="font-size:12px;color:var(--muted);line-height:1.5">二维码不可用</div>' +
       '<button class="btn sm" id="btn-apk-retry" style="margin-top:6px">生成下载二维码</button>' +
       '</div>';
     meta.innerHTML = '<span class="warn-t">' + escHtml(apk.message || '未找到 APK') + '</span>';
@@ -967,7 +964,7 @@ function renderAlwaysNotify(v){
   const an = document.getElementById('always-notify');
   if (!an) return;
   an.checked = !!v;
-  setSum('alwaysnotify', an.checked ? '已开启' : '已关闭',
+  setSum('alwaysnotify', an.checked ? '已开启' : '未开启',
          an.checked ? '全部完成也会推送一条平安通知' : '仅在存在未完成项时推送');
 }
 
@@ -1063,7 +1060,8 @@ function renderDaemon(st){
   hbState.startedAt = parseStamp(hbState.startedAtRaw);
   hbState.times = Array.isArray(st.check_times) ? st.check_times.slice() : [];
 
-  document.getElementById('d-pid').textContent = st.pid || '-';
+  /* PID 从行内撤下（对用户无意义），悬浮「运行中」徽章可看——排障入口保留 */
+  badge.title = st.pid ? 'PID ' + st.pid : '';
   const heart = document.getElementById('d-heart');
   if (heart) {
     heart.textContent = (st.heartbeat_age != null)
@@ -1072,7 +1070,7 @@ function renderDaemon(st){
 
   const last = st.last_run || {};
   document.getElementById('d-last').textContent =
-    last.at ? (last.exit === 0 ? '成功' : '退出码 ' + last.exit) + ' (' + shortStamp(last.at) + ')'
+    last.at ? (last.exit === 0 ? '成功' : '退出码 ' + last.exit) + ' · ' + shortStamp(last.at)
             : '还没跑过';
   document.getElementById('btn-daemon-start').disabled = running;
   document.getElementById('btn-daemon-stop').disabled = !running;
@@ -1123,9 +1121,10 @@ function renderSchedule(d, force){
   }
   renderRuler(times);
   document.getElementById('d-count').textContent = times.length + ' 个';
-  /* 下次提醒：守护进程停止时与 KPI 保持一致显示「已暂停」，不再给一个够不着的时刻 */
+  /* 下次提醒：守护进程停止时与 KPI 保持一致显示「已暂停」；
+     时间只保留 月-日 时:分（年份对「下次」没有信息量，纯占宽） */
   document.getElementById('d-next').textContent =
-    (d.daemon && d.daemon.running) ? (d.next_run || '-') : '已暂停';
+    (d.daemon && d.daemon.running) ? (d.next_run || '-').replace(/^\d{4}-/, '') : '已暂停';
 
   // 参与检查的账号：只给数量，完整清单走 title（来自后端，不写死）
   const gamesBox = document.getElementById('d-games');
@@ -1279,18 +1278,19 @@ function renderAutostart(d){
     box.disabled = !supported;
   }
   if (badge) {
+    /* 2026-11-01 起该元素从 badge 徽章改为 set-sum 值列（与其他四行同款右对齐） */
     if (!supported) {
       badge.textContent = '不支持';
-      badge.className = 'badge err';
+      badge.className = 'set-sum err';
     } else if (d.stale) {
       badge.textContent = '路径已失效';
-      badge.className = 'badge err';
+      badge.className = 'set-sum err';
     } else if (d.enabled) {
       badge.textContent = '已开启';
-      badge.className = 'badge';
+      badge.className = 'set-sum';
     } else {
       badge.textContent = '未开启';
-      badge.className = 'badge';
+      badge.className = 'set-sum';
     }
   }
   if (hint) {
@@ -1393,52 +1393,45 @@ function setSum(id, text, full){
 }
 
 function refreshSetSummaries(){
-  /* 休眠提醒：关 → 已关闭；开 → 窗口 X 分钟（0 = 不补发） */
+  /* 2026-11-01 裁决：折叠态值列统一只显示开关状态词（已开启/未开启），
+     五行同宽保持整齐；参数摘要退到 title 悬浮，具体数值在抽屉输入框里 */
   const cuBox = document.getElementById('catch-up-toggle');
   const cuMin = document.getElementById('catch-up-minutes');
   const cuLoaded = cuMin && String(cuMin.value).trim() !== '';
   if (!cuLoaded) setSum('catchup', '读取中…');
-  else if (cuBox && !cuBox.checked) setSum('catchup', '已关闭');
+  else if (cuBox && !cuBox.checked) setSum('catchup', '未开启');
   else {
     const v = parseInt(cuMin.value, 10);
-    setSum('catchup', !isNaN(v) && v > 0 ? '窗口 ' + v + ' 分钟' : '不补发');
+    setSum('catchup', '已开启',
+      !isNaN(v) && v > 0 ? '补发窗口 ' + v + ' 分钟' : '不补发');
   }
 
-  /* 体力溢出阈值：折叠态直接摆数值（2026-10-31 裁决：该明显的不明显——
-     原方案「全量参数收进悬浮」把用户配置的值藏得太深，新裁决数值上浮）；
-     带游戏名的全量文本仍留 title 悬浮 */
   const rsBox = document.getElementById('resin-toggle');
   const rsInputs = ['genshin', 'starrail', 'zzz', 'arknights', 'endfield']
     .map(function(g){ return document.getElementById('resin-' + g); });
   const rsLoaded = rsInputs.some(function(inp){ return inp && String(inp.value).trim() !== ''; });
   if (!rsLoaded) setSum('resin', '读取中…');
-  else if (rsBox && !rsBox.checked) setSum('resin', '已关闭');
+  else if (rsBox && !rsBox.checked) setSum('resin', '未开启');
   else {
-    let zeros = 0;
-    const nums = [], labeled = [];
+    const labeled = [];
     [['genshin','原神'],['starrail','星铁'],['zzz','绝区零'],
      ['arknights','方舟'],['endfield','终末地']].forEach(function(r){
       const inp = document.getElementById('resin-' + r[0]);
       const v = inp ? parseInt(inp.value, 10) : NaN;
-      const shown = isNaN(v) ? '–' : (v === 0 ? '关' : v);
-      nums.push(shown);
-      if (v === 0) zeros++;
-      labeled.push(r[1] + ' ' + shown);
+      labeled.push(r[1] + ' ' + (isNaN(v) ? '–' : (v === 0 ? '关' : v)));
     });
-    setSum('resin',
-      nums.join('/') + (zeros ? ' · ' + zeros + ' 款关闭' : ''),
-      labeled.join(' · '));
+    setSum('resin', '已开启', labeled.join(' · '));
   }
 
-  /* 活动结束提醒：关 → 已关闭；开 → 提前 X 天 */
   const acBox = document.getElementById('activity-toggle');
   const acDays = document.getElementById('activity-days');
   const acLoaded = acDays && String(acDays.value).trim() !== '';
   if (!acLoaded) setSum('activity', '读取中…');
-  else if (acBox && !acBox.checked) setSum('activity', '已关闭');
+  else if (acBox && !acBox.checked) setSum('activity', '未开启');
   else {
     const v = parseInt(acDays.value, 10);
-    setSum('activity', !isNaN(v) && v > 0 ? '提前 ' + v + ' 天' : '未设置天数');
+    setSum('activity', '已开启',
+      !isNaN(v) && v > 0 ? '提前 ' + v + ' 天' : '未设置天数');
   }
 }
 
@@ -2072,35 +2065,52 @@ function renderLive(d){
       const name = escHtml(g.game_name || g.game);
       const head = '<div class="live-card-head">' + gameIconHtml(g.game) +
         '<b class="live-name">' + name + '</b>';
+      /* 风控冷却中（2026-11-01）：命中 1034/10041 的游戏 6 小时内后端不再发起
+         实时查询 —— 展示缓存数据 + 冷却徽章，绝不红叉诱使用户再点刷新 */
+      if (g.cooled) {
+        const left = g.cooldown_left_minutes || 0;
+        const leftTxt = left >= 60
+          ? (Math.round(left / 6) / 10) + ' 小时'
+          : left + ' 分钟';
+        let body = '<div class="live-msg dim">实时查询已暂停（' + leftTxt +
+          '后自动恢复）：命中风控后不再向米游社发请求，避免加深标记。' +
+          '下方为上次缓存数据。</div>';
+        if (g.resource && g.resource.current != null) {
+          body = '<div class="live-res"><b class="mono">' + g.resource.current +
+            ' <span class="dim">/ ' + (g.resource.maximum == null ? '?' : g.resource.maximum) +
+            '</span></b><span class="dim">' + escHtml(g.resource.name || '') + '</span></div>' + body;
+        }
+        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st warn">风控冷却中</span></div>' + body;
+      }
       /* 占位卡：新勾选的游戏缓存里还没查询结果 —— 诚实占位，不伪造数据 */
       if (g.placeholder) {
-        return '<div class="live-card">' + head + '<span class="st">尚未查询</span></div>' +
+        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st">尚未查询</span></div>' +
           '<div class="live-msg dim">点「刷新」查询实时体力，或等下一轮定时巡检。</div></div>';
       }
       if (!g.ok) {
-        return '<div class="live-card">' + head + '<span class="st err">失败</span></div>' +
+        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st err">失败</span></div>' +
           '<div class="live-msg err-t">' + escHtml(g.error || '未知错误') + '</div></div>';
       }
       if (g.stale) {
         /* 数据待更新 ≠ 失败：凭证/网络/解析都正常，只是游戏里今天还没刷新 */
-        return '<div class="live-card">' + head + '<span class="st">数据待更新</span></div>' +
+        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st">数据待更新</span></div>' +
           '<div class="live-msg dim">' + escHtml(g.stale) + '</div></div>';
       }
       if (g.no_account) {
         /* 未创建角色 ≠ 失败：凭证有效，建号后自动生效 */
-        return '<div class="live-card">' + head + '<span class="st">未创建角色</span></div>' +
+        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st">未创建角色</span></div>' +
           '<div class="live-msg dim">' + escHtml(g.no_account) + '</div></div>';
       }
       const st = g.finished ? '<span class="st ok">已完成</span>'
                             : '<span class="st warn">未完成</span>';
       const r = g.resource;
       if (!r || r.current == null) {
-        return '<div class="live-card">' + head + st + '</div>' +
+        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + st + '</div>' +
           '<div class="live-msg dim">暂不支持体力查询</div></div>';
       }
       const pct = (r.percent == null) ? 0 : r.percent;
       const max = (r.maximum == null) ? '?' : r.maximum;
-      return '<div class="live-card">' + head + st + '</div>' +
+      return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + st + '</div>' +
         '<div class="live-res"><b class="mono">' + r.current +
         ' <span class="dim">/ ' + max + '</span></b><span class="dim">' +
         escHtml(r.name) + '</span></div>' +
@@ -2128,16 +2138,10 @@ function renderLive(d){
   if (lastHistory) renderKpiToday(lastHistory);
 }
 
-/* ========================= 刷新反馈（转圈按钮 + 卡片闪光） ========================= */
-function flashCard(el){
-  /* 刷新完成后对应卡片高亮一闪；reflow 重启动画保证连点也能再次触发 */
-  const card = el && el.closest ? el.closest('.card') : null;
-  if (!card) return;
-  card.classList.remove('flash');
-  void card.offsetWidth;
-  card.classList.add('flash');
-  setTimeout(function(){ card.classList.remove('flash'); }, 950);
-}
+/* ========================= 刷新反馈（转圈按钮） =========================
+   2026-11-01 减法裁决：撤掉卡片闪光与整页白闪（Oil UI「每页 1-2 处
+   exceptional」）——转圈按钮已是充分反馈，页面唯一的强调动效留给
+   体力临满的紧迫度。 */
 function btnSpin(btn, promise){
   /* 按钮进入转圈态；promise 落定（无论成败）恢复原文字并让所属卡片闪光 */
   if (!btn) return promise;
@@ -2147,7 +2151,6 @@ function btnSpin(btn, promise){
   const done = function(){
     btn.disabled = false;
     btn.innerHTML = orig;
-    flashCard(btn);
   };
   promise.then(done, done);
   return promise;
@@ -2177,7 +2180,6 @@ function loadLive(force){
     .then(function(){
       kpiBusy(false);
       if (btn) { btn.disabled = false; btn.textContent = '刷新'; }
-      flashCard(btn);
     });
 }
 
@@ -2261,15 +2263,20 @@ function actCardHtml(it, isHero){
   const st = shortRange(it.start), en = shortRange(it.end);
   const ended = it.status === '已完成';
   const timeCls = ended ? 't-end' : (it.not_started ? 't-up' : 't-on');
-  const soon = !!it.ending_soon && !it.not_started;
+  /* 紧迫度徽章（2026-11-01 方案 A）：≤24h 红 / ≤3 天琥珀 / 其余灰。
+     档位只认后端 hours_left，缺值或非正数一律灰——绝不前端估时间 */
+  const hl = +it.hours_left || 0;
+  const cdCls = ended ? 'ended'
+    : (it.not_started ? ''
+    : (hl > 0 && hl <= 24 ? 'urgent' : (hl > 0 && hl <= 72 ? 'warn' : '')));
   // reward 为空 = 接口没给奖励明细，被兜底规则保留下来的（别假装它有原石）
   const reward = it.reward
     ? '<span class="act-reward" title="这个活动给抽卡资源">' + escHtml(it.reward) + '</span>'
     : '';
-  const cdCls = ended ? 'ended' : (soon ? 'soon' : '');
   const prog = actProgHtml(it);
   return '<div class="card acard' + (isHero ? ' hero' : '') + '"' +
-    actUrgencyAttr(it, isHero) + ' data-id="' + id + '">' +
+    actUrgencyAttr(it, isHero) + ' data-id="' + id + '"' +
+    ' style="--gc:' + gameDotColor(it.game) + '">' +
     '<div class="acard-top"><span class="act-game">' + actIconHtml(it) +
       '<span class="act-name">' + escHtml(it.game_name) + '</span></span>' +
       '<button type="button" class="act-del" data-del="' + id +
@@ -2304,34 +2311,99 @@ function pickHeroIndex(pool){
   return best;
 }
 
+/* 活动视图模式：'time' 按剩余时间（默认）/ 'game' 按游戏分区（方案 A）。
+   选择记忆在 localStorage('rl-actview')——与 rl-theme 同机制 */
+function actViewMode(){
+  return localStorage.getItem('rl-actview') === 'game' ? 'game' : 'time';
+}
+
+/* 活动视图切换开关：记忆 rl-actview，切换即免拉取重渲染（数据取 __lastActivities） */
+(function bindActView(){
+  const seg = document.getElementById('act-view');
+  if (!seg) return;
+  const paint = function(){
+    const mode = actViewMode();
+    seg.querySelectorAll('button').forEach(function(b){
+      b.classList.toggle('on', b.dataset.view === mode);
+    });
+  };
+  seg.addEventListener('click', function(e){
+    const b = e.target.closest ? e.target.closest('button[data-view]') : null;
+    if (!b || b.classList.contains('on')) return;   // 防重复触发
+    localStorage.setItem('rl-actview', b.dataset.view);
+    paint();
+    if (window.__lastActivities) renderActivities(window.__lastActivities);
+  });
+  paint();
+})();
+
 function renderActivities(d){
   const list = document.getElementById('act-list');
   const uns = document.getElementById('act-unsupported');
   if (!list) return;
   d = d || {};
+  window.__lastActivities = d;   // 视图切换时免拉取重渲染
   const items = d.items || [];
   if (!items.length) {
     list.innerHTML = '<div class="act-empty">' +
-      '<div class="act-empty-icon">' + (d.has_data ? '🌱' : '📭') + '</div>' +
+      '<div class="act-empty-icon"><svg class="ico"><use href="#' +
+      (d.has_data ? 'i-sprout' : 'i-tray') + '"/></svg></div>' +
       '<div>' + (d.has_data
         ? '近期无即将结束的活动，安心长草'
         : '还没有活动数据，点「刷新」拉取。') + '</div>' +
       '</div>';
   } else {
-    // 后端已排好序；这里拆成 进行中 / 未开启 / 已完成（进抽屉）三段
+    // 后端已排好序；已完成单独进抽屉。剩余时间只认后端 hours_left（>0），
+    // 缺值当 Infinity 沉底，不前端估时间
     const ongoing = items.filter(function(x){ return x.group !== 'upcoming' && x.status !== '已完成'; });
     const upcoming = items.filter(function(x){ return x.group === 'upcoming'; });
     const finished = items.filter(function(x){ return x.status === '已完成'; });
+    const hlOf = function(x){ const h = +x.hours_left; return h > 0 ? h : Infinity; };
+    const heroIt = ongoing.length ? ongoing[pickHeroIndex(ongoing)] : (upcoming[0] || null);
 
-    let html = '<div class="act-grid">';
-    if (ongoing.length) {
-      const heroIdx = pickHeroIndex(ongoing);
-      html += ongoing.map(function(it, i){ return actCardHtml(it, i === heroIdx); }).join('');
+    let html = '';
+    if (actViewMode() === 'game') {
+      /* 模式 A · 按游戏分区（方案 A）：组头 = 色点 + 游戏名 + 数量；
+         组内按剩余时间升序；组间按「最近将有活动结束」升序 */
+      const groups = [], byGid = {};
+      ongoing.concat(upcoming).forEach(function(x){
+        const gid = x.game || '';
+        if (!byGid[gid]) {
+          byGid[gid] = { gid: gid, name: x.game_name || '未知游戏', items: [] };
+          groups.push(byGid[gid]);
+        }
+        byGid[gid].items.push(x);
+      });
+      groups.forEach(function(g){
+        g.items.sort(function(a, b){ return hlOf(a) - hlOf(b); });
+        g.mins = hlOf(g.items[0]);   // 组内升序后首项即组内最早结束
+      });
+      groups.sort(function(a, b){ return a.mins - b.mins; });
+
+      if (groups.length) {
+        html = groups.map(function(g){
+          return '<div class="act-group">' +
+            '<div class="act-group-head">' +
+              '<span class="gdot" style="background:' + gameDotColor(g.gid) + '"></span>' +
+              '<span class="act-group-name">' + escHtml(g.name) + '</span>' +
+              '<span class="act-group-count">' + g.items.length + ' 个活动</span>' +
+            '</div>' +
+            '<div class="act-grid">' +
+              g.items.map(function(x){ return actCardHtml(x, x === heroIt); }).join('') +
+            '</div></div>';
+        }).join('');
+      }
+    } else {
+      /* 模式 B · 按剩余时间升序，同时间按标题首字母（localeCompare zh）；
+         平坦网格无组头，最紧急一张仍是英雄卡 */
+      const pool = ongoing.concat(upcoming).sort(function(a, b){
+        const diff = hlOf(a) - hlOf(b);
+        return diff || String(a.title || '').localeCompare(String(b.title || ''), 'zh');
+      });
+      html = '<div class="act-grid">' +
+        pool.map(function(x){ return actCardHtml(x, x === heroIt); }).join('') +
+        '</div>';
     }
-    if (upcoming.length) {
-      html += upcoming.map(function(it){ return actCardHtml(it, !ongoing.length && it === upcoming[0]); }).join('');
-    }
-    html += '</div>';
 
     if (finished.length) {
       html += '<div class="act-drawer" id="act-drawer">' +
@@ -2410,7 +2482,6 @@ async function refreshActivities(){
     toast('刷新失败：' + e, true);
   } finally {
     btn.disabled = false; btn.innerHTML = old;
-    flashCard(btn);
   }
 }
 
@@ -2425,7 +2496,7 @@ function renderHistoryEmpty(message, detail){
   if (!tableBox) return;
   tableBox.innerHTML =
     '<div class="emptybox">' + message +
-    (detail ? '<br><span style="font-size:11px;color:var(--muted)">' + detail + '</span>' : '') +
+    (detail ? '<br><span style="font-size:12px;color:var(--muted)">' + detail + '</span>' : '') +
     '</div>';
 }
 
@@ -2503,8 +2574,10 @@ function renderWeeklyCard(d){
 /* ---------- 周完成率徽章（本周 vs 上周） ----------
    /api/history?days=14 独立旁路：loadHistory 主链仍拉 7 天喂报表/KPI，
    这里另拉 14 天只喂徽章，两路互不影响、失败互不传染。
-   /api/history 的 days 数组「今天在最上面」（core/history.py _summary_unsafe），
-   故 [0..6] 为本周、[7..13] 为上周。
+   /api/history 的 days 数组实为「最旧在前」——2026-11-01 真机实测修正：
+   days[0].date=最旧日、days[last]=今天（最近 7 天表格列序同序可证；
+   _summary_unsafe 的「今天在最上面」注释指 UI 呈现观感，与数组序相反），
+   故 [0..6] 为上周、[7..13] 为本周。
    口径与 weeklyStatsOf / history.weekly_digest 一致：known 天才算分母，
    整天没查过不算漏；上周没数据（如全新安装）时只显示本周，不编造对比。 */
 function weekRateOf(dayRows, tracked){
@@ -2528,9 +2601,11 @@ function loadWeekTrend(){
       if (!badge) return;
       const rows = (d && d.days) || [];
       const tracked = (d && d.tracked) || [];
-      const cur = weekRateOf(rows.slice(0, 7), tracked);
+      /* days 数组实为「最旧在前」（_summary_unsafe 按 offset 递减 append；
+         最近 7 天表格的列序 10/26→11/1 同序可证）——故本周 = 末尾 7 格 */
+      const cur = weekRateOf(rows.slice(7, 14), tracked);
       if (cur === null) { badge.textContent = '-'; return; }
-      const prev = weekRateOf(rows.slice(7, 14), tracked);
+      const prev = weekRateOf(rows.slice(0, 7), tracked);
       let html = '本周 ' + cur + '%';
       if (prev !== null) {
         html += ' · 上周 ' + prev + '%';
@@ -2679,7 +2754,7 @@ function gameCardHtml(g){
     ' ｜ 每日任务：' + taskTip +
     ' ｜ 本月完成 ' + Number(g.month_done || 0) + ' 天' + (missed > 0 ? ' · 漏 ' + missed : '');
 
-  return '<div class="card gcard" data-tip="' + escHtml(tip) + '">' +
+  return '<div class="card gcard" style="--gc:' + gameDotColor(gid) + '" data-tip="' + escHtml(tip) + '">' +
     '<div class="gcard-head">' + gameIconHtml(gid) +
       '<div class="gcard-name"><b>' + escHtml(gameBaseName(g)) + '</b></div>' +
       '<span class="gcard-today" style="flex:none">' + badge + '</span>' +
@@ -2715,20 +2790,27 @@ function renderHeatmap(d){
       escHtml(gameBaseName({ game: gid, game_name: nameOf[gid] })) + '</div>';
     days.forEach(function(row){
       const c = (row.games || {})[gid];
-      let cls = 'na', mark = '';
-      if (c && c.known) {
+      /* 今日列合并实时查询（与游戏卡/KPI 同一「live 说了算」纪律）：
+         live 报告已完成 → 今日格立即变绿，不等下一轮巡检；
+         live 未覆盖/未完成 → 维持巡检事实或"等待中"，绝不提前画红叉 */
+      const lv = (row.is_today && window.__liveMap) ? window.__liveMap[gid] : null;
+      let cls = 'na', mark = '', tip;
+      if (lv && lv.finished != null) {
+        cls = lv.finished ? 'ok' : 'na wait';
+        mark = lv.finished ? '✓' : '⋯';
+        tip = row.label + ' · ' + (lv.finished ? '已完成（实时）' : '进行中（今日未完成）');
+      } else if (c && c.known) {
         cls = c.finished ? 'ok' : 'err';
         mark = c.finished ? '✓' : '✗';
+        tip = row.label + ' · ' + (c.finished ? '已完成'
+            : '未完成 ' + (c.unfinished_tasks || 0) + ' 项');
       } else if (row.is_today) {
-        /* 今天的定时巡检还没到：画"等待中"灰点，绝不提前画红叉 */
         cls = 'na wait';
         mark = '⋯';
+        tip = row.label + ' · 等待今日巡检';
+      } else {
+        tip = row.label + ' · 无数据';
       }
-      const tip = (c && c.known)
-        ? (row.label + ' · ' + (c.finished ? '已完成'
-            : '未完成 ' + (c.unfinished_tasks || 0) + ' 项'))
-        : (row.is_today ? (row.label + ' · 等待今日巡检')
-                        : (row.label + ' · 无数据'));
       html += '<div class="hm-cell ' + cls + (row.is_today ? ' today' : '') +
         '" title="' + escHtml(tip) + '">' + mark + '</div>';
     });
@@ -2773,12 +2855,9 @@ function loadHistory(){
     .then(function(){ kpiBusy(false); });
 }
 
-document.getElementById('btn-history-refresh').addEventListener('click', function(){
-  btnSpin(this, loadHistory());
-});
-
-/* 报表页手动刷新：先实时查询（查询过程会落历史），再重拉报表 —— 顺序不能反，
-   否则拿到的还是上一轮旧数据。失败静默保留旧数据，与 loadHistory 同一口径 */
+/* 报表页刷新已合并：概览卡的旧「刷新」按钮（2026-11-01 减法裁决移除）与本按钮
+   功能九成重叠，现只保留本周卡这一个入口，行为 = 实时查询（写历史）→ 重拉报表。
+   失败静默保留旧数据，与 loadHistory 同一口径 */
 document.getElementById('btn-hist-refresh').addEventListener('click', function(){
   const btn = this;
   if (!btn || btn.disabled) return;              // 防连点
@@ -2786,7 +2865,7 @@ document.getElementById('btn-hist-refresh').addEventListener('click', function()
   Promise.resolve(loadLive(true))                // 实时查询（写历史）→ 再拉报表
     .then(function(){ return loadHistory(); })
     .catch(function(err){ console.error('刷新报表失败', err); })
-    .then(function(){ btn.disabled = false; btn.textContent = '刷新'; flashCard(btn); });
+    .then(function(){ btn.disabled = false; btn.textContent = '刷新'; });
 });
 
 /* ========================= 主题（三态：跟随系统 / 深色 / 浅色） ========================= */
@@ -3344,15 +3423,4 @@ function rlReloadKey(e){
   return false;
 }
 
-/* =========================== 刷新反馈 ===========================
-   每次加载整页快速闪一下，让「页面已重新加载」看得见。
-   不对导航类型做判断：WebView2 里的 F5 不一定上报成 reload，
-   认类型会导致「按了没反应」；这里一律闪，保证操作有反馈。 */
-(function rlFlashOnLoad(){
-  try{
-    var f = document.createElement('div');
-    f.id = 'rl-flash';
-    document.body.appendChild(f);
-    setTimeout(function(){ if (f.parentNode) f.parentNode.removeChild(f); }, 420);
-  }catch(e){ /* 极端情况下插节点失败也不影响页面 */ }
-})();
+/* 刷新反馈：整页白闪已随 2026-11-01 减法裁决移除（转圈按钮承载反馈） */
