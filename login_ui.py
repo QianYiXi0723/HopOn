@@ -1473,6 +1473,130 @@ def _filter_live_games(payload: Dict[str, Any], enabled: Optional[set]) -> Dict[
     return out
 
 
+#: 实时查询风控退避（2026-11-01）：命中米游社风控（1034 需人机验证 / 10041 拒绝）的
+#: 游戏，冷却 N 小时内不再对其发起实时查询 —— 每次撞墙都在给风控模型喂信号，
+#: 越刷标记越深。只管控制台「刷新」这条实时路径；定时守护进程轮次不退避
+#: （每日 3 轮是本工具的权威数据源，跳过会让历史/热力图开天窗）。
+_LIVE_RISK_COOLDOWN_HOURS = 6
+_LIVE_RISK_FILE = BASE_DIR / "data" / "live_risk_backoff.json"
+_LIVE_RISK_RE = re.compile(r"retcode\s*=?\s*(1034|10041)\b")
+
+
+def _live_risk_read() -> Dict[str, Dict[str, Any]]:
+    """读风控退避账本；没有/坏了/结构不对返回空账本（不抛）。"""
+    try:
+        data = json.loads(_LIVE_RISK_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): v for k, v in data.items() if isinstance(v, dict)}
+
+
+def _live_risk_write(book: Dict[str, Dict[str, Any]]) -> None:
+    """原子写回账本；写失败只影响冷却记忆，不影响本次返回。"""
+    try:
+        _LIVE_RISK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=".risk-", suffix=".tmp", dir=str(_LIVE_RISK_FILE.parent)
+        )
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(book, ensure_ascii=False))
+        os.replace(tmp_name, _LIVE_RISK_FILE)
+    except OSError:
+        logger.exception("风控退避账本写入失败")
+
+
+def _live_risk_active() -> Dict[str, Dict[str, Any]]:
+    """当前仍在冷却期的 {game_id: 记录}；过期条目顺手清理写回。"""
+    book = _live_risk_read()
+    now = time.time()
+    active: Dict[str, Dict[str, Any]] = {}
+    expired = False
+    for gid, rec in book.items():
+        try:
+            until = float(rec.get("until") or 0)
+        except (TypeError, ValueError):
+            expired = True
+            continue
+        if until > now:
+            active[gid] = rec
+        else:
+            expired = True
+    if expired:
+        _live_risk_write(active)
+    return active
+
+
+def _live_risk_record(errors: List[Tuple[str, Any]]) -> None:
+    """把本轮实时查询命中风控的游戏记入账本（until=now+6h，原子写）。
+
+    errors = [(game_id, error_text), ...]；retcode 命中风控族才记账，
+    其他失败（网络超时等）不退避 —— 它们不值得跳过后续查询。
+    """
+    book = _live_risk_read()
+    now = time.time()
+    hits: List[Tuple[str, int]] = []
+    for gid, err in errors:
+        m = _LIVE_RISK_RE.search(str(err or ""))
+        if not m:
+            continue
+        retcode = int(m.group(1))
+        book[gid] = {
+            "until": now + _LIVE_RISK_COOLDOWN_HOURS * 3600,
+            "retcode": retcode,
+            "recorded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        hits.append((gid, retcode))
+    if not hits:
+        return
+    _live_risk_write(book)
+    names = _game_display_map()
+    for gid, retcode in hits:
+        logger.warning(
+            "%s 实时查询命中风控 retcode=%d，进入 %d 小时冷却（期间控制台不再对该游戏发起实时查询）",
+            names.get(gid, gid), retcode, _LIVE_RISK_COOLDOWN_HOURS,
+        )
+
+
+def _annotate_live_cool(
+    payload: Dict[str, Any], book: Optional[Dict[str, Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """给 games 里处于冷却期的游戏打 cooled 标记 + 剩余分钟数。
+
+    缓存回放与新查询两条路都要过这里 —— 页面秒开（吃缓存）也必须显示
+    「风控冷却中」而不是上次失败的红叉。冷却已过期的条目顺手摘掉旧标记
+    （缓存文件里可能残留上一次冷却期的 cooled 标记）；不改缓存文件本身。
+    """
+    active = book if book is not None else _live_risk_active()
+    if not active and not any(
+        isinstance(g, dict) and g.get("cooled") for g in (payload.get("games") or [])
+    ):
+        return payload
+    out = dict(payload)
+    games: List[Any] = []
+    for g in (payload.get("games") or []):
+        if not isinstance(g, dict):
+            games.append(g)
+            continue
+        rec = active.get(g.get("game"))
+        if rec is not None:
+            g = dict(g)
+            try:
+                until = float(rec.get("until") or 0)
+            except (TypeError, ValueError):
+                until = time.time()
+            g["cooled"] = True
+            g["cooldown_left_minutes"] = max(1, int(round((until - time.time()) / 60)))
+        elif g.get("cooled"):
+            g = dict(g)
+            g.pop("cooled", None)
+            g.pop("cooldown_left_minutes", None)
+        games.append(g)
+    out["games"] = games
+    return out
+
+
 def live_status(force: bool = False) -> Dict[str, Any]:
     """返回每款游戏的体力 / 理智看板。
 
@@ -1508,11 +1632,28 @@ def live_status(force: bool = False) -> Dict[str, Any]:
             "games": [],
         }
 
+    # 风控退避：读当前冷却账本；命中的游戏本轮不再发起实时查询（cfg 过滤账号子集）
+    cooled = _live_risk_active()
+    if cooled and cfg is not None:
+        kept = [a for a in cfg.accounts if a.game not in cooled]
+        if len(kept) != len(cfg.accounts):
+            skipped_names = "、".join(sorted(
+                {_game_display_map().get(a.game, a.game)
+                 for a in cfg.accounts if a.game in cooled}
+            ))
+            logger.warning(
+                "实时查询风控冷却中，本轮跳过 %d 款游戏：%s（%d 小时冷却，到点自动恢复）",
+                len(cfg.accounts) - len(kept), skipped_names, _LIVE_RISK_COOLDOWN_HOURS,
+            )
+            from dataclasses import replace as _dc_replace
+
+            cfg = _dc_replace(cfg, accounts=kept)
+
     cached = _LIVE_CACHE.get("payload")
     if (not force) and cached is not None and (time.time() - float(_LIVE_CACHE.get("at") or 0)) < _LIVE_TTL_SECONDS:
         payload = dict(cached)
         payload["cached"] = True
-        return _filter_live_games(payload, enabled)
+        return _annotate_live_cool(_filter_live_games(payload, enabled), cooled)
 
     if not force:
         # 进程缓存不在有效期：直接回上一次落盘的结果（标 stale，前端提示可手动刷新）。
@@ -1521,7 +1662,7 @@ def live_status(force: bool = False) -> Dict[str, Any]:
             payload = dict(disk)
             payload["cached"] = True
             payload["stale"] = True
-            return _filter_live_games(payload, enabled)
+            return _annotate_live_cool(_filter_live_games(payload, enabled), cooled)
 
     if cfg is None:
         # 配置读不出（上面已 warning）：没有可靠的游戏清单，返回空面板兜底
@@ -1537,9 +1678,12 @@ def live_status(force: bool = False) -> Dict[str, Any]:
         if cached is not None and (time.time() - float(_LIVE_CACHE.get("at") or 0)) < _LIVE_TTL_SECONDS:
             payload = dict(cached)
             payload["cached"] = True
-            return _filter_live_games(payload, enabled)
+            return _annotate_live_cool(_filter_live_games(payload, enabled), cooled)
 
         statuses = collect_statuses(cfg)
+
+    # 风控记账：本轮命中的 1034/10041 写入冷却账本（6 小时内不再实时查询该游戏）
+    _live_risk_record([(s.game_id, s.error) for s in statuses if not s.ok and s.error])
 
     games: List[Dict[str, Any]] = []
     for status in statuses:
@@ -1583,6 +1727,25 @@ def live_status(force: bool = False) -> Dict[str, Any]:
             ],
         })
 
+    # 冷却中的游戏本轮没查：从磁盘缓存回放上次结果（标 cooled），没有就诚实占位
+    if cooled:
+        disk = _live_disk_read()
+        disk_games = (
+            {g.get("game"): g for g in (disk.get("games") or []) if isinstance(g, dict)}
+            if disk else {}
+        )
+        names = _game_display_map()
+        present = {g.get("game") for g in games}
+        for gid in sorted(cooled):
+            if gid in present:
+                continue
+            old = disk_games.get(gid)
+            entry = dict(old) if isinstance(old, dict) else {
+                "game": gid, "game_name": names.get(gid, gid), "placeholder": True,
+            }
+            entry["cooled"] = True
+            games.append(entry)
+
     payload = {
         "ok": True,
         "cached": False,
@@ -1592,7 +1755,7 @@ def live_status(force: bool = False) -> Dict[str, Any]:
     _LIVE_CACHE["at"] = time.time()
     _LIVE_CACHE["payload"] = payload
     _live_disk_write(payload)
-    return payload
+    return _annotate_live_cool(payload)
 
 
 @_serialized_write
