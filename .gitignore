@@ -39,6 +39,8 @@ build/
 #  对话 / 工具记忆（含大量调试细节与账号信息）
 # ============================================================
 .workbuddy/
+# DeepSeek Harness 的 meow-memory 记忆库（SQLite，误删不可恢复、不进 git）
+.dsh-meow/
 
 # ============================================================
 #  Python
@@ -97,6 +99,7 @@ tests/**/__pycache__/
 
 # C# 壳构建产物（本地测试用，正式发布走 release/）
 /ResinLoop.exe
+/HopOn.exe
 /WebView2Loader.dll
 /Microsoft.Web.WebView2.Core.dll
 /Microsoft.Web.WebView2.WinForms.dll

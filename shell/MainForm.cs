@@ -13,10 +13,10 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using System.Text.RegularExpressions;
 
-namespace ResinLoop
+namespace HopOn
 {
     /// <summary>
-    /// ResinLoop 桌面壳：静默托管 engine/ 便携 Python 引擎，WebView2 加载本地控制台。
+    /// HopOn 桌面壳：静默托管 engine/ 便携 Python 引擎，WebView2 加载本地控制台。
     ///
     /// 生命周期契约：
     ///   - 双击/X 按钮       → 窗口藏进托盘，引擎与守护进程照常运行（壳进程活着 = Job 活着）
@@ -33,7 +33,7 @@ namespace ResinLoop
 
         //: 虚拟主机名：页面与静态资源由 WebView2 直接从 engine\ui 读盘，
         //: 不经过 Python 的本地 HTTP 服务。/api/* 由本进程代转到引擎端口。
-        private const string UiHost = "resinloop.local";
+        private const string UiHost = "hopon.local";
 
         private readonly bool _startMinimized;
         private readonly int? _forcedPort;   // --port N：优先在该端口复用/拉起引擎（默认 8765→8899 探测）
@@ -52,7 +52,7 @@ namespace ResinLoop
             _startMinimized = startMinimized;
             _forcedPort = forcedPort;
 
-            Text = "ResinLoop · 日常巡查";
+            Text = "HopOn · 日常巡查";
             // 尺寸口径必须与脚本版 app.py 一致：980×800（逻辑像素），最小 820×620。
             // 980 落在页面 1000px 断点下方，走单列紧凑布局（右侧「凭证健康／设备伪装」
             // 栏折到页尾，往下滚即可见）。两个入口尺寸不一致时，同一份 UI 会呈现成
@@ -92,7 +92,7 @@ namespace ResinLoop
             _tray = new NotifyIcon
             {
                 Icon = Icon,
-                Text = "ResinLoop · 日常巡查",
+                Text = "HopOn · 日常巡查",
                 Visible = true,
             };
             var menu = new ContextMenuStrip();
@@ -127,14 +127,14 @@ namespace ResinLoop
                 _url = "http://127.0.0.1:" + port + "/";
                 _port = port;
 
-                if (IsResinLoopAlive(port))
+                if (IsHopOnAlive(port))
                 {
                     _engine = null;
-                    Log("端口 " + port + " 检测到 ResinLoop 实例 → 直接复用，不重复拉起");
+                    Log("端口 " + port + " 检测到 HopOn 实例 → 直接复用，不重复拉起");
                 }
                 else
                 {
-                    Log("端口 " + port + " 无 ResinLoop 实例 → 静默拉起引擎（pythonw，无黑框）");
+                    Log("端口 " + port + " 无 HopOn 实例 → 静默拉起引擎（pythonw，无黑框）");
                     StartEngine(port);
                     bool ready = await Task.Run(() => WaitEngineReady(port, 20000));
                     if (!ready)
@@ -178,7 +178,7 @@ namespace ResinLoop
         }
 
         /// <summary>
-        /// 挂上 https://resinloop.local/* 的拦截器：页面、样式、脚本、图标、接口全部由本进程应答。
+        /// 挂上 https://hopon.local/* 的拦截器：页面、样式、脚本、图标、接口全部由本进程应答。
         /// 不使用 SetVirtualHostNameToFolderMapping —— 实测映射到文件夹的主机不会触发
         /// WebResourceRequested，/api/* 就拦不住（页面会拿到 404 HTML，表现为 Failed to fetch）。
         /// 这里按官方静态服务样例的路线：不注册虚拟主机，整站自己兜。
@@ -379,7 +379,7 @@ namespace ResinLoop
         }
 
         /// <summary>
-        /// 把页面发往 https://resinloop.local/api/* 的请求代转到引擎端口。
+        /// 把页面发往 https://hopon.local/api/* 的请求代转到引擎端口。
         /// 必须显式 req.Proxy = null：系统代理会拦截 loopback，返回空响应。
         /// </summary>
         private void ForwardToEngine(string pathAndQuery, string method, CoreWebView2WebResourceRequestedEventArgs e)
@@ -496,9 +496,9 @@ namespace ResinLoop
 
         private int PickPort()
         {
-            // ① 已有 ResinLoop 实例的端口直接复用（8765 优先，8899 次之）
+            // ① 已有 HopOn 实例的端口直接复用（8765 优先，8899 次之）
             foreach (int p in new[] { 8765, 8899 })
-                if (IsResinLoopAlive(p)) return p;
+                if (IsHopOnAlive(p)) return p;
             // ② 全空闲 → 新引擎挑一个（8765 优先，被占就往后走）
             foreach (int p in new[] { 8765, 8899, 8900, 8901, 8902, 8903, 8904, 8905, 8906, 8907, 8908, 8909 })
                 if (TcpFree(p)) return p;
@@ -510,8 +510,8 @@ namespace ResinLoop
             if (_forcedPort.HasValue)
             {
                 int p = _forcedPort.Value;
-                if (IsResinLoopAlive(p)) return p;              // 该端口已有 ResinLoop → 复用
-                for (int q = p; q < p + 12; q++)                // 空闲或被非 ResinLoop 占用 → 从它开始向后找
+                if (IsHopOnAlive(p)) return p;              // 该端口已有 HopOn → 复用
+                for (int q = p; q < p + 12; q++)                // 空闲或被非 HopOn 占用 → 从它开始向后找
                     if (TcpFree(q)) return q;
                 return -1;
             }
@@ -537,7 +537,7 @@ namespace ResinLoop
             DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
             while (DateTime.UtcNow < deadline)
             {
-                if (IsResinLoopAlive(port)) return true;
+                if (IsHopOnAlive(port)) return true;
                 Thread.Sleep(250);
             }
             return false;
@@ -587,7 +587,7 @@ namespace ResinLoop
 
         // ------------------------------------------------------------ 探测
 
-        private static bool IsResinLoopAlive(int port)
+        private static bool IsHopOnAlive(int port)
         {
             try
             {
@@ -598,7 +598,7 @@ namespace ResinLoop
                 using (var resp = (HttpWebResponse)req.GetResponse())
                 using (var sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
                 {
-                    return sr.ReadToEnd().Contains("channels");   // ResinLoop 特征字段
+                    return sr.ReadToEnd().Contains("channels");   // HopOn 特征字段
                 }
             }
             catch { return false; }
@@ -661,7 +661,7 @@ namespace ResinLoop
             }
             Log("守护进程拉起失败：" + (resp == "" ? "(无响应)" : resp));
             if (IsHandleCreated && !IsDisposed)
-                BeginInvoke((Action)(() => _tray.ShowBalloonTip(3000, "ResinLoop",
+                BeginInvoke((Action)(() => _tray.ShowBalloonTip(3000, "HopOn",
                     "定时巡检未能启动，请到「定时任务」页手动启动", ToolTipIcon.Warning)));
         }
 
@@ -685,7 +685,7 @@ namespace ResinLoop
                 string resp = HttpJson(_port, "/api/daemon/run-now", "POST", "{}", 5000);
                 bool ok = Regex.IsMatch(resp, "\"ok\"\\s*:\\s*true");
                 if (IsHandleCreated && !IsDisposed)
-                    BeginInvoke((Action)(() => _tray.ShowBalloonTip(3000, "ResinLoop",
+                    BeginInvoke((Action)(() => _tray.ShowBalloonTip(3000, "HopOn",
                         ok ? "已开始巡检" : "巡检未能启动，请打开控制台查看",
                         ok ? ToolTipIcon.Info : ToolTipIcon.Warning)));
             });
@@ -712,7 +712,7 @@ namespace ResinLoop
             Log("已取消关闭并隐藏到托盘");
             if (!_trayHintShown)
             {
-                _tray.ShowBalloonTip(2000, "ResinLoop", "已最小化到托盘，日常巡查继续运行。", ToolTipIcon.Info);
+                _tray.ShowBalloonTip(2000, "HopOn", "已最小化到托盘，日常巡查继续运行。", ToolTipIcon.Info);
                 _trayHintShown = true;
             }
         }

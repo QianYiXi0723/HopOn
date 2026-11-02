@@ -2,13 +2,13 @@
 """构建 exe 发行包（C# 壳 + engine/ 便携 Python）。
 
 产物：
-  release/ResinLoop_v<版本>/                     可直接发给小白的目录
-  dist/ResinLoop_v<版本>_Windows_x64.zip
+  release/HopOn_v<版本>/                     可直接发给小白的目录
+  dist/HopOn_v<版本>_Windows_x64.zip
 
 版本号唯一来源是 core/__init__.py 的 __version__（OUT / ZIP_NAME / 说明标题都从它派生）。
 
 包内容（面向最终用户，越少越好）：
-  ResinLoop.exe                          C# 壳（net48，多文件发布，内嵌图标）
+  HopOn.exe                          C# 壳（net48，多文件发布，内嵌图标）
   Microsoft.Web.WebView2.Core.dll        WebView2 托管库（不再 ILRepack 合并）
   Microsoft.Web.WebView2.WinForms.dll    WebView2 WinForms 控件
   WebView2Loader.dll                     WebView2 原生加载器
@@ -46,12 +46,12 @@ def _read_version() -> str:
 
 
 VERSION = _read_version()
-OUT = ROOT / "release" / f"ResinLoop_v{VERSION}"
+OUT = ROOT / "release" / f"HopOn_v{VERSION}"
 ZIP_DIR = ROOT / "dist"
-ZIP_NAME = f"ResinLoop_v{VERSION}_Windows_x64"
+ZIP_NAME = f"HopOn_v{VERSION}_Windows_x64"
 
 #: 壳的产物（构建流程见 shell/build.ps1；本脚本不负责编译，只负责组装）
-SHELL_EXE = ROOT / "ResinLoop.exe"
+SHELL_EXE = ROOT / "HopOn.exe"
 #: 壳必须随包的伴生件 —— WebView2Loader.dll 是原生件，另外两个是托管库（不再合并进 exe）
 SHELL_COMPANIONS = (
     "Microsoft.Web.WebView2.Core.dll",
@@ -175,7 +175,7 @@ def collect_secrets() -> List[str]:
 #   2. 绑定关系按游戏写，不写平台之间的扫码次数对比
 #      （「米游社 1 次 / 森空岛每款 1 次」），也不写「一次扫码绑三款」「每款必须单独扫」；
 #   3. 不替用户判断谁是「小白」，语气与 README / 界面保持一致。
-README_TXT = """ResinLoop v{VERSION} · 日常巡查 —— 小白使用说明
+README_TXT = """HopOn v{VERSION} · 日常巡查 —— 小白使用说明
 ================================================
 
 每天定时查一次游戏日常进度，没做完就推送到手机（微信 / QQ）。
@@ -185,7 +185,7 @@ README_TXT = """ResinLoop v{VERSION} · 日常巡查 —— 小白使用说明
 整个文件夹拷到哪台 64 位 Windows 10/11 电脑都能直接用。
 
 
-第一步：双击 ResinLoop.exe
+第一步：双击 HopOn.exe
 ------------------------------------------------
 会弹出一个独立窗口（右下角同时出现托盘图标）。
 
@@ -298,9 +298,9 @@ def verify_shell_fresh() -> None:
         sys.exit(1)
 
     # publish 过但没拷回根层：根 exe 还是上一次的
-    published = SHELL_DIR / "publish" / "ResinLoop.exe"
+    published = SHELL_DIR / "publish" / "HopOn.exe"
     if published.exists() and published.stat().st_mtime > exe_mtime:
-        print("[FATAL] shell/publish/ResinLoop.exe 比仓库根的壳新 —— 没跑 shell\\build.ps1 的复制步骤")
+        print("[FATAL] shell/publish/HopOn.exe 比仓库根的壳新 —— 没跑 shell\\build.ps1 的复制步骤")
         print(f"        publish  : {fmt(published.stat().st_mtime)}")
         print(f"        根 exe   : {fmt(exe_mtime)}")
         sys.exit(1)
@@ -433,7 +433,7 @@ def build_engine(out_engine: Path) -> None:
     daemon_path.write_text(
         src.replace(
             needle,
-            "# exe 发行版：托盘由 C# 壳负责（ResinLoop.exe --tray），daemon 恒为 headless\n"
+            "# exe 发行版：托盘由 C# 壳负责（HopOn.exe --tray），daemon 恒为 headless\n"
             "    return run_daemon(use_tray=False)",
         ),
         encoding="utf-8",
@@ -449,14 +449,14 @@ def verify_version_consistency() -> None:
     两处不同步的后果很隐蔽：zip 名和界面写的是新版本，而 exe 属性页、资源管理器
     里显示的是旧版本 —— v2.1.2 构建时就差点这样发出去。
     """
-    csproj = ROOT / "shell" / "ResinLoop.csproj"
+    csproj = ROOT / "shell" / "HopOn.csproj"
     text = csproj.read_text(encoding="utf-8")
     match = re.search(r"<Version>\s*([^<\s]+)\s*</Version>", text)
     if not match:
-        raise SystemExit("[FATAL] shell/ResinLoop.csproj 里找不到 <Version>")
+        raise SystemExit("[FATAL] shell/HopOn.csproj 里找不到 <Version>")
     if match.group(1) != VERSION:
         raise SystemExit(
-            f"[FATAL] 版本号不一致：ResinLoop.csproj={match.group(1)} / core/__init__.py={VERSION}"
+            f"[FATAL] 版本号不一致：HopOn.csproj={match.group(1)} / core/__init__.py={VERSION}"
         )
     print(f"[OK] 版本号一致：{VERSION}")
 
@@ -470,7 +470,7 @@ def main() -> None:
     OUT.mkdir(parents=True)
 
     # 1) 壳四件（exe + 2 个托管库 + 原生 loader）
-    shutil.copy2(_require(SHELL_EXE, "C# 壳 ResinLoop.exe（先跑 shell\\build.ps1）"), OUT / "ResinLoop.exe")
+    shutil.copy2(_require(SHELL_EXE, "C# 壳 HopOn.exe（先跑 shell\\build.ps1）"), OUT / "HopOn.exe")
     for name in SHELL_COMPANIONS:
         shutil.copy2(_require(ROOT / name, name), OUT / name)
 

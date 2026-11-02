@@ -1,6 +1,6 @@
 @echo off
 rem ============================================================
-rem  ResinLoop dev launcher - runs the WORKING TREE code with the
+rem  HopOn dev launcher - runs the WORKING TREE code with the
 rem  system Python, and never leaves a black console window behind.
 rem
 rem  Usage (double-click = default mode):
@@ -8,12 +8,12 @@ rem    dev.bat            desktop window   (pythonw app.py)
 rem    dev.bat web        browser mode     (pythonw login_ui.py)
 rem    dev.bat daemon     daemon only      (pythonw daemon.py)
 rem    dev.bat all        daemon + desktop window
-rem    dev.bat exe        sync code into engine\ then start ResinLoop.exe
+rem    dev.bat exe        sync code into engine\ then start HopOn.exe
 rem    dev.bat sync       sync code into engine\ only (no launch)
 rem    dev.bat check      print resolved paths, launch nothing
 rem
 rem  Two layers, do not mix them up:
-rem    ResinLoop.exe is only the C# shell. All business code lives in
+rem    HopOn.exe is only the C# shell. All business code lives in
 rem    engine\ (portable python + *.py + ui\). So you do NOT need to
 rem    pack a zip to test the exe: "dev.bat exe" copies the current
 rem    working tree into engine\ and starts the shell.
@@ -33,7 +33,7 @@ rem    Keep this file ASCII-only (cmd.exe codepage safety).
 rem ============================================================
 setlocal
 chcp 65001 >nul 2>&1
-title ResinLoop dev
+title HopOn dev
 
 set "DIR=%~dp0"
 if "%DIR:~-1%"=="\" set "DIR=%DIR:~0,-1%"
@@ -64,7 +64,7 @@ if /i "%~1"=="check" (
     echo python  : %PYEXE%
     echo workdir : %DIR%
     echo arg     : [%~1]
-    echo shell   : %DIR%\ResinLoop.exe
+    echo shell   : %DIR%\HopOn.exe
     echo engine  : %DIR%\engine\python\pythonw.exe
     exit /b 0
 )
@@ -101,11 +101,11 @@ if errorlevel 1 goto :sync_fail
 exit /b 0
 
 :do_exe
-if not exist "ResinLoop.exe" goto :no_exe
+if not exist "HopOn.exe" goto :no_exe
 if not exist "engine\python\pythonw.exe" goto :no_engine
 "%PYEXE%" "_dev_sync_engine.py"
 if errorlevel 1 goto :sync_fail
-start "" "%DIR%\ResinLoop.exe"
+start "" "%DIR%\HopOn.exe"
 exit /b 0
 
 :no_dir
@@ -115,13 +115,13 @@ exit /b 1
 
 :bad_tree
 echo [ERROR] app.py not found in %DIR%
-echo         run dev.bat from the ResinLoop source folder.
+echo         run dev.bat from the HopOn source folder.
 pause
 exit /b 1
 
 :no_exe
 echo.
-echo [ERROR] ResinLoop.exe not found in %DIR%
+echo [ERROR] HopOn.exe not found in %DIR%
 echo         Build the shell first: shell\build.ps1 (see its header).
 echo.
 pause
@@ -131,7 +131,7 @@ exit /b 1
 echo.
 echo [ERROR] engine\python\pythonw.exe not found.
 echo         The portable engine is missing: run _build_release.py once,
-echo         or copy engine\ from release\ResinLoop_v2.1\.
+echo         or copy engine\ from release\HopOn_v2.1\.
 echo.
 pause
 exit /b 1

@@ -1,9 +1,9 @@
-﻿# ResinLoop 壳构建：dotnet publish（不合并）+ 全新目录首启门禁
+﻿# HopOn 壳构建：dotnet publish（不合并）+ 全新目录首启门禁
 #
 # 用法：powershell -ExecutionPolicy Bypass -File shell\build.ps1 [-SkipGate]
 #
 # 产物（仓库根，四件）：
-#   ResinLoop.exe
+#   HopOn.exe
 #   Microsoft.Web.WebView2.Core.dll
 #   Microsoft.Web.WebView2.WinForms.dll
 #   WebView2Loader.dll
@@ -32,7 +32,7 @@ $root = Split-Path -Parent $shellDir
 $publishDir = Join-Path $shellDir "publish"
 
 $shellFiles = @(
-    "ResinLoop.exe",
+    "HopOn.exe",
     "Microsoft.Web.WebView2.Core.dll",
     "Microsoft.Web.WebView2.WinForms.dll",
     "WebView2Loader.dll"
@@ -43,7 +43,7 @@ Write-Host "==> dotnet publish"
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失败（exit $LASTEXITCODE）" }
 
 # 清掉上一轮遗留：旧的合并版 exe 与 Wpf.dll 绝不能混进发行包
-foreach ($name in ($shellFiles + @("Microsoft.Web.WebView2.Wpf.dll", "ResinLoop.exe.config"))) {
+foreach ($name in ($shellFiles + @("Microsoft.Web.WebView2.Wpf.dll", "HopOn.exe.config"))) {
     $stale = Join-Path $root $name
     if (Test-Path $stale) { Remove-Item $stale -Force -Confirm:$false }
 }
@@ -57,7 +57,7 @@ foreach ($name in $shellFiles) {
 }
 
 # 字节冒烟：托盘「立即巡检」文案必须真的编进去了（防拿旧产物充数）
-$bytes = [System.IO.File]::ReadAllBytes((Join-Path $root "ResinLoop.exe"))
+$bytes = [System.IO.File]::ReadAllBytes((Join-Path $root "HopOn.exe"))
 $needle = [System.Text.Encoding]::Unicode.GetBytes("立即巡检")
 $hit = $false
 for ($i = 0; $i -le $bytes.Length - $needle.Length; $i++) {
@@ -129,7 +129,7 @@ try {
     & robocopy $engineSrc (Join-Path $gate "engine") /E /XD logs __pycache__ /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "robocopy 复制 engine 失败（exit $LASTEXITCODE）" }
 
-    $proc = Start-Process -FilePath (Join-Path $gate "ResinLoop.exe") `
+    $proc = Start-Process -FilePath (Join-Path $gate "HopOn.exe") `
                           -ArgumentList "--port", $port, "--allow-multi" -WorkingDirectory $gate -PassThru
 
     $ready = $false
@@ -148,9 +148,9 @@ try {
         $proc.Refresh()
         if ($proc.HasExited) { throw ("壳在就绪后崩溃，ExitCode=0x{0:X8}" -f $proc.ExitCode) }
         $title = $proc.MainWindowTitle
-        if ($title -match "ResinLoop") { break }
+        if ($title -match "HopOn") { break }
     }
-    if ($title -notmatch "ResinLoop") { throw ("窗口标题异常：'" + $title + "'") }
+    if ($title -notmatch "HopOn") { throw ("窗口标题异常：'" + $title + "'") }
 
     foreach ($path in @("/api/env", "/api/device", "/api/live", "/api/schedule")) {
         $c = & curl.exe -s -o NUL -w "%{http_code}" --noproxy "*" --max-time 6 ("http://127.0.0.1:$port" + $path)

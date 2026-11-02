@@ -1,6 +1,6 @@
 @echo off
 rem ============================================================
-rem  ResinLoop launcher (source mode) - zero lingering console.
+rem  HopOn launcher (source mode) - zero lingering console.
 rem
 rem  What changed vs the old version, and why:
 rem   * The old file relaunched itself as `start "" /min "%~f0" quiet`
@@ -21,7 +21,7 @@ rem   * Keep this file ASCII-only (cmd.exe codepage safety).
 rem ============================================================
 setlocal
 chcp 65001 >nul 2>&1
-title ResinLoop
+title HopOn
 
 set "DIR=%~dp0"
 if "%DIR:~-1%"=="\" set "DIR=%DIR:~0,-1%"

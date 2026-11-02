@@ -40,7 +40,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 #: 注册表路径（当前用户，无需管理员权限）
 RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 #: 值名。同名值只会有一条，重复写入等价于覆盖。
-VALUE_NAME = "ResinLoop"
+VALUE_NAME = "HopOn"
+#: 改名前的旧值名（2026-11 起废弃）。enable() 写新键时顺手清理，防止朋友机器上
+#: 旧键残留造成双自启。
+LEGACY_VALUE_NAME = "ResinLoop"
 #: 自启的入口脚本（守护进程 + 托盘，无窗口）
 TARGET_SCRIPT = "daemon.py"
 
@@ -74,7 +77,13 @@ def target_path() -> Path:
 
 def shell_exe_path() -> Optional[Path]:
     """exe 发行版壳的路径：engine 里在上级目录，源码仓里就在项目根。"""
-    for cand in (BASE_DIR.parent / "ResinLoop.exe", BASE_DIR / "ResinLoop.exe"):
+    # HopOn 优先；改名过渡期的老壳 ResinLoop.exe 作为回退（一个版本后移除）
+    for cand in (
+        BASE_DIR.parent / "HopOn.exe",
+        BASE_DIR / "HopOn.exe",
+        BASE_DIR.parent / "ResinLoop.exe",
+        BASE_DIR / "ResinLoop.exe",
+    ):
         if cand.exists():
             return cand
     return None
@@ -83,7 +92,7 @@ def shell_exe_path() -> Optional[Path]:
 def build_command() -> str:
     """拼出写进注册表的完整命令行（路径都带引号）。
 
-    exe 发行版优先：``ResinLoop.exe --tray`` —— 壳负责静默启动、托盘常驻、
+    exe 发行版优先：``HopOn.exe --tray`` —— 壳负责静默启动、托盘常驻、
     引擎托管与内核级收尸；脚本模式回落 pythonw daemon.py。
     stale 检测按字符串比对，两种形态互切后界面会提示重开一次开关。
     """
@@ -139,6 +148,7 @@ def enable() -> Dict[str, Any]:
         logger.exception("写入开机自启失败")
         return {"ok": False, "message": f"写入注册表失败：{exc}"}
 
+    _remove_legacy_value()   # 改名迁移：清掉旧 ResinLoop 自启键，防双自启
     logger.info("已开启开机自启：%s", command)
     return {
         "ok": True,
@@ -168,6 +178,22 @@ def disable() -> Dict[str, Any]:
 
     logger.info("已关闭开机自启")
     return {"ok": True, "message": "已关闭：下次登录不会自动启动", "value": None}
+
+
+def _remove_legacy_value() -> None:
+    """删除改名前的旧 ResinLoop 自启键（幂等：不存在 / 失败都不影响主流程）。"""
+    import winreg
+
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_SET_VALUE
+        ) as key:
+            winreg.DeleteValue(key, LEGACY_VALUE_NAME)
+        logger.info("已清理旧版自启键 %s（改名迁移）", LEGACY_VALUE_NAME)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        logger.warning("旧版自启键清理失败（不影响本次写入）：%s", exc)
 
 
 # --------------------------------------------------------------------------- #

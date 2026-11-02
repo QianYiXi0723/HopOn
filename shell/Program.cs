@@ -2,7 +2,7 @@ using System;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace ResinLoop
+namespace HopOn
 {
     internal static class Program
     {
@@ -15,8 +15,8 @@ namespace ResinLoop
             // 门禁/自动化用 --allow-multi 起探针实例，否则用户开着壳就永远构建不过。
             bool allowMulti = args != null && Array.IndexOf(args, "--allow-multi") >= 0;
             string mutexName = allowMulti
-                ? "ResinLoop.Shell.Mutex.Probe." + System.Diagnostics.Process.GetCurrentProcess().Id
-                : "ResinLoop.Shell.Mutex";
+                ? "HopOn.Shell.Mutex.Probe." + System.Diagnostics.Process.GetCurrentProcess().Id
+                : "HopOn.Shell.Mutex";
             bool createdNew;
             using (var mutex = new Mutex(true, mutexName, out createdNew))
             {

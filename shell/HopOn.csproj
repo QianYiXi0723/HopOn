@@ -8,10 +8,10 @@
     <Prefer32Bit>false</Prefer32Bit>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <LangVersion>latest</LangVersion>
-    <RootNamespace>ResinLoop</RootNamespace>
-    <AssemblyTitle>ResinLoop · 日常巡查（桌面壳）</AssemblyTitle>
-    <Product>ResinLoop</Product>
-    <Description>ResinLoop 桌面壳：静默托管 engine/ 便携 Python 引擎，WebView2 加载本地控制台，托盘常驻。</Description>
+    <RootNamespace>HopOn</RootNamespace>
+    <AssemblyTitle>HopOn · 日常巡查（桌面壳）</AssemblyTitle>
+    <Product>HopOn</Product>
+    <Description>HopOn 桌面壳：静默托管 engine/ 便携 Python 引擎，WebView2 加载本地控制台，托盘常驻。</Description>
     <Version>2.4.0</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- PerMonitorV2：不声明的话进程是 DPI-unaware，125% 缩放下窗口只剩 784 逻辑宽且整窗位图拉伸 -->

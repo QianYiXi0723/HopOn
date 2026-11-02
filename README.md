@@ -1,6 +1,6 @@
-# ResinLoop · 游戏每日任务未完成提醒
+# HopOn · 游戏每日任务未完成提醒
 
-> **ResinLoop（日常巡查）**：名字取自「树脂循环」——原神的树脂、崩铁的开拓力、
+> **HopOn（日常巡查）**：名字取自「树脂循环」——原神的树脂、崩铁的开拓力、
 > 绝区零的电量，这些每天重置一次的体力就是「日常」本身，也是它每一轮要巡检的东西。
 
 只做「查询 → 判断 → 提醒」三件事：**不签到、不领奖励、不修改任何游戏数据**。
@@ -26,7 +26,7 @@
   `%TEMP%` 空目录实跑，断言窗口标题、`/api/env`、`/api/device`、首启自动生成身份文件、
   页面 DOM 已渲染、页面内 `fetch('/api/*')` 真的走通。
   上面两个 bug 都只在「无历史产物、无身份文件」的全新目录复现，旧冒烟永远绿。
-- **页面不再依赖本地 HTTP 服务**：壳接管 `https://resinloop.local/*`，`index.html`、
+- **页面不再依赖本地 HTTP 服务**：壳接管 `https://hopon.local/*`，`index.html`、
   `app.js`、`style.css`、图标全部从 `engine\ui` 与 `engine\static` 直接读盘；
   页面发出的 `/api/*` 由壳转发到引擎端口（显式 `Proxy = null` 绕过系统代理）。
   窗口出现得比引擎更早，也不再受端口与代理影响。浏览器/`app.py` 路径仍走原来的 HTTP 服务。
@@ -886,7 +886,7 @@ python main.py --force-alert   :: 强制发一条，验证推送通道本身通�
 ### 5.6 桌面控制台（独立窗口）
 
 双击 `start.bat`，或命令行 `python app.py`，会弹出一个**独立的应用窗口**——
-标题「ResinLoop · 日常巡查」，初始 980×800，可自由缩放（最小 820×620），
+标题「HopOn · 日常巡查」，初始 980×800，可自由缩放（最小 820×620），
 没有地址栏、没有标签页，跟原生软件一样。
 
 技术上是两层：`login_ui.py` 继续提供网页控制台（`http.server`，只监听 127.0.0.1），
@@ -1153,7 +1153,7 @@ POST /api/activities/restore  {}          # 底部「恢复全部」
 
 | 层 | 是什么 | 改完要做什么 |
 |---|---|---|
-| `ResinLoop.exe` | 只是 C# 外壳：窗口 + WebView2 + 托盘 + 端口探测 | 只有改 `shell/*.cs` 才需要重新编译 |
+| `HopOn.exe` | 只是 C# 外壳：窗口 + WebView2 + 托盘 + 端口探测 | 只有改 `shell/*.cs` 才需要重新编译 |
 | `engine/` | 真正的程序：便携 Python + `*.py` + `ui/` | 重启进程即可，**不需要重新打包** |
 
 所以三种用法互不影响：
@@ -1161,15 +1161,15 @@ POST /api/activities/restore  {}          # 底部「恢复全部」
 | 场景 | 入口 | 说明 |
 |---|---|---|
 | 写代码 | `dev.bat`（默认桌面窗口）、`dev.bat web`、`dev.bat all` | 跑工作树源码；改 UI 刷新页面即可，改 `.py` 重启进程 |
-| 日常使用 | `start.bat`，或双击 `ResinLoop.exe` | 前者源码 + 守护进程 + 依赖自检；后者是发行形态，用 `engine/python` 便携解释器 |
+| 日常使用 | `start.bat`，或双击 `HopOn.exe` | 前者源码 + 守护进程 + 依赖自检；后者是发行形态，用 `engine/python` 便携解释器 |
 | 发版 | `_build_release.py` | 只在要把 zip 发给别人时才跑 |
 
-**测 exe 形态不需要打包**：根目录的 `ResinLoop.exe` 读同级 `engine/`，所以只要把工作树
+**测 exe 形态不需要打包**：根目录的 `HopOn.exe` 读同级 `engine/`，所以只要把工作树
 同步进去就能起壳：
 
 ```bash
 dev.bat sync     # 只同步（改完代码跑这个，不启动）
-dev.bat exe      # 同步 + 启动 ResinLoop.exe
+dev.bat exe      # 同步 + 启动 HopOn.exe
 ```
 
 同步脚本 `_dev_sync_engine.py` 与 `_build_release.py` 取同一份清单（`login_ui.py` /
@@ -1177,7 +1177,7 @@ dev.bat exe      # 同步 + 启动 ResinLoop.exe
 无托盘；**不会覆盖** `engine/config.json`、`engine/logs/`、`engine/data/`、`engine/python/`。
 只想看有没有漂移：`python _dev_sync_engine.py --check`（有差异返回 1）。
 
-必须重新编译壳的场合只有：`shell/MainForm.cs`、`Program.cs`、`ResinLoop.csproj`（窗口行为、
+必须重新编译壳的场合只有：`shell/MainForm.cs`、`Program.cs`、`HopOn.csproj`（窗口行为、
 托盘、端口探测、图标、版本号）。业务逻辑、页面、接口一律不碰壳。
 
 ---

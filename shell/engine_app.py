@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""ResinLoop 引擎入口（exe 发行版专用）——纯本地 HTTP 服务，无任何窗口。
+"""HopOn 引擎入口（exe 发行版专用）——纯本地 HTTP 服务，无任何窗口。
 
-由 C# 壳（shell/ResinLoop.exe）以 ``pythonw.exe engine/app.py`` 静默拉起：
+由 C# 壳（shell/HopOn.exe）以 ``pythonw.exe engine/app.py`` 静默拉起：
     1. 若目标端口已有控制台在跑，直接待命退出（壳会复用现有实例）；
     2. 启动 login_ui.serve（控制台页面 + 全部 /api + 可选的 APK 局域网下载服务）；
     3. 原地阻塞，直到被壳结束进程树（或 Ctrl+C）。
@@ -51,7 +51,7 @@ def setup_logging() -> None:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="ResinLoop · 本地引擎（无界面）")
+    parser = argparse.ArgumentParser(description="HopOn · 本地引擎（无界面）")
     parser.add_argument("--port", type=int, default=8765, help="控制台端口，默认 8765")
     parser.add_argument(
         "--no-lan-tools", action="store_true",

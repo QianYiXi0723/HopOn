@@ -3,9 +3,9 @@
 
 背景
 ----
-ResinLoop.exe 只是 C# 壳，真正的业务代码全在 engine/ 里（engine/python 便携
+HopOn.exe 只是 C# 壳，真正的业务代码全在 engine/ 里（engine/python 便携
 解释器 + engine/*.py + engine/ui）。所以改代码不需要重新编译 exe，只要把改动
-同步进 engine/，再启动 ResinLoop.exe 即可。
+同步进 engine/，再启动 HopOn.exe 即可。
 
 打包脚本 _build_release.py 会从工作树重新组装一份 release/*/engine；本脚本做
 的是同一件事，但落在本地 engine/ 上，并且刻意不碰：
@@ -35,7 +35,7 @@ ENTRY_TEMPLATE = ROOT / "shell" / "engine_app.py"
 PY_FILES = ("login_ui.py", "main.py", "daemon.py")
 DAEMON_NEEDLE = "return run_daemon(use_tray=not args.no_tray)"
 DAEMON_PATCHED = (
-    "# exe 发行版：托盘由 C# 壳负责（ResinLoop.exe --tray），daemon 恒为 headless\n"
+    "# exe 发行版：托盘由 C# 壳负责（HopOn.exe --tray），daemon 恒为 headless\n"
     "    return run_daemon(use_tray=False)"
 )
 
@@ -89,7 +89,7 @@ def main() -> int:
     if not PYTHONW.exists():
         print(f"[FATAL] 缺少便携解释器：{PYTHONW}")
         print("        engine/python 是发行包的核心，先跑一次 _build_release.py")
-        print("        或从 release/ResinLoop_v2.0/engine 整目录拷过来。")
+        print("        或从 release/HopOn_v2.0/engine 整目录拷过来。")
         return 2
     if not ENTRY_TEMPLATE.exists():
         print(f"[FATAL] 缺少引擎入口模板：{ENTRY_TEMPLATE}")
