@@ -41,7 +41,7 @@ if str(BASE_DIR) not in sys.path:
 LOGS_DIR = BASE_DIR / "logs"
 LOG_FILE = LOGS_DIR / "desktop.log"
 
-WINDOW_TITLE = "ResinLoop · 日常巡查"
+WINDOW_TITLE = "HopOn · 日常巡查"
 # 与壳（shell/MainForm.cs wantW/wantH）保持同一默认值：980 落在页面 1000px 断点下方，
 # 走单列紧凑布局。两个入口尺寸不一致时，同一份 UI 会呈现成两套信息架构。
 WINDOW_WIDTH = 980
@@ -239,7 +239,7 @@ def _keep_alive(console: Dict[str, Any]) -> None:
 def main(argv: Optional[list] = None) -> int:
     _silence_std_streams()
 
-    parser = argparse.ArgumentParser(description="ResinLoop · 桌面控制台")
+    parser = argparse.ArgumentParser(description="HopOn · 桌面控制台")
     parser.add_argument("--port", type=int, default=8765, help="控制台端口，默认 8765")
     parser.add_argument(
         "--browser",

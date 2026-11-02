@@ -95,8 +95,8 @@ try:
     r = requests.get("http://127.0.0.1:%d/" % info["port"], timeout=8,
                      proxies={"http": None, "https": None})
     html = r.text
-    check("T1.1 临时服务返回页面 200 且含 ResinLoop",
-          r.status_code == 200 and "ResinLoop" in html)
+    check("T1.1 临时服务返回页面 200 且含 HopOn",
+          r.status_code == 200 and "HopOn" in html)
 
     # ---- 首屏静态断言：圆点 border-radius / 各网格 grid-template-columns ----
     check("T1.2 圆点 .dot 含 border-radius:50%",

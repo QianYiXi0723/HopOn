@@ -852,7 +852,7 @@ def run_test_push(payload: Dict[str, Any]) -> Dict[str, Any]:
         f"发送时间：{now}\n"
         "来源：登录界面 · 通知绑定 · 测试推送"
     )
-    results = push_all(ready, "ResinLoop · 测试推送", body)
+    results = push_all(ready, "HopOn · 测试推送", body)
     rows = [
         {
             "channel": r.channel,
@@ -1682,80 +1682,80 @@ def live_status(force: bool = False) -> Dict[str, Any]:
 
         statuses = collect_statuses(cfg)
 
-    # 风控记账：本轮命中的 1034/10041 写入冷却账本（6 小时内不再实时查询该游戏）
-    _live_risk_record([(s.game_id, s.error) for s in statuses if not s.ok and s.error])
+        # 风控记账：本轮命中的 1034/10041 写入冷却账本（6 小时内不再实时查询该游戏）
+        _live_risk_record([(s.game_id, s.error) for s in statuses if not s.ok and s.error])
 
-    games: List[Dict[str, Any]] = []
-    for status in statuses:
-        want = RESOURCE_TASK_NAMES.get(status.game_id)
-        resource: Optional[Dict[str, Any]] = None
-        for task in status.tasks:
-            if task.name != want:
-                continue
-            current, maximum = _split_progress(task.progress)
-            percent = None
-            if current is not None and maximum:
-                percent = max(0, min(100, round(current * 100 / maximum)))
-            resource = {
-                "name": task.name,
-                "progress": task.progress,
-                "current": current,
-                "maximum": maximum,
-                "percent": percent,
-                # 距满秒数（API 恢复字段经 normalize_recover_seconds 统一化；无则 None）
-                "recover": task.recover_seconds,
-            }
-            break
-        games.append({
-            "game": status.game_id,
-            "game_name": status.game_name,
-            "nickname": status.nickname,
-            "ok": status.ok,
-            "finished": status.finished,
-            "error": status.error or "",
-            # 非空 = 数据待更新（如当天没进过游戏，接口只给上次登录快照）；
-            # 此时 ok 仍为 True、finished 必为 False，前端画中性提示而不是"失败"
-            "stale": status.stale or "",
-            # 非空 = 这个账号下没这款游戏的角色（勾选并扫码了但没玩过）；
-            # 同样不是失败，前端画灰色「未创建角色」，建号后自动生效
-            "no_account": status.no_account or "",
-            "resource": resource,
-            # 判定任务明细（不含"仅展示"的资源项）：供迷你卡显示"委托 0/4"级进度
-            "tasks": [
-                {"name": t.name, "done": bool(t.done), "progress": t.progress or ""}
-                for t in status.counted_tasks
-            ],
-        })
+        games: List[Dict[str, Any]] = []
+        for status in statuses:
+            want = RESOURCE_TASK_NAMES.get(status.game_id)
+            resource: Optional[Dict[str, Any]] = None
+            for task in status.tasks:
+                if task.name != want:
+                    continue
+                current, maximum = _split_progress(task.progress)
+                percent = None
+                if current is not None and maximum:
+                    percent = max(0, min(100, round(current * 100 / maximum)))
+                resource = {
+                    "name": task.name,
+                    "progress": task.progress,
+                    "current": current,
+                    "maximum": maximum,
+                    "percent": percent,
+                    # 距满秒数（API 恢复字段经 normalize_recover_seconds 统一化；无则 None）
+                    "recover": task.recover_seconds,
+                }
+                break
+            games.append({
+                "game": status.game_id,
+                "game_name": status.game_name,
+                "nickname": status.nickname,
+                "ok": status.ok,
+                "finished": status.finished,
+                "error": status.error or "",
+                # 非空 = 数据待更新（如当天没进过游戏，接口只给上次登录快照）；
+                # 此时 ok 仍为 True、finished 必为 False，前端画中性提示而不是"失败"
+                "stale": status.stale or "",
+                # 非空 = 这个账号下没这款游戏的角色（勾选并扫码了但没玩过）；
+                # 同样不是失败，前端画灰色「未创建角色」，建号后自动生效
+                "no_account": status.no_account or "",
+                "resource": resource,
+                # 判定任务明细（不含"仅展示"的资源项）：供迷你卡显示"委托 0/4"级进度
+                "tasks": [
+                    {"name": t.name, "done": bool(t.done), "progress": t.progress or ""}
+                    for t in status.counted_tasks
+                ],
+            })
 
-    # 冷却中的游戏本轮没查：从磁盘缓存回放上次结果（标 cooled），没有就诚实占位
-    if cooled:
-        disk = _live_disk_read()
-        disk_games = (
-            {g.get("game"): g for g in (disk.get("games") or []) if isinstance(g, dict)}
-            if disk else {}
-        )
-        names = _game_display_map()
-        present = {g.get("game") for g in games}
-        for gid in sorted(cooled):
-            if gid in present:
-                continue
-            old = disk_games.get(gid)
-            entry = dict(old) if isinstance(old, dict) else {
-                "game": gid, "game_name": names.get(gid, gid), "placeholder": True,
-            }
-            entry["cooled"] = True
-            games.append(entry)
+        # 冷却中的游戏本轮没查：从磁盘缓存回放上次结果（标 cooled），没有就诚实占位
+        if cooled:
+            disk = _live_disk_read()
+            disk_games = (
+                {g.get("game"): g for g in (disk.get("games") or []) if isinstance(g, dict)}
+                if disk else {}
+            )
+            names = _game_display_map()
+            present = {g.get("game") for g in games}
+            for gid in sorted(cooled):
+                if gid in present:
+                    continue
+                old = disk_games.get(gid)
+                entry = dict(old) if isinstance(old, dict) else {
+                    "game": gid, "game_name": names.get(gid, gid), "placeholder": True,
+                }
+                entry["cooled"] = True
+                games.append(entry)
 
-    payload = {
-        "ok": True,
-        "cached": False,
-        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "games": games,
-    }
-    _LIVE_CACHE["at"] = time.time()
-    _LIVE_CACHE["payload"] = payload
-    _live_disk_write(payload)
-    return _annotate_live_cool(payload)
+        payload = {
+            "ok": True,
+            "cached": False,
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "games": games,
+        }
+        _LIVE_CACHE["at"] = time.time()
+        _LIVE_CACHE["payload"] = payload
+        _live_disk_write(payload)
+        return _annotate_live_cool(payload)
 
 
 @_serialized_write
@@ -2849,7 +2849,7 @@ def console_alive(port: int = 8765, timeout: float = 1.5) -> bool:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="ResinLoop · 本地控制台")
+    parser = argparse.ArgumentParser(description="HopOn · 本地控制台")
     parser.add_argument("--port", type=int, default=8765, help="监听端口，默认 8765")
     parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     parser.add_argument(
@@ -2881,7 +2881,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     print("=" * 58)
-    print("  ResinLoop · 控制台已启动")
+    print("  HopOn · 控制台已启动")
     print(f"  控制台  ：{info['url']}")
     if info["tools"]:
         print(f"  APK 下载：{info['tools']['url']}（手机连同一 WiFi 可访问）")
