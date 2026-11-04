@@ -2895,9 +2895,22 @@ function renderHeatmap(d){
         tip = row.label + ' · ' + (c.finished ? '已完成'
             : '未完成 ' + (c.unfinished_tasks || 0) + ' 项');
       } else if (row.is_today) {
-        cls = 'na wait';
-        mark = '⋯';
-        tip = row.label + ' · 等待今日巡检';
+        /* 今日列三态（P2）：检查失败/快照过期不再伪装成「等待巡检」 */
+        if (c && (c.checks || 0) > 0 && c.err) {
+          cls = 'na';
+          mark = '✗';
+          tip = row.label + ' · 检查失败：' + c.err;
+        } else if (c && (c.checks || 0) > 0 && (c.stale || c.noacc)) {
+          cls = 'na';
+          mark = '⋯';
+          tip = row.label + ' · ' + (c.stale || '账号下未创建角色');
+        } else {
+          cls = 'na wait';
+          mark = '⋯';
+          tip = row.label + ' · 等待今日巡检';
+        }
+      } else if (c && (c.checks || 0) > 0 && c.err) {
+        tip = row.label + ' · 检查失败：' + c.err;
       } else {
         tip = row.label + ' · 无数据';
       }
@@ -2956,6 +2969,37 @@ document.getElementById('btn-hist-refresh').addEventListener('click', function()
     .then(function(){ return loadHistory(); })
     .catch(function(err){ console.error('刷新报表失败', err); })
     .then(function(){ btn.disabled = false; btn.textContent = '刷新'; });
+});
+
+/* 立即巡检（2026-11-05 P2）：让 daemon 跑一轮并写历史，绑号当天不用等到
+   明天第一个时间点才见报表。成功后 12 秒自动重拉一次报表（daemon 0.5s 内
+   响应 .run_now 标记，一轮并行查询约 6-15s）。 */
+document.getElementById('btn-run-now').addEventListener('click', function(){
+  const btn = this;
+  if (!btn || btn.disabled) return;              // 防连点
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+  fetch('/api/daemon/run-now', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(res){
+      btn.disabled = false; btn.textContent = '立即巡检';
+      if (res && res.ok) {
+        kpiSet('k-next-sub', '已触发巡检，约十几秒后自动更新报表');
+        setTimeout(function(){
+          Promise.resolve(loadHistory()).catch(function(){});
+        }, 12000);
+      } else {
+        kpiSet('k-next-sub', (res && res.message) || '触发失败，请查看运行日志');
+      }
+    })
+    .catch(function(err){
+      btn.disabled = false; btn.textContent = '立即巡检';
+      console.error('立即巡检失败', err);
+      kpiSet('k-next-sub', '触发失败：' + err);
+    });
 });
 
 /* ========================= 主题（三态：跟随系统 / 深色 / 浅色） ========================= */
@@ -3235,13 +3279,44 @@ function renderKpiToday(h){
     kpiSet('k-today-sub', '没有启用任何游戏');
     return;
   }
+  if (!known) {
+    /* 无任何有效数据：不假装进度（0/5 会被读成「玩了但没做」） */
+    el.textContent = '–';
+    el.className = 'kpi-value value';
+    setUrgency('k-today', '');
+    refreshKpiKeep();
+    /* 三态区分（2026-11-05 P2）：检查过但失败 ≠ 从未检查。
+       /api/history 现为 known=false 的格子保留 checks/last 与
+       err/stale/noacc 尾巴，这里据此分流 */
+    let checkedN = 0, failedN = 0, staleN = 0;
+    tracked.forEach(function(gid){
+      const c = cells[gid];
+      if (c && (c.checks || 0) > 0) {
+        checkedN++;
+        if (c.err) failedN++;
+        else if (c.stale || c.noacc) staleN++;
+      }
+    });
+    if (checkedN === 0) {
+      kpiSet('k-today-sub', '今日还没检查过，查询中…');
+    } else {
+      const parts = [];
+      if (failedN) parts.push(failedN + ' 款检查失败');
+      if (staleN) parts.push(staleN + ' 款未进游戏/未建号');
+      const other = checkedN - failedN - staleN;
+      if (other > 0) parts.push(other + ' 款暂无当日数据');
+      kpiSet('k-today-sub', parts.length
+        ? parts.join('，') + '——账号数据未就绪'
+        : '今日还没检查过，查询中…');
+    }
+    return;
+  }
   el.textContent = done + '/' + total;
-  el.className = 'kpi-value value' + (known && done !== total ? ' warn' : '');
+  el.className = 'kpi-value value' + (done !== total ? ' warn' : '');
   /* 0 完成 = critical；部分完成 = warn；全部完成 = 无紧迫（紧迫度只看合并结果，不碰统计） */
-  setUrgency('k-today', !known ? '' : (done === total ? '' : (done > 0 ? 'warn' : 'critical')));
+  setUrgency('k-today', done === total ? '' : (done > 0 ? 'warn' : 'critical'));
   refreshKpiKeep();
-  kpiSet('k-today-sub', !known ? '今日还没检查过，查询中…'
-    : (done === total ? '今日全部完成' : (total - done) + ' 款未完成'));
+  kpiSet('k-today-sub', done === total ? '今日全部完成' : (total - done) + ' 款未完成');
 }
 
 /* 凭证健康：已绑定凭证的账号 / 启用账号（口径=启用，与今日完成 KPI 同分母；

@@ -268,6 +268,16 @@ def record(report: Any, *, at: Optional[datetime] = None) -> Dict[str, Any]:
                 node["finished"] = True
             node["known"] = True
             node["unfinished_tasks"] = len(getattr(status, "unfinished_tasks", []) or [])
+            for k in ("err", "stale", "noacc"):
+                node.pop(k, None)   # 当天已拿到有效数据，清掉此前的失败/过期尾巴
+        elif getattr(status, "error", None):
+            # 本次没拿到当日数据：留一个「为什么」的尾巴，报表页据此区分
+            # 检查失败 / 快照过期 / 未创建角色（2026-11-05 P2 三态）
+            node["err"] = str(getattr(status, "error"))[:120]
+        elif getattr(status, "stale", None):
+            node["stale"] = str(getattr(status, "stale"))[:80]
+        elif getattr(status, "no_account", None):
+            node["noacc"] = True
 
     days = _prune(days)
     data["days"] = days
@@ -568,7 +578,24 @@ def _summary_unsafe(
                 if not finished:
                     all_done = False
             else:
-                cells[game] = {"finished": False, "known": False, "checks": 0, "last": ""}
+                nd = node if isinstance(node, dict) else None
+                cell = {
+                    "finished": False,
+                    "known": False,
+                    # 检查过但没拿到当日数据（失败/stale/未建号）也带出
+                    # checks/last——归零会让前端把「检查失败」误读成
+                    # 「从未检查，永远查询中」（2026-11-05 P2 实证）
+                    "checks": int((nd or {}).get("checks") or 0),
+                    "last": (nd or {}).get("last") or "",
+                }
+                if nd:
+                    if nd.get("err"):
+                        cell["err"] = str(nd.get("err"))
+                    elif nd.get("stale"):
+                        cell["stale"] = str(nd.get("stale"))
+                    elif nd.get("noacc"):
+                        cell["noacc"] = True
+                cells[game] = cell
         recent.append({
             "date": key,
             "label": f"{int(key[5:7])}/{int(key[8:10])}",
