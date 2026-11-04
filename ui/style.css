@@ -909,9 +909,23 @@
     border-radius:4px;padding:1px 8px;margin:0 6px 4px 0}
   .au-title{margin-bottom:4px}
 
-  /* ---------- 游戏迷你卡（每日报表概览） ---------- */
-  .gcards{display:flex;flex-wrap:wrap;gap:16px;align-content:flex-start}
-  .gcard{border-radius:8px;padding:16px 16px;min-width:0;flex:1 1 320px;
+  /* ---------- 游戏迷你卡（每日报表概览） ----------
+     网格必须用 auto-fill，不能用 flex-grow / auto-fit：
+     flex:1 1 320px 会让「本行只剩一张卡」时那张卡吃掉整行剩余宽度（海带），
+     auto-fit 会折叠空轨道、同样把落单的卡拉满。auto-fill 保留空轨道，
+     落单的卡宽度恒等于同排其它卡 —— 「所有卡一律等大」的唯一实现。
+     320px 与活动流/监控网格同档，宽度由列数吸收（满幅纪律）。 */
+  .gcards{display:grid;
+          grid-template-columns:repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+          gap:16px;align-content:start}
+  /* 只有一张卡时最多占半行（用户点名要求）：auto-fill 的空轨道不会拉伸，
+     但宽窗口下它会分出 3 列以上、单卡只剩 1/3 —— 这里把落单的轨道下限抬到
+     「半行宽」，于是宽屏恰好 2 列（=一行的一半），窄屏放不下两列时退回 1 列。
+     50% - 8px：8px = gap 的一半，减掉才是真半行；外层 min(100%, …) 保证
+     容器比 320 还窄时不会溢出（与基础规则的 min(320px,100%) 同款兜底）。 */
+  .gcards:has(> .gcard:only-child){
+    grid-template-columns:repeat(auto-fill, minmax(min(100%, max(320px, 50% - 8px)), 1fr))}
+  .gcard{border-radius:8px;padding:16px 16px;min-width:0;
          display:flex;flex-direction:column;gap:8px;
          background:var(--bg-raise);box-shadow:var(--card-shadow);
          transition:box-shadow .2s ease, background-color .2s ease}
