@@ -237,7 +237,17 @@ def should_push(
 
 
 class BaseNotifier:
-    """推送通道基类。"""
+    """推送通道基类。
+
+    send() 是模板方法，收口五渠道重复的九步管线（禁用→配置不全→dry-run→
+    构造请求→网络→HTTP 码→JSON→成功判据→成功）；子类只声明差异：
+      - _missing_config()：配置不全时的人话提示
+      - _secrets()：敏感值清单（异常文本里的 Key 会被替换成掩码——
+        旧实现把 str(exc) 原样塞进 message，GET 型渠道的 Key 就在 URL
+        path 上，断网时测试推送会把明文 Key 推到网页日志台）
+      - _build_request()：构造 (method, url, requests_kwargs)
+      - _judge()：响应 JSON 的成功判据
+    """
 
     name = "base"
 
@@ -251,8 +261,86 @@ class BaseNotifier:
         """配置是否填全、可以真正发送。"""
         return False
 
-    def send(self, title: str, body: str, dry_run: bool = False) -> PushResult:
+    # -- 子类钩子 ------------------------------------------------------- #
+
+    def _missing_config(self) -> Optional[str]:
+        """配置不全时返回人话提示；就绪返回 None。"""
+        return None
+
+    def _secrets(self) -> List[str]:
+        """本通道的敏感值清单。"""
+        return []
+
+    def _build_request(
+        self, title: str, body: str
+    ) -> Tuple[str, str, Dict[str, Any]]:
+        """构造请求，返回 (method, url, requests_kwargs)。"""
         raise NotImplementedError
+
+    def _judge(self, payload: Dict[str, Any]) -> Tuple[bool, str]:
+        """解析响应 JSON，返回 (是否成功, 失败原因)。"""
+        raise NotImplementedError
+
+    # -- 公共管线 ------------------------------------------------------- #
+
+    def _mask_error(self, exc: Exception) -> str:
+        """把异常文本里出现的本通道敏感值替换成掩码。"""
+        text = str(exc)
+        for secret in self._secrets():
+            if secret and secret in text:
+                text = text.replace(secret, mask_secret(secret))
+        return text
+
+    def send(self, title: str, body: str, dry_run: bool = False) -> PushResult:
+        if not self.enabled:
+            return PushResult(self.name, ok=False, message="配置中已禁用", skipped=True)
+        missing = self._missing_config()
+        if missing:
+            return PushResult(self.name, ok=False, message=missing, skipped=True)
+        if dry_run:
+            logger.info(
+                "[%s] dry-run：跳过真实请求（标题=%s）", self.name, title
+            )
+            return PushResult(self.name, ok=False, message="dry-run 未发送", skipped=True)
+
+        requests = _import_requests()
+        try:
+            method, url, kwargs = self._build_request(title, body)
+            logger.info(
+                "[%s] 推送中…（标题=%s，正文 %d 字）", self.name, title, len(body)
+            )
+            if method == "GET":
+                response = requests.get(url, **kwargs)
+            else:
+                response = requests.post(url, **kwargs)
+        except Exception as exc:  # noqa: BLE001 - 网络异常、超时、DNS 统一收口
+            masked = self._mask_error(exc)
+            logger.warning("[%s] 请求异常：%s", self.name, masked)
+            return PushResult(self.name, ok=False, message=f"请求异常：{masked}")
+
+        if response.status_code != 200:
+            logger.warning(
+                "[%s] HTTP %s：%s", self.name, response.status_code, response.text[:200]
+            )
+            return PushResult(
+                self.name,
+                ok=False,
+                message=f"推送服务暂时没有响应（HTTP {response.status_code}），请稍后再试",
+            )
+
+        try:
+            payload = response.json()
+        except ValueError:
+            logger.warning("[%s] 响应非 JSON：%s", self.name, response.text[:200])
+            return PushResult(self.name, ok=False, message="响应不是合法 JSON")
+
+        ok, reason = self._judge(payload)
+        if not ok:
+            logger.warning("[%s] 接口返回失败：%s", self.name, reason)
+            return PushResult(self.name, ok=False, message=f"接口返回失败：{reason}")
+
+        logger.info("[%s] 推送成功", self.name)
+        return PushResult(self.name, ok=True, message="推送成功")
 
 
 class BarkNotifier(BaseNotifier):
@@ -295,60 +383,33 @@ class BarkNotifier(BaseNotifier):
             params["icon"] = cfg.icon
         return {key: value for key, value in params.items() if value not in ("", None)}
 
-    def send(self, title: str, body: str, dry_run: bool = False) -> PushResult:
-        if not self.enabled:
-            return PushResult(self.name, ok=False, message="配置中已禁用", skipped=True)
+    def _missing_config(self) -> Optional[str]:
         if not self.config.device_key.strip():
-            return PushResult(
-                self.name,
-                ok=False,
-                message="未配置 device_key，请在 config.json 的 push.bark.device_key 填入 Bark Key",
-                skipped=True,
-            )
+            return "未配置 device_key，请在 config.json 的 push.bark.device_key 填入 Bark Key"
+        return None
 
-        if dry_run:
-            logger.info("[bark] dry-run：跳过真实请求（标题=%s）", title)
-            return PushResult(self.name, ok=False, message="dry-run 未发送", skipped=True)
+    def _secrets(self) -> List[str]:
+        return [self.config.device_key]
 
-        url = self.build_url(title, body)
-        params = self.build_params()
-
-        requests = _import_requests()
+    def _build_request(
+        self, title: str, body: str
+    ) -> Tuple[str, str, Dict[str, Any]]:
         logger.info(
-            "[bark] GET %s%s …（正文 %d 字，key=%s）",
+            "[bark] GET %s …（正文 %d 字，key=%s）",
             self.masked_url(),
-            title,
             len(body),
             mask_secret(self.config.device_key),
         )
+        return "GET", self.build_url(title, body), {
+            "params": self.build_params(),
+            "timeout": self.config.timeout,
+        }
 
-        try:
-            response = requests.get(url, params=params, timeout=self.config.timeout)
-        except Exception as exc:  # 网络异常、超时、DNS 失败统一收口
-            logger.warning("[bark] 请求异常：%s", exc)
-            return PushResult(self.name, ok=False, message=f"请求异常：{exc}")
-
-        if response.status_code != 200:
-            logger.warning("[bark] HTTP %s：%s", response.status_code, response.text[:200])
-            return PushResult(
-                self.name,
-                ok=False,
-                message=f"推送服务暂时没有响应（HTTP {response.status_code}），请稍后再试",
-            )
-
-        try:
-            payload = response.json()
-        except ValueError:
-            logger.warning("[bark] 响应非 JSON：%s", response.text[:200])
-            return PushResult(self.name, ok=False, message="响应不是合法 JSON")
-
+    def _judge(self, payload: Dict[str, Any]) -> Tuple[bool, str]:
         if str(payload.get("code")) != "200":
             message = payload.get("message") or str(payload)
-            logger.warning("[bark] 接口返回失败：%s", message)
-            return PushResult(self.name, ok=False, message=f"接口返回失败：{message}")
-
-        logger.info("[bark] 推送成功")
-        return PushResult(self.name, ok=True, message="推送成功")
+            return False, message
+        return True, ""
 
 
 # --------------------------------------------------------------------------- #
@@ -375,53 +436,35 @@ class ServerChanNotifier(BaseNotifier):
     def ready(self) -> bool:
         return self.config.ready
 
-    def send(self, title: str, body: str, dry_run: bool = False) -> PushResult:
-        if not self.enabled:
-            return PushResult(self.name, ok=False, message="配置中已禁用", skipped=True)
+    def _missing_config(self) -> Optional[str]:
         if not self.config.sendkey.strip():
-            return PushResult(
-                self.name,
-                ok=False,
-                message="未配置 sendkey，请在 config.json 的 push.serverchan.sendkey 填入 Server 酱 SendKey",
-                skipped=True,
-            )
-        if dry_run:
-            logger.info("[serverchan] dry-run：跳过真实请求（标题=%s）", title)
-            return PushResult(self.name, ok=False, message="dry-run 未发送", skipped=True)
+            return "未配置 sendkey，请在 config.json 的 push.serverchan.sendkey 填入 Server 酱 SendKey"
+        return None
 
-        requests = _import_requests()
+    def _secrets(self) -> List[str]:
+        return [self.config.sendkey]
+
+    def _build_request(
+        self, title: str, body: str
+    ) -> Tuple[str, str, Dict[str, Any]]:
         # sendkey 可能自带 ".send" 后缀，也兼容裸 key
         key = self.config.sendkey.strip()
         if not key.endswith(".send"):
             key += ".send"
         url = f"https://sctapi.ftqq.com/{quote(key, safe='')}"
-        params = {"title": title, "desp": body}
         logger.info(
             "[serverchan] 推送中…（标题=%s，key=%s）", title, mask_secret(self.config.sendkey)
         )
+        return "GET", url, {
+            "params": {"title": title, "desp": body},
+            "timeout": self.config.timeout,
+        }
 
-        try:
-            response = requests.get(url, params=params, timeout=self.config.timeout)
-        except Exception as exc:
-            logger.warning("[serverchan] 请求异常：%s", exc)
-            return PushResult(self.name, ok=False, message=f"请求异常：{exc}")
-
-        if response.status_code != 200:
-            logger.warning("[serverchan] HTTP %s：%s", response.status_code, response.text[:200])
-            return PushResult(
-                self.name, ok=False, message=f"推送服务暂时没有响应（HTTP {response.status_code}），请稍后再试"
-            )
-        try:
-            payload = response.json()
-        except ValueError:
-            return PushResult(self.name, ok=False, message="响应不是合法 JSON")
+    def _judge(self, payload: Dict[str, Any]) -> Tuple[bool, str]:
         if payload.get("code") != 0:
             message = payload.get("message") or str(payload)
-            logger.warning("[serverchan] 接口返回失败：%s", message)
-            return PushResult(self.name, ok=False, message=f"接口返回失败：{message}")
-
-        logger.info("[serverchan] 推送成功")
-        return PushResult(self.name, ok=True, message="推送成功")
+            return False, message
+        return True, ""
 
 
 # --------------------------------------------------------------------------- #
@@ -473,43 +516,25 @@ class QmsgNotifier(BaseNotifier):
             merged.append(line)
         return "\n".join(merged).strip()
 
-    def send(self, title: str, body: str, dry_run: bool = False) -> PushResult:
-        if not self.enabled:
-            return PushResult(self.name, ok=False, message="配置中已禁用", skipped=True)
+    def _missing_config(self) -> Optional[str]:
         if not self.config.key.strip():
-            return PushResult(
-                self.name,
-                ok=False,
-                message="未配置 key，请在 config.json 的 push.qmsg.key 填入 Qmsg 酱 Key",
-                skipped=True,
-            )
-        if dry_run:
-            logger.info("[qmsg] dry-run：跳过真实请求（标题=%s）", title)
-            return PushResult(self.name, ok=False, message="dry-run 未发送", skipped=True)
+            return "未配置 key，请在 config.json 的 push.qmsg.key 填入 Qmsg 酱 Key"
+        return None
 
+    def _secrets(self) -> List[str]:
+        return [self.config.key]
+
+    def _build_request(
+        self, title: str, body: str
+    ) -> Tuple[str, str, Dict[str, Any]]:
         text = self.merge_text(title, body)
         if len(text) > self.MAX_LEN:
             text = text[: self.MAX_LEN - 3].rstrip() + "..."
         url = f"{self.config.server}/send/{quote(self.config.key.strip(), safe='')}"
         logger.info("[qmsg] 推送中…（标题=%s，key=%s）", title, mask_secret(self.config.key))
+        return "GET", url, {"params": {"msg": text}, "timeout": self.config.timeout}
 
-        requests = _import_requests()
-        try:
-            response = requests.get(url, params={"msg": text}, timeout=self.config.timeout)
-        except Exception as exc:
-            logger.warning("[qmsg] 请求异常：%s", exc)
-            return PushResult(self.name, ok=False, message=f"请求异常：{exc}")
-
-        if response.status_code != 200:
-            logger.warning("[qmsg] HTTP %s：%s", response.status_code, response.text[:200])
-            return PushResult(
-                self.name, ok=False, message=f"推送服务暂时没有响应（HTTP {response.status_code}），请稍后再试"
-            )
-        try:
-            payload = response.json()
-        except ValueError:
-            return PushResult(self.name, ok=False, message="推送服务返回了无法解析的数据，请稍后再试")
-
+    def _judge(self, payload: Dict[str, Any]) -> Tuple[bool, str]:
         # 旧版返回 {"success":true,"reason":"操作成功","code":0}
         if "success" in payload:
             ok = bool(payload.get("success"))
@@ -517,11 +542,8 @@ class QmsgNotifier(BaseNotifier):
             ok = payload.get("code") == 0
         if not ok:
             reason = payload.get("reason") or payload.get("msg") or str(payload)
-            logger.warning("[qmsg] 接口返回失败：%s", reason)
-            return PushResult(self.name, ok=False, message=f"接口返回失败：{reason}")
-
-        logger.info("[qmsg] 推送成功")
-        return PushResult(self.name, ok=True, message="推送成功")
+            return False, reason
+        return True, ""
 
 
 # --------------------------------------------------------------------------- #
@@ -556,21 +578,17 @@ class FeishuNotifier(BaseNotifier):
     def ready(self) -> bool:
         return self.config.ready
 
-    def send(self, title: str, body: str, dry_run: bool = False) -> PushResult:
-        if not self.enabled:
-            return PushResult(self.name, ok=False, message="配置中已禁用", skipped=True)
+    def _missing_config(self) -> Optional[str]:
         if not self.config.webhook.strip():
-            return PushResult(
-                self.name,
-                ok=False,
-                message="未配置 webhook，请在 config.json 的 push.feishu.webhook 填入机器人 Webhook 地址",
-                skipped=True,
-            )
-        if dry_run:
-            logger.info("[feishu] dry-run：跳过真实请求（标题=%s）", title)
-            return PushResult(self.name, ok=False, message="dry-run 未发送", skipped=True)
+            return "未配置 webhook，请在 config.json 的 push.feishu.webhook 填入机器人 Webhook 地址"
+        return None
 
-        requests = _import_requests()
+    def _secrets(self) -> List[str]:
+        return [self.config.webhook, self.config.secret]
+
+    def _build_request(
+        self, title: str, body: str
+    ) -> Tuple[str, str, Dict[str, Any]]:
         payload: Dict[str, Any] = {
             "msg_type": "text",
             "content": {"text": f"{title}\n{body}"},
@@ -579,35 +597,21 @@ class FeishuNotifier(BaseNotifier):
             payload["timestamp"] = str(int(time.time()))
             payload["sign"] = _feishu_sign(self.config.secret, int(time.time()))
 
-        logger.info("[feishu] 推送中…（标题=%s，webhook=%s）", title, mask_secret(self.config.webhook, keep=8))
-        try:
-            response = requests.post(
-                self.config.webhook, json=payload, timeout=self.config.timeout
-            )
-        except Exception as exc:
-            logger.warning("[feishu] 请求异常：%s", exc)
-            return PushResult(self.name, ok=False, message=f"请求异常：{exc}")
+        logger.info(
+            "[feishu] 推送中…（标题=%s，webhook=%s）",
+            title, mask_secret(self.config.webhook, keep=8),
+        )
+        return "POST", self.config.webhook, {"json": payload, "timeout": self.config.timeout}
 
-        if response.status_code != 200:
-            logger.warning("[feishu] HTTP %s：%s", response.status_code, response.text[:200])
-            return PushResult(
-                self.name, ok=False, message=f"推送服务暂时没有响应（HTTP {response.status_code}），请稍后再试"
-            )
-        try:
-            result = response.json()
-        except ValueError:
-            return PushResult(self.name, ok=False, message="响应不是合法 JSON")
-        code = result.get("code", result.get("StatusCode"))
+    def _judge(self, payload: Dict[str, Any]) -> Tuple[bool, str]:
+        code = payload.get("code", payload.get("StatusCode"))
         if code not in (0, "0", None):
-            message = result.get("msg") or str(result)
-            logger.warning("[feishu] 接口返回失败：%s", message)
-            return PushResult(self.name, ok=False, message=f"接口返回失败：{message}")
+            message = payload.get("msg") or str(payload)
+            return False, message
         if code is None:
             # 既无 code 又无 StatusCode，按字段缺失处理，不静默当成功
-            return PushResult(self.name, ok=False, message=f"响应缺少成功码字段：{str(result)[:120]}")
-
-        logger.info("[feishu] 推送成功")
-        return PushResult(self.name, ok=True, message="推送成功")
+            return False, f"响应缺少成功码字段：{str(payload)[:120]}"
+        return True, ""
 
 
 # --------------------------------------------------------------------------- #
@@ -651,47 +655,28 @@ class DingTalkNotifier(BaseNotifier):
             url = f"{url}{sep}timestamp={ts}&sign={sign}"
         return url
 
-    def send(self, title: str, body: str, dry_run: bool = False) -> PushResult:
-        if not self.enabled:
-            return PushResult(self.name, ok=False, message="配置中已禁用", skipped=True)
+    def _missing_config(self) -> Optional[str]:
         if not self.config.webhook.strip():
-            return PushResult(
-                self.name,
-                ok=False,
-                message="未配置 webhook，请在 config.json 的 push.dingtalk.webhook 填入机器人 Webhook 地址",
-                skipped=True,
-            )
-        if dry_run:
-            logger.info("[dingtalk] dry-run：跳过真实请求（标题=%s）", title)
-            return PushResult(self.name, ok=False, message="dry-run 未发送", skipped=True)
+            return "未配置 webhook，请在 config.json 的 push.dingtalk.webhook 填入机器人 Webhook 地址"
+        return None
 
-        requests = _import_requests()
+    def _secrets(self) -> List[str]:
+        return [self.config.webhook]
+
+    def _build_request(
+        self, title: str, body: str
+    ) -> Tuple[str, str, Dict[str, Any]]:
         payload = {"msgtype": "text", "text": {"content": f"{title}\n{body}"}}
         logger.info(
             "[dingtalk] 推送中…（标题=%s，webhook=%s）", title, mask_secret(self.config.webhook, keep=8)
         )
-        try:
-            response = requests.post(self._build_url(), json=payload, timeout=self.config.timeout)
-        except Exception as exc:
-            logger.warning("[dingtalk] 请求异常：%s", exc)
-            return PushResult(self.name, ok=False, message=f"请求异常：{exc}")
+        return "POST", self._build_url(), {"json": payload, "timeout": self.config.timeout}
 
-        if response.status_code != 200:
-            logger.warning("[dingtalk] HTTP %s：%s", response.status_code, response.text[:200])
-            return PushResult(
-                self.name, ok=False, message=f"推送服务暂时没有响应（HTTP {response.status_code}），请稍后再试"
-            )
-        try:
-            result = response.json()
-        except ValueError:
-            return PushResult(self.name, ok=False, message="响应不是合法 JSON")
-        if result.get("errcode") != 0:
-            message = result.get("errmsg") or str(result)
-            logger.warning("[dingtalk] 接口返回失败：%s", message)
-            return PushResult(self.name, ok=False, message=f"接口返回失败：{message}")
-
-        logger.info("[dingtalk] 推送成功")
-        return PushResult(self.name, ok=True, message="推送成功")
+    def _judge(self, payload: Dict[str, Any]) -> Tuple[bool, str]:
+        if payload.get("errcode") != 0:
+            message = payload.get("errmsg") or str(payload)
+            return False, message
+        return True, ""
 
 
 # --------------------------------------------------------------------------- #
