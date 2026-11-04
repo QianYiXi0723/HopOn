@@ -103,6 +103,24 @@ p = preview()
 check("T3 全失败 → no_valid_records",
       p["state"] == "no_valid_records" and p["title"] == analyzer.NO_VALID_RECORDS_TITLE, p)
 
+# T3b 全失败 + 活动提醒 → 与实发同一门槛（P1/P6-4 同根修复）：实发会以
+# 诚实标题照发（should_push 的 activity_count 分支），预览必须展示同一条
+# payload，而不是落进 no_valid_records 空态。
+write_snap({"version": 1, "generated_at": "2026-10-31T08:00:00",
+            "statuses": [
+                status("genshin", "原神", [], error="登录凭证已失效"),
+                status("endfield", "终末地", [], error="网络超时"),
+            ],
+            "resource_alerts": [],
+            "activity_alerts": [{"warn": "📅 终末地·万物有灵将于 11-05 12:00 结束"}]})
+p = preview()
+check("T3b 全失败带活动提醒 → state=ok（预览实发同门槛）",
+      p["state"] == "ok" and p.get("ok") is True, p)
+check("T3b 标题与实发同式（无 0/N）",
+      p.get("title") == "账号数据未就绪 · 📅 活动将结束（1）", p.get("title"))
+check("T3b 正文含活动行", "📅 终末地·万物有灵" in (p.get("body") or ""),
+      (p.get("body") or "")[:200])
+
 # T4 正常态：1 完成 1 未完成 → 标题与正文逐字同源于 to_push_payload
 write_snap({"version": 1, "generated_at": "2026-10-31T08:00:00",
             "statuses": [GENSHIN_UNFINISHED, STARRAIL_DONE],

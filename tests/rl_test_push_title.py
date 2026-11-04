@@ -97,10 +97,28 @@ check("T4 标题 = 1/2 已完成", title_fail == "游戏日常：1/2 已完成",
 check("T4 正文不出现「共漏 0 项」", "共漏 0 项" not in body_fail, body_fail)
 check("T4 正文提示检查凭证/网络", "没查到的几款" in body_fail, body_fail)
 
-# T4b 全部查询失败：标题 0/N，正文也不能说「共漏 0 项」
+# T4b 全部查询失败：无有效账号数据 → 标题绝不出现 0/N 进度（2026-11-05 P1
+# 修复：旧行为 0/2 已完成会被读成「玩了但没做」；活动提醒照发但标题诚实）
 title_allfail, body_allfail = DailyReport(statuses=[failed("a", "A"), failed("b", "B")]).to_push_payload()
-check("T4b 全失败标题 = 0/2 已完成", title_allfail == "游戏日常：0/2 已完成", title_allfail)
+check("T4b 全失败标题 = 账号数据未就绪（无 0/N）",
+      title_allfail == "账号数据未就绪" and "0/" not in title_allfail, title_allfail)
 check("T4b 全失败正文不说漏 0 项", "共漏 0 项" not in body_allfail, body_allfail)
+check("T4b 全失败正文带数据未就绪说明", "未获得有效账号数据" in body_allfail, body_allfail)
+
+# T4c 全失败 + 活动提醒：提醒照发、标题诚实（P1 实证场景：首次启动补跑
+# 全失败仍因活动将结束推送「0/5 已完成 · 📅 活动将结束（5）」）
+from core.analyzer import _SnapshotAlert  # noqa: E402
+
+report_p1 = DailyReport(
+    statuses=[failed("a", "A"), failed("b", "B")],
+    activity_alerts=[_SnapshotAlert(warn_text="📅 终末地·万物有灵将于 11-05 12:00 结束"),
+                     _SnapshotAlert(warn_text="📅 终末地·墨分诸彩将于 11-05 12:00 结束")],
+)
+title_p1, body_p1 = report_p1.to_push_payload()
+check("T4c 标题不带 0/N 进度", "0/" not in title_p1, title_p1)
+check("T4c 标题 = 账号数据未就绪 · 活动后缀",
+      title_p1 == "账号数据未就绪 · 📅 活动将结束（2）", title_p1)
+check("T4c 正文带活动行", "📅 终末地·万物有灵" in body_p1, body_p1[:200])
 
 # T5 体力预警后缀
 from core.models import ResourceAlert  # noqa: E402

@@ -86,6 +86,16 @@ class DailyReport:
         """是否有活动即将结束。"""
         return bool(self.activity_alerts)
 
+    @property
+    def has_valid_data(self) -> bool:
+        """本轮是否拿到过任何「今天可信」的账号数据（查询成功且非 stale）。
+
+        全失败 / 全 stale 时，推送标题绝不出现 0/N 进度——那会被读成
+        「玩了但一天啥都没做」。2026-11-05 实证（P1）：首次启动补跑全失败，
+        仍因活动提醒推出「0/5 已完成」，误导新用户。
+        """
+        return any(item.ok and not item.stale for item in self.statuses)
+
     # ---------------- 渲染：控制台 ---------------- #
     def to_console_text(self) -> str:
         lines: List[str] = []
@@ -160,7 +170,12 @@ class DailyReport:
 
         # 标题一律用「已完成」做进度分子：查询失败的游戏仍占分母，但不会让标题
         # 出现「1/5 个未完成」却和正文「已完成 2 款」对不上的观感。
-        if all_done:
+        if not self.has_valid_data:
+            # 无任何有效账号数据（全失败 / 全 stale）：进度分母里的游戏可能
+            # 根本没查成，0/N 会被读成「玩了但没做」。活动/体力提醒照发
+            # （来自活动日历与资源预警，与完成度无关），但标题必须诚实。
+            title = "账号数据未就绪"
+        elif all_done:
             title = f"游戏日常：{total}/{total} 全部完成"
         else:
             title = f"游戏日常：{len(self.finished)}/{total} 已完成"
@@ -173,6 +188,9 @@ class DailyReport:
 
         lines: List[str] = []
         lines.append(self.generated_at.strftime("%m-%d %H:%M"))
+        if not self.has_valid_data:
+            lines.append("（本轮未获得有效账号数据：查询失败或快照过期；"
+                         "以下提醒来自活动日历与资源预警，与日常完成度无关）")
         # 溢出预警放最上面：这条最急，别被下面的完成清单盖住
         for alert in self.resource_alerts:
             lines.append(alert.warn_line())
@@ -461,7 +479,13 @@ def push_preview_from_snapshot(snap: Any) -> Dict[str, Any]:
             "title": WAITING_FIRST_CHECK_TITLE,
             "body": WAITING_FIRST_CHECK_BODY,
         }
-    if not any(item.has_today_data for item in report.statuses):
+    if (not any(item.has_today_data for item in report.statuses)
+            and not report.resource_alerts
+            and not report.activity_alerts
+            and not report.activity_start_alerts):
+        # 与实发同一门槛（2026-11-05 P1/P6-4 同根修复）：全失败但带活动/体力
+        # 提醒时，实发会以诚实标题照发（should_push 的 activity_count 分支），
+        # 预览必须展示同一条 payload，而不是落进 no_valid_records 空态。
         return {
             "state": "no_valid_records",
             "title": NO_VALID_RECORDS_TITLE,
