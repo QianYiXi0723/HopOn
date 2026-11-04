@@ -2754,11 +2754,17 @@ function gameCardHtml(g){
     ' ｜ 每日任务：' + taskTip +
     ' ｜ 本月完成 ' + Number(g.month_done || 0) + ' 天' + (missed > 0 ? ' · 漏 ' + missed : '');
 
+  /* 连续天数保护话术：streak > 0 且今天还没做完时，用损失厌恶框架提醒
+     「别断」——琥珀不用红（对比是信息不是告警，色彩纪律） */
+  const streakAtRisk = Number(g.streak || 0) > 0 &&
+    ((live && live.finished === false) || (today && today.known && !today.finished));
+
   return '<div class="card gcard" style="--gc:' + gameDotColor(gid) + '" data-tip="' + escHtml(tip) + '">' +
     '<div class="gcard-head">' + gameIconHtml(gid) +
       '<div class="gcard-name"><b>' + escHtml(gameBaseName(g)) + '</b></div>' +
       '<span class="gcard-today" style="flex:none">' + badge + '</span>' +
-      '<div class="gcard-streak"><b class="value">' + Number(g.streak || 0) + '</b><small>连续天数</small></div>' +
+      '<div class="gcard-streak"><b class="value">' + Number(g.streak || 0) + '</b><small>连续天数' +
+        (streakAtRisk ? ' · <span style="color:var(--warn)">今天别断</span>' : '') + '</small></div>' +
     '</div>' +
     stamina +
     '</div>';
