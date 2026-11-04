@@ -253,7 +253,11 @@ def ensure_config() -> None:
 
 def load_raw_config() -> Dict[str, Any]:
     ensure_config()
-    return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    # 凭证字段落盘是 DPAPI 密文（core.secure_store），读端统一在此解密；
+    # 旧明文原样通过（自动迁移），解密失败返回密文由认证层引导重扫
+    from core.secure_store import decrypt_config_dict
+
+    return decrypt_config_dict(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
 
 
 def _enabled_game_ids() -> List[str]:
@@ -614,7 +618,11 @@ def save_raw_config(raw: Dict[str, Any]) -> None:
     自己的 tmp，finally 清理直接抛错，于是配置写进去了、接口却返回 500）。
     """
     _backup_config_before_write()   # 滚动备份（防"写错内容"，原子写只防"写坏一半"）
-    text = json.dumps(raw, ensure_ascii=False, indent=2) + "\n"
+    # 机密字段（cookie/token）DPAPI 加密后落盘（P3）：内存态明文 → 磁盘密文；
+    # .bak 滚动备份复制的是磁盘旧文件，同样已是密文
+    from core.secure_store import encrypt_config_dict
+
+    text = json.dumps(encrypt_config_dict(raw), ensure_ascii=False, indent=2) + "\n"
     fd, tmp_name = tempfile.mkstemp(
         prefix=".config-", suffix=".tmp", dir=str(CONFIG_PATH.parent)
     )

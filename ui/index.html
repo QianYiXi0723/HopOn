@@ -251,11 +251,13 @@
         </div>
       </section>
 
-      <!-- 设备伪装：点击入口卡弹配置弹窗（低频专注任务用模态，不再抽屉展开） -->
+      <!-- 设备伪装：点击入口卡弹配置弹窗（低频专注任务用模态，不再抽屉展开）。
+           2026-11-05 P4：定位为「高级·可选」——常规用户不需要碰，APK 也不随包分发 -->
       <section class="card dev-entry" id="dev-card" onclick="openDev()">
         <div class="card-head">
           <h2><svg class="ico"><use href="#i-shield"/></svg> 设备伪装
-            <span class="q" data-tip="每台电脑首次启动会随机分配一台常见机型，之后固定不变。风控多数是出口网络被标记，换设备只在新装或长期异常时才有用；频繁更换会被当成陌生设备，反而更容易触发风控"></span>
+            <span class="badge">高级 · 可选</span>
+            <span class="q" data-tip="每台电脑首次启动会随机分配一台常见机型，之后固定不变。风控多数是出口网络被标记，换设备只在新装或长期异常时才有用；频繁更换会被当成陌生设备，反而更容易触发风控。配套的设备信息 App 不随包分发"></span>
           </h2>
           <span class="spacer"></span>
           <svg class="dev-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>

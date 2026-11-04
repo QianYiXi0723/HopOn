@@ -909,7 +909,13 @@ def load_config(path: str | Path, auto_create: bool = False) -> AppConfig:
             f"配置文件 JSON 语法错误（第 {exc.lineno} 行第 {exc.colno} 列）：{exc.msg}"
         ) from exc
 
-    return parse_config(data, source=config_path)
+    # 凭证字段落盘是 DPAPI 密文（core.secure_store，P3）：AppConfig 读端
+    # 与 login_ui.load_raw_config 同样在此统一解密；旧明文原样通过
+    try:
+        from core.secure_store import decrypt_config_dict
+    except ImportError:   # 防御：secure_store 缺席时退化为旧行为，不影响配置加载
+        decrypt_config_dict = lambda d: d  # noqa: E731
+    return parse_config(decrypt_config_dict(data), source=config_path)
 
 
 def save_config(config: AppConfig, path: str | Path | None = None) -> Path:

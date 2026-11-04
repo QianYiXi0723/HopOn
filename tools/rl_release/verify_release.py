@@ -24,10 +24,20 @@ def md5(p):
 
 print("=== 1. 目录结构 ===")
 top = sorted(p.name for p in OUT.iterdir())
-chk(top == ["HopOn.exe", "WebView2Loader.dll", "engine", "小白使用说明.txt"], "顶层四件", top)
+chk(top == ["HopOn.exe", "WebView2Loader.dll", "engine", "小白使用说明.txt", "LICENSE"],
+    "顶层五件（2026-11-05 P5：LICENSE 随包）", top)
 chk((OUT / "engine" / "python" / "python.exe").exists(), "便携解释器存在")
 chk((OUT / "engine" / "app.py").exists(), "引擎入口存在")
 chk((OUT / "engine" / "ui" / "index.html").exists(), "前端三件套存在")
+
+print("\n=== 1b. 分发边界（P4/P5，2026-11-05） ===")
+apk = OUT / "engine" / "tools" / "设备信息.apk"
+chk(not apk.exists(), "设备伪装 APK 不随包（仅源码部署提供，P4）", str(apk))
+notes_path = OUT / "小白使用说明.txt"
+notes = notes_path.read_text(encoding="utf-8-sig") if notes_path.exists() else ""
+chk("github.com/QianYiXi0723/HopOn" in notes, "说明含源码仓库地址（P5）")
+chk("ResinLoop" not in notes, "说明无 ResinLoop 品牌残留（P5）")
+chk("DPAPI" in notes, "说明含凭证加密说明（P3）")
 
 print("\n=== 2. 脱敏（不得出现配置/日志/数据/备份/字节码） ===")
 bad = []
