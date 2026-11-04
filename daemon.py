@@ -734,6 +734,68 @@ def _tick(stop_event: threading.Event) -> None:
             return
 
 
+def _check_resin_watch() -> None:
+    """⭐ 回满即推 watcher：预测到点的游戏 → 触发一轮复核巡检。
+
+    main.run_once 把体力恢复倒计时写进 logs/.resin_watch.json（每轮刷新，
+    用户中途消耗体力预测自动后移）；这里每 30s 检查：预测到点（≤ now+60s，
+    给复核请求本身留提前量）且今天还没推过 → run_check("体力回满复核")。
+
+    复核走正常 run_once 全管线：重查 → 判定 → 推送/免打扰顺延都由既有
+    逻辑处理；复核后 main 会重写预测（用户消耗则后移，已满则清空由
+    当轮预警覆盖）。跨机制去重：当天已推过体力提醒的游戏跳过（main
+    在推送成功后写 pushed 标记）。每天每游戏最多一次。
+    """
+    import json as _json
+    from core.history import game_moment
+
+    try:
+        state = _json.loads(
+            (LOGS_DIR / ".resin_watch.json").read_text(encoding="utf-8")
+        )
+        if not isinstance(state, dict):
+            state = {}
+    except (OSError, ValueError):
+        return
+
+    today = game_moment().strftime("%Y-%m-%d")
+    pushed = state.get("pushed") or {}
+    now = datetime.now()
+    horizon = now + timedelta(seconds=60)   # 复核请求本身的提前量
+    due: List[str] = []
+    for game, info in sorted((state.get("predictions") or {}).items()):
+        if str(pushed.get(game) or "") == today:
+            continue   # 今天已经推过体力提醒（预警或回满），跨机制去重
+        if not isinstance(info, dict):
+            continue
+        try:
+            full_at = datetime.fromisoformat(str(info.get("full_at")))
+        except ValueError:
+            continue
+        if full_at <= horizon:
+            due_games.append(game)
+    if not due_games:
+        return
+
+    logger.info("体力回满预测到点：%s → 触发复核巡检", "、".join(due_games))
+    run_check("体力回满复核")
+    # 复核的 run_once 已重写预测；这里把触发的旧条目清掉防重复触发
+    try:
+        state = _json.loads(
+            (LOGS_DIR / ".resin_watch.json").read_text(encoding="utf-8")
+        )
+        if isinstance(state, dict):
+            predictions = state.get("predictions")
+            if isinstance(predictions, dict):
+                for game in due_games:
+                    predictions.pop(game, None)
+                (LOGS_DIR / ".resin_watch.json").write_text(
+                    _json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+    except (OSError, ValueError):
+        pass  # 清理失败也不致命：pushed 标记仍挡重复推送
+
+
 def _loop(stop_event: threading.Event) -> None:
     logger.info("轮询线程已启动，间隔 %d 秒", TICK_SECONDS)
     while not stop_event.is_set():
@@ -743,6 +805,7 @@ def _loop(stop_event: threading.Event) -> None:
             logger.exception("轮询异常（已忽略，继续运行）")
         write_heartbeat()
         _maybe_weekly_report()   # 周日 21:00 后的周度推送（常开，错过自动补发）
+        _check_resin_watch()     # ⭐ 回满即推：预测到点触发复核巡检
         if _wait(TICK_SECONDS, stop_event):
             run_check("手动")
     logger.info("轮询线程已退出")

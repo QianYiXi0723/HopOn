@@ -197,6 +197,25 @@ def mask_secret(value: str, keep: int = 4) -> str:
 # --------------------------------------------------------------------------- #
 
 
+def in_quiet_window(now_minutes: int, start: str, end: str) -> bool:
+    """免打扰判定，支持跨零点（23:00-08:00 = now>=23:00 或 now<08:00）。
+
+    时间串非法（没配/写错）一律返回 False——配置坏了宁可多打扰也不静默。
+    """
+    def minutes(text: str) -> int:
+        parts = str(text).strip().split(":")
+        try:
+            return int(parts[0]) * 60 + int(parts[1])
+        except (ValueError, IndexError):
+            return -1
+    s, e = minutes(start), minutes(end)
+    if s < 0 or e < 0:
+        return False
+    if s <= e:
+        return s <= now_minutes < e
+    return now_minutes >= s or now_minutes < e
+
+
 def should_push(
     test_mode: str,
     need_alert: bool,
@@ -204,6 +223,8 @@ def should_push(
     always_notify: bool = False,
     overflow_count: int = 0,
     activity_count: int = 0,
+    quiet_now: bool = False,
+    quiet_window: str = "",
 ) -> Tuple[bool, str]:
     """根据测试模式与检查结论决定是否推送，返回 (是否推送, 原因)。
 
@@ -213,13 +234,18 @@ def should_push(
     ``overflow_count`` > 0 表示体力 / 树脂 / 电量达到预警阈值。即便日常全部
     完成也会推（体力溢出是有时限的损失，跟"没做日常"一样值得催一下）。
 
-    ``activity_count`` > 0 表示有活动即将结束（剩 <=72 小时）。同样会推，
-    但同一活动每天只提醒一次（去重由 ``core.activities`` 负责）。
+    ``activity_count`` > 0 表示有活动提醒待送达（结束止损 / 活动上新）。
+    同一活动每天只提醒一次（去重由 ``core.activities`` 负责）。
+
+    ``quiet_now`` = 免打扰时段中：推送一律顺延。触发条件（未完成/溢出/
+    活动结束）在时段结束后自然重现，明早自动补推，无需持久化。
     """
     if test_mode == TEST_MODE_FORCE_SILENT:
         return False, "测试模式=强制静默，本次只写日志"
     if test_mode == TEST_MODE_FORCE_ALERT:
         return True, "测试模式=强制提醒，无论结果都推送"
+    if quiet_now:
+        return False, f"免打扰时段（{quiet_window}），推送顺延至时段结束"
     if need_alert:
         return True, f"自动模式：{unfinished_count} 个游戏存在未完成项"
     if overflow_count > 0:

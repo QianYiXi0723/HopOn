@@ -17,7 +17,7 @@ function switchTab(name){
   });
 
   if (name === 'query') loadQuery();
-  if (name === 'schedule') { loadSchedule(); startSchedPoll(); loadThresholds(); loadAutostart(); loadAlwaysNotify(); loadRunLog(); } else { stopSchedPoll(); }
+  if (name === 'schedule') { loadSchedule(); startSchedPoll(); loadThresholds(); loadAutostart(); loadAlwaysNotify(); loadQuiet(); loadRunLog(); } else { stopSchedPoll(); }
   /* 账号与通知已合并为一页：通知的三路加载并入 account 分支 */
   if (name === 'account') { loadDevice(); loadAccounts(); refreshNotice(); loadPush(); loadPushPreview(); loadPushRecent(); }
   if (name === 'history') { loadHistory(); loadLive(false); }
@@ -1012,6 +1012,68 @@ if (anSelfSave) anSelfSave.addEventListener('change', async function(){
     this.disabled = false;
   }
 });
+
+/* ---------- 免打扰时段（acc-quiet，定时页开机与提醒卡）：窗口内推送
+   顺延到时段结束（触发条件会自然重现，明早自动补推）。开关即时保存，
+   时段两个输入框走「保存时段」按钮一起提交。 ---------- */
+function renderQuiet(enabled, start, end){
+  const box = document.getElementById('quiet-toggle');
+  if (!box) return;
+  box.checked = !!enabled;
+  const s = document.getElementById('quiet-start');
+  const e = document.getElementById('quiet-end');
+  if (s && document.activeElement !== s) s.value = start || '23:00';
+  if (e && document.activeElement !== e) e.value = end || '08:00';
+  setSum('quiet', enabled ? ((start || '23:00') + '-' + (end || '08:00')) : '已关闭',
+         enabled ? '时段内推送顺延，明早自动补推' : '仅在存在未完成项时推送');
+}
+
+function loadQuiet(){
+  fetch('/api/push').then(function(r){ return r.json(); }).then(function(d){
+    if (d.ok) renderQuiet(d.quiet_enabled, d.quiet_start, d.quiet_end);
+  }).catch(function(){ /* 静默：/api/push 失败时其它通道的 toast 已报错 */ });
+}
+
+async function toggleQuiet(){
+  const box = document.getElementById('quiet-toggle');
+  const want = box.checked;
+  box.disabled = true;
+  try {
+    const d = await postJSON('/api/push', { quiet_enabled: want });
+    if (!d.ok) { box.checked = !want; toast(d.message || '设置失败', true); return; }
+    renderQuiet(d.quiet_enabled, d.quiet_start, d.quiet_end);
+    toast(want ? '已开启免打扰：时段内推送顺延' : '已关闭免打扰');
+  } catch (e) {
+    box.checked = !want;
+    toast('设置失败：' + e, true);
+  } finally {
+    box.disabled = false;
+  }
+}
+
+async function saveQuiet(){
+  const btn = document.getElementById('btn-quiet-save');
+  const s = document.getElementById('quiet-start').value;
+  const e = document.getElementById('quiet-end').value;
+  btn.disabled = true;
+  btn.textContent = '保存中…';
+  try {
+    const d = await postJSON('/api/push', { quiet_start: s, quiet_end: e });
+    if (!d.ok) { toast(d.message || '设置失败', true); return; }
+    renderQuiet(d.quiet_enabled, d.quiet_start, d.quiet_end);
+    toast('免打扰时段已更新：' + d.quiet_start + '-' + d.quiet_end);
+  } catch (e) {
+    toast('设置失败：' + e, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '保存时段';
+  }
+}
+
+const quietToggle = document.getElementById('quiet-toggle');
+if (quietToggle) quietToggle.addEventListener('change', toggleQuiet);
+const quietSave = document.getElementById('btn-quiet-save');
+if (quietSave) quietSave.addEventListener('click', saveQuiet);
 
 async function testPush(){
   const btn = document.getElementById('btn-test');

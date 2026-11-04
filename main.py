@@ -46,7 +46,7 @@ from core.config import (
 )
 from core.logger import setup_logger
 from core.models import GameStatus
-from core.notifier import build_notifiers, push_all, should_push
+from core.notifier import build_notifiers, in_quiet_window, push_all, should_push
 from core.querier import UnknownProviderError, get_querier
 
 DEFAULT_CONFIG_NAME = "config.json"
@@ -741,6 +741,70 @@ def _refresh_mihoyo_nicknames(config: AppConfig, statuses: List[GameStatus]) -> 
             logger.warning("昵称刷新记账写入失败（明天会重试）：%s", exc)
 
 
+#: 回满即推的 watch 状态（logs/.resin_watch.json）：main 写预测/标记推送，
+#: daemon 的 tick 每 30s 检查一次——预测到点就触发一轮复核巡检
+_RESIN_WATCH_PATH = BASE_DIR / "logs" / ".resin_watch.json"
+_RESIN_WATCH_TTL_HOURS = 48   # 预测超过两天没被触发就作废（数据早过期了）
+
+
+def _load_resin_watch() -> Dict[str, Any]:
+    try:
+        state = json.loads(_RESIN_WATCH_PATH.read_text(encoding="utf-8"))
+        return state if isinstance(state, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _record_resin_watch(statuses: List[GameStatus], alert_games: set) -> None:
+    """把体力回满预测写进 watch 文件（daemon tick 到点触发复核巡检）。
+
+    只记录「有恢复倒计时且尚未到阈值」的游戏——已到阈值的走当轮预警（即时
+    推送，不需要预测）。预测 = now + recover_seconds，随每轮巡检刷新：
+    用户中途消耗了体力，预测自动后移，到点复核才不会误报。
+    """
+    from core.history import game_moment
+
+    today = game_moment().strftime("%Y-%m-%d")
+    state = _load_resin_watch()
+    predictions = state.get("predictions") if isinstance(state.get("predictions"), dict) else {}
+    pushed = state.get("pushed") if isinstance(state.get("pushed"), dict) else {}
+    fresh: Dict[str, Any] = {}
+    for status in statuses:
+        gid = status.game_id
+        if gid in alert_games:
+            continue   # 本轮已到阈值：当轮预警即时覆盖，不需要预测
+        recover = None
+        for task in status.tasks:
+            if getattr(task, "recover_seconds", None):
+                recover = int(task.recover_seconds)
+                break
+        if not recover or recover <= 0:
+            continue   # 已回满 / 没有恢复数据：无预测
+        full_epoch = time.time() + recover
+        fresh[gid] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(full_epoch))
+    # 上期预测若今天已推送过（跨机制去重），保留 pushed 标记；未推的过期清除
+    kept_pushed = {k: v for k, v in pushed.items() if v == today}
+    payload = {"predictions": fresh, "pushed": kept_pushed}
+    if fresh:
+        payload["predictions"] = fresh
+    payload["pushed"] = {**kept_pushed, **{g: today for g in (state.get("pushed") or {}) if (state.get("pushed") or {}).get(g) == today}}
+    _atomic_write_json(_RESIN_WATCH_PATH, payload)
+
+
+def _mark_resin_pushed(games: List[str]) -> None:
+    """跨机制去重：记录今天已推送过体力提醒（预警或回满）的游戏——
+    watcher 今天不再为它们触发复核巡检（防双推）。"""
+    from core.history import game_moment
+
+    today = game_moment().strftime("%Y-%m-%d")
+    state = _load_resin_watch()
+    pushed = state.get("pushed") if isinstance(state.get("pushed"), dict) else {}
+    for game in games:
+        pushed[str(game)] = today
+    state["pushed"] = pushed
+    _atomic_write_json(_RESIN_WATCH_PATH, state)
+
+
 def run_once(config: AppConfig, dry_run: bool = False) -> int:
     """跑一轮完整检查：查询 -> 判断 -> 推送 -> 返回退出码。
 
@@ -753,6 +817,13 @@ def run_once(config: AppConfig, dry_run: bool = False) -> int:
 
     # 1) 查询
     statuses = collect_statuses(config)
+
+    # 1.1) 体力回满预测：写进 watch 文件（daemon tick 预测到点 → 复核巡检）
+    if not dry_run:
+        try:
+            _record_resin_watch(statuses, config)
+        except Exception:  # noqa: BLE001 - 预测失败不影响巡检本身
+            logger.exception("体力回满预测写入失败（忽略）")
 
     # 1.2) 凭证健康记账：成功/失败都记；连续 >=2 次 auth 失败且 24h 内未提醒过 → 独立提醒
     #      key = "<uid>:<game_id>"（与 logs/mihoyo_binding.json 语义对齐）；
@@ -841,6 +912,16 @@ def run_once(config: AppConfig, dry_run: bool = False) -> int:
             # 存档失败绝不能影响主流程：日志里说一声就好
             logger.warning("写入历史记录失败（不影响本轮检查）：%s", exc)
 
+    # 2.8) 免打扰时段（可跨零点）：窗口内推送顺延——未完成/溢出等触发条件
+    #      会自然重现，时段结束后的下一轮巡检自动补推，无需持久化
+    quiet_now, quiet_window = False, ""
+    if getattr(config.push, "quiet_enabled", False):
+        lt = time.localtime()
+        quiet_window = f"{config.push.quiet_start}-{config.push.quiet_end}"
+        quiet_now = in_quiet_window(
+            lt.tm_hour * 60 + lt.tm_min, config.push.quiet_start, config.push.quiet_end
+        )
+
     # 3) 推送决策
     alert, reason = should_push(
         config.test_mode,
@@ -851,6 +932,8 @@ def run_once(config: AppConfig, dry_run: bool = False) -> int:
         activity_count=(
             len(report.activity_alerts) + len(report.activity_start_alerts)
         ),
+        quiet_now=quiet_now,
+        quiet_window=quiet_window,
     )
     logger.info("推送决策：%s（%s）", "推送" if alert else "不推送", reason)
 
@@ -908,6 +991,12 @@ def run_once(config: AppConfig, dry_run: bool = False) -> int:
                 activities.mark_notified(report.activity_start_alerts)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("记录活动上新提醒失败（下次可能重复提醒）：%s", exc)
+        # 3.55) 跨机制去重：本轮体力预警已覆盖的游戏记入 watch 台账——
+        #       回满即推的 watcher 今天不再为它们触发复核（防双推）
+        try:
+            _mark_resin_pushed([a.game_id for a in report.resource_alerts])
+        except Exception:  # noqa: BLE001
+            logger.exception("体力推送去重标记失败（忽略）")
 
     # 3.6) 昵称限频刷新：当天查询全成功的账号每 24h 顺带拉一次角色列表，
     #      游戏里改过名自动跟上（best-effort，失败只记日志）

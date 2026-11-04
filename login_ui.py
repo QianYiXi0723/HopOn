@@ -703,6 +703,9 @@ def push_detail() -> Dict[str, Any]:
         "channels": channels,
         "items": items,
         "always_notify": bool(push.get("always_notify", False)),
+        "quiet_enabled": bool(push.get("quiet_enabled", False)),
+        "quiet_start": str(push.get("quiet_start", "23:00")),
+        "quiet_end": str(push.get("quiet_end", "08:00")),
         "configured": any(i["has_key"] and i["in_channels"] for i in items.values()),
     }
 
@@ -742,6 +745,16 @@ def update_push_config(raw: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str
     # 平安通知：全部日常完成时是否也发一条（默认关闭 = 无事不打扰）
     if "always_notify" in payload:
         push["always_notify"] = bool(payload.get("always_notify"))
+
+    # 免打扰时段：窗口内推送顺延（条件会在时段结束后自然重现，天然补推）
+    if "quiet_enabled" in payload:
+        push["quiet_enabled"] = bool(payload.get("quiet_enabled"))
+    for field in ("quiet_start", "quiet_end"):
+        if field in payload:
+            value = str(payload.get(field) or "").strip()
+            if value and not _TIME_RE.match(value):
+                raise ValueError(f"「{value}」不是合法时间，格式应为 HH:MM（如 23:00）")
+            push[field] = value or ("23:00" if field == "quiet_start" else "08:00")
 
     old_channels = [
         str(c).strip().lower() for c in (push.get("channels") or []) if str(c).strip()
