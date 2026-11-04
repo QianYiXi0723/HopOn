@@ -789,6 +789,7 @@ def run_once(config: AppConfig, dry_run: bool = False) -> int:
     # 1.5) 活动缓存：每天最多真正请求一次（20 小时 TTL），失败沿用旧缓存。
     #      活动列表变化很慢，绝不跟着每轮检查去打接口。
     activity_alerts = []
+    activity_start_alerts = []
     if config.activity_alert_enabled:
         try:
             from core import activities
@@ -797,15 +798,22 @@ def run_once(config: AppConfig, dry_run: bool = False) -> int:
             activity_alerts = activities.pending_alerts(
                 hours=config.activity_alert_days * 24
             )
-            # 未勾选的游戏：其活动结束提醒不进推送（与「不参与巡检并推送」语义一致）
+            # 活动上新提醒（开始后 24h 窗口内首巡检触发，终身只推一次）
+            activity_start_alerts = activities.pending_start_alerts()
+            # 未勾选的游戏：其活动提醒不进推送（与「不参与巡检并推送」语义一致）
             enabled_ids = {acc.game for acc in config.enabled_accounts}
             activity_alerts = [a for a in activity_alerts if a.game_id in enabled_ids]
+            activity_start_alerts = [
+                a for a in activity_start_alerts if a.game_id in enabled_ids
+            ]
         except Exception as exc:  # noqa: BLE001 - 活动提醒坏了也不能影响日常检查
             logger.warning("读取活动提醒失败（不影响本轮检查）：%s", exc)
 
     # 2) 判断（体力溢出预警复用本轮查询结果，不额外发请求）
     report = build_report(
-        statuses, config.resource_thresholds, activity_alerts=activity_alerts
+        statuses, config.resource_thresholds,
+        activity_alerts=activity_alerts,
+        activity_start_alerts=activity_start_alerts,
     )
     _safe_console(report.to_console_text())
     logger.info(
@@ -840,7 +848,9 @@ def run_once(config: AppConfig, dry_run: bool = False) -> int:
         len(report.unfinished),
         always_notify=config.push.always_notify,
         overflow_count=len(report.resource_alerts),
-        activity_count=len(report.activity_alerts),
+        activity_count=(
+            len(report.activity_alerts) + len(report.activity_start_alerts)
+        ),
     )
     logger.info("推送决策：%s（%s）", "推送" if alert else "不推送", reason)
 
@@ -890,6 +900,14 @@ def run_once(config: AppConfig, dry_run: bool = False) -> int:
                 activities.mark_notified(report.activity_alerts)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("记录活动提醒失败（下次可能重复提醒）：%s", exc)
+        if report.activity_start_alerts:
+            try:
+                from core import activities
+
+                # 上新提醒的 uid 已带 :start 后缀，与结束提醒同表不同名
+                activities.mark_notified(report.activity_start_alerts)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("记录活动上新提醒失败（下次可能重复提醒）：%s", exc)
 
     # 3.6) 昵称限频刷新：当天查询全成功的账号每 24h 顺带拉一次角色列表，
     #      游戏里改过名自动跟上（best-effort，失败只记日志）

@@ -27,6 +27,8 @@ class DailyReport:
     resource_alerts: List[ResourceAlert] = field(default_factory=list)
     #: 活动结束提醒（剩 <=72 小时且今天还没提醒过的活动）
     activity_alerts: List[Any] = field(default_factory=list)
+    #: 活动开始提醒（刚上线、今天还没提醒过的活动）
+    activity_start_alerts: List[Any] = field(default_factory=list)
 
     # ---------------- 分组 ---------------- #
     @property
@@ -166,6 +168,8 @@ class DailyReport:
             title += f" · ⚠️ 体力将溢出（{len(self.resource_alerts)}）"
         if self.activity_alerts:
             title += f" · 📅 活动将结束（{len(self.activity_alerts)}）"
+        if self.activity_start_alerts:
+            title += f" · 🆕 活动上新（{len(self.activity_start_alerts)}）"
 
         lines: List[str] = []
         lines.append(self.generated_at.strftime("%m-%d %H:%M"))
@@ -212,9 +216,11 @@ class DailyReport:
             lines.append(f"共漏 {self.unfinished_task_count} 项，别拖到 23:59。")
 
         # 活动提醒放在消息末尾：不打断"日常做没做完"这个主信息
-        if self.activity_alerts:
+        if self.activity_alerts or self.activity_start_alerts:
             lines.append("")
             for alert in self.activity_alerts:
+                lines.append(alert.warn_line())
+            for alert in self.activity_start_alerts:
                 lines.append(alert.warn_line())
         return title, "\n".join(lines)
 
@@ -233,6 +239,15 @@ class DailyReport:
                     "days_left": alert.days_left,
                 }
                 for alert in self.activity_alerts
+            ],
+            "activity_start_alerts": [
+                {
+                    "game": alert.game_id,
+                    "game_name": alert.game_name,
+                    "title": alert.title,
+                    "start": alert.start.strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                for alert in self.activity_start_alerts
             ],
             "unfinished_task_count": self.unfinished_task_count,
             "summary": {
@@ -310,17 +325,20 @@ def build_report(
     statuses: List[GameStatus],
     thresholds: Optional[Dict[str, int]] = None,
     activity_alerts: Optional[List[Any]] = None,
+    activity_start_alerts: Optional[List[Any]] = None,
 ) -> DailyReport:
     """入口函数：状态列表 -> 汇总报告。
 
     ``thresholds`` 为 ``{game_id: 阈值}``（见 ``AppConfig.resource_thresholds``）；
     传了就顺带判定体力溢出，不传则不做（向后兼容旧调用）。
     ``activity_alerts`` 由 ``core.activities.pending_alerts()`` 提供，直接挂进报告。
+    ``activity_start_alerts`` 由 ``pending_start_alerts()`` 提供（活动上新提醒）。
     """
     return DailyReport(
         statuses=list(statuses),
         resource_alerts=detect_resource_alerts(statuses, thresholds),
         activity_alerts=list(activity_alerts or []),
+        activity_start_alerts=list(activity_start_alerts or []),
     )
 
 

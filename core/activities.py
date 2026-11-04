@@ -1099,6 +1099,56 @@ def pending_alerts(
     return alerts
 
 
+@dataclass
+class ActivityStartAlert:
+    """活动开始提醒（推送正文用）——「别错过」与结束提醒的止损互补。
+
+    去重与结束提醒同表不同名：uid 带 ``:start`` 后缀，同一活动
+    「开始推一次、临结束再推一次」互不挤占。
+    """
+
+    game_id: str
+    game_name: str
+    title: str
+    start: datetime
+    uid: str = ""
+
+    def warn_line(self) -> str:
+        """🆕 活动上新：原神「XX」，现已开始，快去看看！"""
+        needs_quote = "「" not in self.title and "」" not in self.title
+        shown = f"「{self.title}」" if needs_quote else self.title
+        return f"🆕 活动上新：{self.game_name}{shown} 现已开始，快去看看！"
+
+
+def pending_start_alerts(*, window_hours: int = 24) -> List[ActivityStartAlert]:
+    """刚开始的活动提醒——活动开始后第一个巡检窗口就会推。
+
+    触发窗口：start 落在最近 window_hours 小时内（巡检在活动开始后 30 分钟
+    到半天不等，窗口太窄会漏）。去重是**终身制**的：uid（带 :start 后缀）
+    一旦记过就永远不再推——结束提醒的「每天可重复」语义不适用于开始提醒。
+    """
+    cache = load_cache()
+    notified_all = set()
+    for day_list in (cache.get("notified") or {}).values():
+        if isinstance(day_list, list):
+            notified_all.update(day_list)
+
+    now = datetime.now()
+    window_start = now - timedelta(hours=window_hours)
+    alerts: List[ActivityStartAlert] = []
+    for act in ongoing():
+        if act.start is None or act.not_started or act.start < window_start:
+            continue
+        uid = act.uid + ":start"
+        if uid in notified_all:
+            continue
+        alerts.append(ActivityStartAlert(
+            game_id=act.game_id, game_name=act.game_name, title=act.title,
+            start=act.start, uid=uid,
+        ))
+    return alerts
+
+
 def mark_notified(alerts: Iterable[ActivityAlert], *, today: Optional[datetime] = None) -> None:
     """把今天已经推送过的活动记下来，避免同一天每轮检查都催一遍。"""
     # 与 pending_alerts 同口径：04:00 游戏日界（见其注释）
