@@ -362,13 +362,11 @@ def _enabled_account_info() -> List[Dict[str, str]]:
 
 
 def _cred_filled(value: object) -> bool:
-    """凭证字段是否真的填了：非空，且不是出厂模板的「请填写…」占位符。
+    """凭证字段是否真的填了。判定单源在 core.config.cred_filled（P6-5 合流）：
+    非空，且不是出厂模板的「请填写…」占位符——否则"还没绑定"会显示成"已绑定"。"""
+    from core.config import cred_filled
 
-    占位符也算非空字符串，直接 bool() 会把"还没绑定"显示成"已绑定"，
-    用户就被引导去看查询报错而不是先扫码。
-    """
-    v = str(value or "").strip()
-    return bool(v) and "请填写" not in v
+    return cred_filled(value)
 
 
 def accounts_status() -> Dict[str, Any]:

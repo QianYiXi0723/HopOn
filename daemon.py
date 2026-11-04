@@ -493,15 +493,20 @@ def format_weekly_body(
 
 
 def _has_bound_credential(config) -> bool:
-    """启用账号里是否存在任何真实凭证（cookie/token 任一非空）。
+    """启用账号里是否存在任何真实凭证（cookie/token 任一已实际填写）。
 
     mock 门卫的事实依据：provider 字段可能因旧版升级/手写配置停在 mock，
     但凭证是扫码/粘贴时写入的硬事实——有凭证就该真实查询，没有才是出厂态。
+    「已填写」判定单源 = core.config.cred_filled（P6-5 合流）：出厂模板的
+    「请填写…」占位符也算非空字符串，旧实现直接 bool() 会把全新安装判成
+    「已有凭证」，触发 provider=mock 误报。
     """
+    from core.config import cred_filled
+
     for acc in getattr(config, "enabled_accounts", None) or []:
         cred = getattr(acc, "credential", None) or {}
-        if (str(cred.get("cookie") or "").strip()
-                or str(cred.get("token") or "").strip()):
+        if (cred_filled(cred.get("cookie"))
+                or cred_filled(cred.get("token"))):
             return True
     return False
 

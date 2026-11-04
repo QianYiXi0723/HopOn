@@ -222,6 +222,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 # --------------------------------------------------------------------------- #
 
 
+def cred_filled(value: object) -> bool:
+    """凭证字段是否真的填了：非空，且不是出厂模板的「请填写…」占位符。
+
+    占位符也算非空字符串，直接 bool() 会把"还没绑定"判成"已绑定"——
+    调用方（凭证健康展示 / mock 门卫 / 周报守卫）就会各说各话。
+    全项目凭证「是否已绑定」的唯一判定入口（2026-11-05 P6-5 合流）。
+    """
+    v = str(value or "").strip()
+    return bool(v) and "请填写" not in v
+
+
 @dataclass
 class AccountConfig:
     """一个游戏账号的配置。credential 本阶段不参与真实请求，仅做结构占位。"""

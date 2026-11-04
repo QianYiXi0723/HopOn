@@ -51,7 +51,7 @@ from core.config import (
 from core.logger import setup_logger
 from core.models import GameStatus
 from core.notifier import build_notifiers, in_quiet_window, push_all, should_push
-from core.querier import UnknownProviderError, get_querier
+from core.querier import UnknownProviderError, StaleSnapshotError, get_querier
 
 DEFAULT_CONFIG_NAME = "config.json"
 
@@ -457,7 +457,12 @@ def _query_account(account, provider: str) -> GameStatus:
     """
     import logging
 
-    from core.mihoyo_api import MiyousheAuthError, MiyousheNotBoundError
+    from core.mihoyo_api import (
+        MiyousheAuthError,
+        MiyousheNotBoundError,
+        MiyousheQueryError,
+    )
+    from core.skland_api import SklandQueryError
 
     logger = logging.getLogger("dailycheck.main")
     try:
@@ -493,6 +498,23 @@ def _query_account(account, provider: str) -> GameStatus:
             nickname=account.nickname,
             error=str(exc),
             cred_kind="auth",
+        )
+    except (MiyousheQueryError, SklandQueryError, StaleSnapshotError) as exc:
+        # 预期态运维失败（风控拒绝 1034/10041、凭证问题、接口改版提示、快照
+        # 过期）：单行 WARNING 不带堆栈——pythonw 下 traceback 无处可看，
+        # 留在日志里只是噪音（2026-11-05 P6-6）；未知异常仍走全堆栈兜底。
+        logger.warning("%s 查询失败：%s", account.game_name, exc)
+        # 凭证失效判定两级（与下方兜底分支同一套规则，只是日志降级）：
+        kind = getattr(exc, "cred_kind", None)
+        if kind is None:
+            m = _RETCODE_RE.search(str(exc))
+            kind = "auth" if (m and int(m.group(1)) in _CRED_AUTH_RETCODES) else "other"
+        return GameStatus(
+            game_id=account.game,
+            game_name=account.game_name,
+            nickname=account.nickname,
+            error=str(exc),
+            cred_kind=kind,
         )
     except Exception as exc:  # 兜底，绝不让查询异常打断整轮
         logger.exception("%s 查询异常", account.game_name)

@@ -2141,7 +2141,20 @@ function renderLive(d){
      "需要动手查凭证"伪装成了"没有信息"，所以必须留一份原文。 */
   window.__liveAll = games;
   if (!games.length) {
-    box.innerHTML = '<div class="emptybox">没有启用的账号。</div>';
+    /* 三态文案（2026-11-05 P6-3）：「没有启用」与「没绑凭证」是两回事——
+       账号页开关全开但没扫码时，旧文案把用户引去开开关，越开越糊涂 */
+    const accs = window.__accounts || {};
+    const enabledIds = Object.keys(accs).filter(function(k){
+      return accs[k] && accs[k].enabled;
+    });
+    const boundN = enabledIds.filter(function(k){
+      return accs[k] && accs[k].has_credential;
+    }).length;
+    let msg;
+    if (!enabledIds.length) msg = '没有启用的账号。';
+    else if (!boundN) msg = '启用的账号都还没绑定凭证——去「账号与通知」扫码登录后再来。';
+    else msg = '暂无实时数据（凭证可能失效或角色未创建），稍后重试或查运行日志。';
+    box.innerHTML = '<div class="emptybox">' + msg + '</div>';
   } else {
     /* 每游戏一张便笺卡（HoYoLAB 实时便笺形态）：卡片直接作为网格子项
        （不加包装层——包装 div 会独占一条网格轨道，把卡片挤成竖排） */
@@ -2341,8 +2354,9 @@ function actUrgencyAttr(it, isHero){
   return '';
 }
 
-/* isHero：最紧急的 1 张 → 2x2 英雄卡（hero class）+ 紧迫感描边 */
-function actCardHtml(it, isHero){
+/* isHero：最紧急的 1 张 → 2x2 英雄卡（hero class）+ 紧迫感描边；
+   heroSlim=true 时只保留描边不占 2x2（英雄卡没内容可展示时不撑大片留白） */
+function actCardHtml(it, isHero, heroSlim){
   const id = escHtml(it.id || '');
   const st = shortRange(it.start), en = shortRange(it.end);
   const ended = it.status === '已完成';
@@ -2358,7 +2372,7 @@ function actCardHtml(it, isHero){
     ? '<span class="act-reward" title="这个活动给抽卡资源">' + escHtml(it.reward) + '</span>'
     : '';
   const prog = actProgHtml(it);
-  return '<div class="card acard' + (isHero ? ' hero' : '') + '"' +
+  return '<div class="card acard' + (isHero && !heroSlim ? ' hero' : '') + '"' +
     actUrgencyAttr(it, isHero) + ' data-id="' + id + '"' +
     ' style="--gc:' + gameDotColor(it.game) + '">' +
     '<div class="acard-top"><span class="act-game">' + actIconHtml(it) +
@@ -2385,12 +2399,26 @@ function actProgHtml(it){
 }
 
 /* 找最紧急的 1 张（剩余小时最小且 >0），做 2x2 英雄卡 + data-urgency 标记 */
+/* 卡里有没有「可看的内容」：进度条或奖励明细。2x2 英雄卡只有内容足才配占
+   （纯文字卡占 2x2 = 大片留白，2026-11-05 P6-2 实测空置 241px） */
+function actHasContent(it){
+  return actProgHtml(it) !== '' || !!it.reward;
+}
+
 function pickHeroIndex(pool){
+  /* 最紧急优先；hours_left 平局时优先「有内容可展示」的卡——此前平局按
+     后端返回序裁决，同截止活动谁抢到英雄卡全看 wiki 排版（P6-2 实证）；
+     再平局取先出现者 */
   if (!pool.length) return -1;
+  const hl = function(x){ const h = +x.hours_left; return h > 0 ? h : Infinity; };
   let best = 0;
   for (let i = 1; i < pool.length; i++) {
-    const a = +pool[i].hours_left || 0, b = +pool[best].hours_left || 0;
-    if (a > 0 && (b <= 0 || a < b)) best = i;
+    const ha = hl(pool[i]), hb = hl(pool[best]);
+    if (ha !== hb) {
+      if (ha < hb) best = i;
+      continue;
+    }
+    if (actHasContent(pool[i]) && !actHasContent(pool[best])) best = i;
   }
   return best;
 }
@@ -2443,7 +2471,16 @@ function renderActivities(d){
     const upcoming = items.filter(function(x){ return x.group === 'upcoming'; });
     const finished = items.filter(function(x){ return x.status === '已完成'; });
     const hlOf = function(x){ const h = +x.hours_left; return h > 0 ? h : Infinity; };
-    const heroIt = ongoing.length ? ongoing[pickHeroIndex(ongoing)] : (upcoming[0] || null);
+    const byUrgency = function(a, b){
+      return hlOf(a) - hlOf(b) ||
+        String(a.title || '').localeCompare(String(b.title || ''), 'zh');
+    };
+    /* 英雄判定改在「显示排序之后」的池上做（2026-11-05 P6-2）：
+       最紧急 = 视觉第一；平局裁决从不可见的后端返回序换成标题 zh 序 */
+    const heroPool = ongoing.slice().sort(byUrgency);
+    const heroIdx = pickHeroIndex(heroPool);
+    const heroIt = heroIdx >= 0 ? heroPool[heroIdx] : (upcoming[0] || null);
+    const heroSlim = !!heroIt && !actHasContent(heroIt);
 
     let html = '';
     if (actViewMode() === 'game') {
@@ -2473,19 +2510,16 @@ function renderActivities(d){
               '<span class="act-group-count">' + g.items.length + ' 个活动</span>' +
             '</div>' +
             '<div class="act-grid">' +
-              g.items.map(function(x){ return actCardHtml(x, x === heroIt); }).join('') +
+              g.items.map(function(x){ return actCardHtml(x, x === heroIt, heroSlim); }).join('') +
             '</div></div>';
         }).join('');
       }
     } else {
       /* 模式 B · 按剩余时间升序，同时间按标题首字母（localeCompare zh）；
          平坦网格无组头，最紧急一张仍是英雄卡 */
-      const pool = ongoing.concat(upcoming).sort(function(a, b){
-        const diff = hlOf(a) - hlOf(b);
-        return diff || String(a.title || '').localeCompare(String(b.title || ''), 'zh');
-      });
+      const pool = ongoing.concat(upcoming).sort(byUrgency);
       html = '<div class="act-grid">' +
-        pool.map(function(x){ return actCardHtml(x, x === heroIt); }).join('') +
+        pool.map(function(x){ return actCardHtml(x, x === heroIt, heroSlim); }).join('') +
         '</div>';
     }
 
