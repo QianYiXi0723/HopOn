@@ -45,10 +45,10 @@
 
 ```bat
 mkdir "%TEMP%\rl_rollbak_设备身份"
-copy /Y "E:\Apps\ResinLoop\config.json" "%TEMP%\rl_rollbak_设备身份\"
-copy /Y "E:\Apps\ResinLoop\logs\device_fp.json" "%TEMP%\rl_rollbak_设备身份\"
-copy /Y "E:\Apps\ResinLoop\logs\device_identity.json" "%TEMP%\rl_rollbak_设备身份\"
-copy /Y "E:\Apps\ResinLoop\logs\mihoyo_binding.json" "%TEMP%\rl_rollbak_设备身份\"
+copy /Y "E:\Apps\HopOn\config.json" "%TEMP%\rl_rollbak_设备身份\"
+copy /Y "E:\Apps\HopOn\logs\device_fp.json" "%TEMP%\rl_rollbak_设备身份\"
+copy /Y "E:\Apps\HopOn\logs\device_identity.json" "%TEMP%\rl_rollbak_设备身份\"
+copy /Y "E:\Apps\HopOn\logs\mihoyo_binding.json" "%TEMP%\rl_rollbak_设备身份\"
 dir "%TEMP%\rl_rollbak_设备身份"
 ```
 
