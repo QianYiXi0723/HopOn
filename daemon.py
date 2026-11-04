@@ -779,11 +779,11 @@ def _check_resin_watch() -> None:
         except ValueError:
             continue
         if full_at <= horizon:
-            due_games.append(game)
-    if not due_games:
+            due.append(game)
+    if not due:
         return
 
-    logger.info("体力回满预测到点：%s → 触发复核巡检", "、".join(due_games))
+    logger.info("体力回满预测到点：%s → 触发复核巡检", "、".join(due))
     run_check("体力回满复核")
     # 复核的 run_once 已重写预测；这里把触发的旧条目清掉防重复触发
     try:
@@ -793,7 +793,7 @@ def _check_resin_watch() -> None:
         if isinstance(state, dict):
             predictions = state.get("predictions")
             if isinstance(predictions, dict):
-                for game in due_games:
+                for game in due:
                     predictions.pop(game, None)
                 (LOGS_DIR / ".resin_watch.json").write_text(
                     _json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -811,7 +811,12 @@ def _loop(stop_event: threading.Event) -> None:
             logger.exception("轮询异常（已忽略，继续运行）")
         write_heartbeat()
         _maybe_weekly_report()   # 周日 21:00 后的周度推送（常开，错过自动补发）
-        _check_resin_watch()     # ⭐ 回满即推：预测到点触发复核巡检
+        try:
+            _check_resin_watch()  # ⭐ 回满即推：预测到点触发复核巡检
+        except Exception:  # noqa: BLE001 - watcher 炸了不许弄死轮询线程
+            # 2026-11-05 实证：watcher 一抛 NameError 整个 check-loop 线程无声
+            # 死掉（pythonw 无 stderr），心跳停在启动那一笔、巡检永远停摆。
+            logger.exception("体力回满 watcher 异常（已忽略，继续运行）")
         if _wait(TICK_SECONDS, stop_event):
             run_check("手动")
     logger.info("轮询线程已退出")
