@@ -54,33 +54,32 @@ NOW = datetime(2026, 10, 30, 7, 26, 0)          # 真实复现时刻
 LAST_NIGHT = datetime(2026, 10, 29, 22, 14, 0)  # 真实 lastOnlineTs
 
 # ===================== A1 陈旧（真实复现场景） =====================
-print("== A1 快照 10-29 22:14 / 现在 10-30 07:26 → 必须判陈旧 ==")
-reason = Q._stale_snapshot_reason(payload(NOW, LAST_NIGHT))
-check("A1a 判为陈旧", reason is not None, reason)
-check("A1b 文案含「数据未更新」", bool(reason and "数据未更新" in reason), reason)
-check("A1c 文案含上次在线时间", bool(reason and "10-29 22:14" in reason), reason)
+print("== A1 快照 10-29 22:14 / 现在 10-30 07:26 → 必判「今日归零 0/10」 ==")
+zeroed = Q._zeroed_daily_total(payload(NOW, LAST_NIGHT))
+check("A1a 判为跨日界", zeroed is not None, zeroed)
+check("A1b total 取自快照", zeroed == 10, zeroed)
 
 # ===================== A2 新鲜 =====================
 print("== A2 快照 10-30 05:00 → 必须不判陈旧 ==")
-check("A2 不判陈旧", Q._stale_snapshot_reason(
+check("A2 不判陈旧", Q._zeroed_daily_total(
     payload(NOW, datetime(2026, 10, 30, 5, 0))) is None)
 
 # ===================== A3 凌晨（逻辑日仍是昨天） =====================
 print("== A3 现在 10-30 03:30（逻辑日=10-29）/ 快照 10-29 22:14 → 不判陈旧 ==")
-check("A3 不判陈旧", Q._stale_snapshot_reason(
+check("A3 不判陈旧", Q._zeroed_daily_total(
     payload(datetime(2026, 10, 30, 3, 30), LAST_NIGHT)) is None)
 
 # ===================== A4 日界边界 =====================
 print("== A4 现在 10-30 04:00 整 / 快照 10-30 03:59 → 判陈旧 ==")
-check("A4 判陈旧（刚过日界，快照属于昨天）", Q._stale_snapshot_reason(
+check("A4 判陈旧（刚过日界，快照属于昨天）", Q._zeroed_daily_total(
     payload(datetime(2026, 10, 30, 4, 0), datetime(2026, 10, 30, 3, 59))) is not None)
 
 # ===================== A5 / A6 字段缺失 =====================
 print("== A5/A6 可选字段缺失 → 不判定 ==")
-check("A5 lastOnlineTs 缺失不判", Q._stale_snapshot_reason(payload(NOW, None)) is None)
+check("A5 lastOnlineTs 缺失不判", Q._zeroed_daily_total(payload(NOW, None)) is None)
 p_no_now = payload(NOW, LAST_NIGHT)
 p_no_now.pop("currentTs")
-check("A6 currentTs 缺失不判", Q._stale_snapshot_reason(p_no_now) is None)
+check("A6 currentTs 缺失不判", Q._zeroed_daily_total(p_no_now) is None)
 
 # ===================== A7 / A8 端到端 fetch() =====================
 print("== A7/A8 端到端 fetch()（monkeypatch，零网络） ==")
@@ -106,34 +105,36 @@ def run_fetch(data):
         Q.list_players, Q.get_arknights_player_info, Q.get_skland_credentials = orig
 
 stale = run_fetch(payload(NOW, LAST_NIGHT))
-check("A7a 不再算查询失败（ok=True），改由 stale 标记", stale.ok is True, stale.error)
-check("A7a2 stale 说明非空", bool(stale.stale), stale.stale)
-check("A7b finished=False（不再冒充已完成）", stale.finished is False, stale.finished)
-check("A7c unfinished_tasks 为空（不会误报未完成）",
-      stale.unfinished_tasks == [], len(stale.unfinished_tasks))
+check("A7a 不再算查询失败（ok=True）", stale.ok is True, stale.error)
+check("A7b finished=False（没做完就是没做完）", stale.finished is False, stale.finished)
+check("A7c 无 stale 标记（归零是普通数据，不走特殊展示）",
+      stale.stale is None, stale.stale)
 check("A7d cred_kind 不是 auth（不触发凭证告警）",
       stale.cred_kind != "auth", stale.cred_kind)
-check("A7e 说明文案可读", "数据未更新" in (stale.stale or ""), stale.stale)
-check("A7f 序列化带 stale 字段（前端要据此画中性徽章）",
-      "stale" in stale.to_dict() and bool(stale.to_dict()["stale"]),
+check("A7e 每日任务显示为归零 0/10",
+      [t.progress for t in stale.tasks if t.name == "每日任务"] == ["0/10"],
+      [t.progress for t in stale.tasks])
+check("A7f 无 stale 字段（to_dict 正常序列化）",
+      "stale" in stale.to_dict() and stale.to_dict()["stale"] is None,
       stale.to_dict().get("stale"))
 
-# ============ A7' 汇总层：不催、不谎报全部完成、不算失败 ============
+# ============ A7' 汇总层：走普通未完成链路 ============
 print("== A7' 汇总层（analyzer） ==")
 from core.analyzer import DailyReport  # noqa: E402
 
 only_stale = DailyReport(statuses=[stale])
-check("A7g 不算未完成", only_stale.unfinished == [], len(only_stale.unfinished))
+check("A7g 算未完成（0/10 就是没做完，与其它游戏同口径）",
+      [s.game_name for s in only_stale.unfinished] == ["明日方舟"],
+      [s.game_name for s in only_stale.unfinished])
 check("A7h 不算查询失败", only_stale.failed == [], len(only_stale.failed))
 check("A7i 不算已完成", only_stale.finished == [], len(only_stale.finished))
-check("A7j 不触发催促推送", only_stale.need_alert is False, only_stale.need_alert)
+check("A7j 触发正常催促推送（与其它未完成游戏一致）",
+      only_stale.need_alert is True, only_stale.need_alert)
 _title, _body = only_stale.to_push_payload()
-check("A7k 推送标题不说「全部完成」", "全部完成" not in _title, _title)
-check("A7l 推送正文点名待更新，别当成已完成",
-      "数据待更新" in _body and "明日方舟" in _body, _body.replace("\n", " / "))
-check("A7m 控制台汇总区分待更新", "数据待更新" in only_stale.to_console_text())
+check("A7k 推送正文含 0/10 明细", "0/10" in _body, _body.replace("\n", " / "))
+check("A7m 控制台汇总与其它游戏同格式", "明日方舟" in only_stale.to_console_text())
 
-# 混合：另一款已完成的真数据 + 方舟待更新 → 标题不能是「2/2 全部完成」
+# 混合：另一款已完成的真数据 + 方舟归零 0/10 → 标题不能是「2/2 全部完成」
 from core.models import GameStatus, TaskItem  # noqa: E402
 
 other_done = GameStatus(
@@ -143,8 +144,9 @@ other_done = GameStatus(
 mixed = DailyReport(statuses=[other_done, stale])
 check("A7n 混合场景标题不是全完成",
       "全部完成" not in mixed.to_push_payload()[0], mixed.to_push_payload()[0])
-check("A7o 混合场景不把方舟算进未完成",
-      [s.game_name for s in mixed.unfinished] == [], [s.game_name for s in mixed.unfinished])
+check("A7o 方舟 0/10 正常算进未完成（同口径）",
+      [s.game_name for s in mixed.unfinished] == ["明日方舟"],
+      [s.game_name for s in mixed.unfinished])
 
 fresh = run_fetch(payload(NOW, datetime(2026, 10, 30, 5, 0)))
 check("A8a 新鲜快照 ok=True", fresh.ok is True, fresh.error)

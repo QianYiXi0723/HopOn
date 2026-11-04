@@ -133,7 +133,7 @@ class GameStatus:
         if self.no_account:
             return f"{who}｜未创建角色：{self.no_account}"
         if self.stale:
-            return f"{who}｜数据待更新：{self.stale}"
+            return f"{who}｜待上线更新：{self.stale}"
         counted = self.counted_tasks
         if not counted:
             return f"{who}｜无判定项（仅资源数据）｜0/0"

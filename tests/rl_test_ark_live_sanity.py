@@ -44,14 +44,15 @@ def epoch(dt):
 
 
 def payload(now_dt, online_dt, ap_cur=9, ap_max=205, crt=None, last_add=None,
-            daily=(0, 10)):
+            daily=(0, 10), no_daily=False):
     """与真实返回同形状的 data；crt/last_add 缺省不带（旧数据形态）。"""
     node = {
         "currentTs": epoch(now_dt),
-        "routine": {"daily": {"current": daily[0], "total": daily[1]},
-                    "weekly": {"current": 12, "total": 13}},
         "status": {"ap": {"current": ap_cur, "max": ap_max}},
     }
+    if not no_daily:
+        node["routine"] = {"daily": {"current": daily[0], "total": daily[1]},
+                           "weekly": {"current": 12, "total": 13}}
     if online_dt is not None:
         node["status"]["lastOnlineTs"] = epoch(online_dt)
     if crt is not None:
@@ -157,37 +158,40 @@ def run_fetch(data):
 
 stale = run_fetch(payload(NOW31_0534, ONLINE0147, ap_cur=9, crt=CRT,
                           last_add=1793382207, daily=(10, 10)))
-check("B7a stale 非空且含「数据未更新」与上次在线",
-      bool(stale.stale and "数据未更新" in stale.stale
-           and "01:47" in stale.stale), stale.stale)
-check("B7b 横幅带推算理智与回满 ETA（47/205、预计 21:19）",
-      "按恢复推算" in (stale.stale or "") and "47/205" in (stale.stale or "")
-      and "21:19" in (stale.stale or ""), stale.stale)
-check("B7c tasks 附带推算理智（counted=False）",
-      len(stale.tasks) == 1 and stale.tasks[0].progress == "47/205"
-      and stale.tasks[0].counted is False
-      and stale.tasks[0].recover_seconds == 56716,
+check("B7a 跨日界 → 每日任务归零 0/10（与其它游戏同口径）",
+      [t.progress for t in stale.tasks if t.name == "每日任务"] == ["0/10"],
       [t.progress for t in stale.tasks])
-check("B7d 不冒充完成/未完成", stale.finished is False
-      and stale.unfinished_tasks == [], stale.unfinished_tasks)
+check("B7b 无 stale 特殊文案（推算事实当普通数据展示）",
+      stale.stale is None, stale.stale)
+check("B7c tasks 含推算理智 47/205（counted=False、带 ETA）",
+      len(stale.tasks) == 2 and stale.tasks[1].progress == "47/205"
+      and stale.tasks[1].counted is False
+      and stale.tasks[1].recover_seconds == 56716,
+      [t.progress for t in stale.tasks])
+check("B7d 冒充未完成——是的，0/10 就是未完成（同口径）",
+      stale.finished is False
+      and [t.name for t in stale.unfinished_tasks] == ["每日任务"],
+      stale.unfinished_tasks)
 check("B7e 仍是 ok=True + cred_kind 非 auth", stale.ok is True
       and stale.cred_kind != "auth", stale.cred_kind)
 
-# ===================== B8 stale 无恢复字段（旧形态兼容） =====================
-print("== B8 stale 且无 crt：横幅维持原文案、零附带任务 ==")
-stale_old = run_fetch(payload(NOW31_0534, ONLINE0147, daily=(10, 10)))
-check("B8a 横幅不含推算字样（原文案不变）",
-      bool(stale_old.stale) and "按恢复推算" not in stale_old.stale
-      and stale_old.stale.endswith("无法确认今日进度"), stale_old.stale)
-check("B8b 零附带任务（旧行为）", stale_old.tasks == [], stale_old.tasks)
+# ===================== B8 stale 无 daily.total（罕见兜底路径） =====================
+print("== B8 无 daily.total：走兜底横幅（罕见，宁缺勿错） ==")
+stale_old = run_fetch(payload(NOW31_0534, ONLINE0147, daily=(10, 10), no_daily=True))
+check("B8a 兜底横幅非空且不含推算字样",
+      bool(stale_old.stale) and "按恢复推算" not in stale_old.stale, stale_old.stale)
+check("B8b 仍走 stale 路径（ok=True、不冒充完成）",
+      stale_old.ok is True and stale_old.finished is False, stale_old.ok)
 
 # ===================== B9 汇总层 =====================
-print("== B9 汇总层：stale+推算理智不改变判定 ==")
+print("== B9 汇总层：归零 0/10 走普通未完成链路 ==")
 report = DailyReport(statuses=[stale])
-check("B9a 不算未完成", report.unfinished == [], len(report.unfinished))
+check("B9a 算未完成（0/10 与其它游戏同口径）",
+      [s.game_name for s in report.unfinished] == ["明日方舟"],
+      [s.game_name for s in report.unfinished])
 check("B9b 不算查询失败", report.failed == [], len(report.failed))
 check("B9c 不算已完成", report.finished == [], len(report.finished))
-check("B9d 不触发催促推送", report.need_alert is False, report.need_alert)
+check("B9d 触发正常催促推送", report.need_alert is True, report.need_alert)
 
 passed = sum(1 for _, ok in results if ok)
 print("\n[结论] %d/%d 通过%s" % (passed, len(results),

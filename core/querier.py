@@ -444,28 +444,53 @@ class StaleSnapshotError(Exception):
         self.extra_tasks = list(extra_tasks or [])
 
 
-def _stale_snapshot_reason(data: Dict[str, Any]) -> Optional[str]:
-    """快照陈旧时返回给用户看的原因；新鲜 / 字段缺失返回 None。
+def _is_snapshot_stale(data: Dict[str, Any]) -> bool:
+    """快照是否早于今日 04:00（仅判新旧）。
 
     判据：``status.lastOnlineTs`` 早于"今日 04:00"（走 ``GAME_DAY_OFFSET``，
     与 :func:`core.history.game_date_key` 同口径，禁止各处自行算日子）。
     "现在"优先用服务端的 ``currentTs``，比本机时钟更可信。
-
-    字段缺失时**不判定**：宁可沿用旧行为，也不因为一个可选字段
-    把原本正常的查询打成失败。
+    字段缺失返回 False（宁可不判定，也不因可选字段把正常查询打成失败）。
     """
     now_ts = _optional_int(data, "currentTs")
     online_ts = _optional_int(data, "status", "lastOnlineTs")
     if not now_ts or not online_ts:
-        return None
+        return False
     reset_dt = (datetime.fromtimestamp(now_ts) - GAME_DAY_OFFSET).replace(
         hour=0, minute=0, second=0, microsecond=0
     ) + GAME_DAY_OFFSET
-    if online_ts >= int(reset_dt.timestamp()):
+    return online_ts < int(reset_dt.timestamp())
+
+
+def _zeroed_daily_total(data: Dict[str, Any]) -> Optional[int]:
+    """快照跨过今日 04:00 日界时，返回 ``routine.daily.total``（今日任务总数）。
+
+    道理与理智推算同源：每日任务在 04:00 由游戏自动清零是确定性事实——
+    玩家没上线，今天的进度就必然是 0/N。total 取自快照（任务构成当天不变），
+    current 直接置 0，当作普通数据返回，无需任何特殊展示。
+
+    新鲜快照 / 字段缺失 / total 非法返回 None（宁可不判定，也不因可选
+    字段把正常查询打成失败）。
+    """
+    if not _is_snapshot_stale(data):
         return None
+    routine = data.get("routine")
+    daily = routine.get("daily") if isinstance(routine, dict) else None
+    if not isinstance(daily, dict):
+        return None
+    try:
+        total = int(daily.get("total"))
+    except (TypeError, ValueError):
+        return None
+    return total if total > 0 else None
+
+
+def _stale_fallback_reason(data: Dict[str, Any]) -> str:
+    """total 拿不到时的兜底横幅（罕见路径：daily 字段异常）。"""
+    online_ts = _optional_int(data, "status", "lastOnlineTs") or 0
     return (
-        f"游戏数据未更新（上次在线 {datetime.fromtimestamp(online_ts):%m-%d %H:%M}），"
-        "无法确认今日进度"
+        f"今天还没上线（上次在线 {datetime.fromtimestamp(online_ts):%m-%d %H:%M}），"
+        "上线后显示今日进度"
     )
 
 
@@ -612,12 +637,20 @@ class SklandQuerier(BaseQuerier):
         if account.game == "arknights":
             uid = require_str(binding, "uid")
             data = get_arknights_player_info(credential["cred"], credential["token"], uid)
-            # 森空岛给的是"上次登录时的快照"，跨过 04:00 日界就不能当今日进度用
-            reason = _stale_snapshot_reason(data)
-            if reason:
-                # 快照过期但理智是确定性恢复量、照常可算（官方 App 同款口径）：
-                # 附进 stale 文案并在 tasks 里带上推算值，页面在"无法确认
-                # 今日进度"之外仍有可用信息；字段缺失则维持原横幅（旧行为）
+            # 森空岛给的是"上次登录时的快照"。跨过 04:00 日界时，今日任务
+            # 必然被游戏清零（0/N）——与理智推算同源：确定性的事实直接当
+            # 普通数据返回，total 取快照、current 置 0，不做任何特殊展示。
+            # 理智照常按恢复字段现算（官方 App 同款口径）。快照 total 拿不到
+            # 时才退回旧横幅路径（宁缺勿错）。
+            zeroed_total = _zeroed_daily_total(data)
+            if zeroed_total is not None:
+                tasks = [TaskItem("每日任务", done=False, progress=f"0/{zeroed_total}")]
+                sanity = _arknights_sanity_task(data)
+                if sanity is not None:
+                    tasks.append(sanity)
+                return tasks
+            if _is_snapshot_stale(data):
+                reason = _stale_fallback_reason(data)
                 sanity = _arknights_sanity_task(data)
                 extra = (sanity if sanity is not None
                          and sanity.recover_seconds is not None else None)

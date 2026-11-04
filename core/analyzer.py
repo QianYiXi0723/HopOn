@@ -122,7 +122,7 @@ class DailyReport:
             f"合计 {total} 个账号：已完成 {len(self.finished)}，"
             f"未完成 {len(self.unfinished)}（漏 {self.unfinished_task_count} 项），"
             f"查询失败 {len(self.failed)}"
-            + (f"，数据待更新 {len(self.stale)}" if self.stale else "")
+            + (f"，待上线更新 {len(self.stale)}" if self.stale else "")
             + (f"，未创建角色 {len(self.no_accounts)}" if self.no_accounts else "")
         )
 
@@ -187,7 +187,7 @@ class DailyReport:
         if self.stale:
             # 一句话交代原因（"上次在线 xx"），不写接口细节
             for item in self.stale:
-                lines.append(f"[数据待更新] {item.game_name}：{item.stale}")
+                lines.append(f"[待上线更新] {item.game_name}：{item.stale}")
 
         if self.no_accounts:
             names = "、".join(item.game_name for item in self.no_accounts)
@@ -203,7 +203,7 @@ class DailyReport:
                 lines.append("没建号的几款不用管，在游戏里建号后自动生效。")
             elif self.stale:
                 lines.append(
-                    "数据待更新的几款进游戏刷新一次再看；"
+                    "待上线更新的几款，上线后数据会自动确认；"
                     "查询失败的先检查凭证或换个网络，别当成已经做完了。"
                 )
             else:

@@ -1964,7 +1964,7 @@ function loadQuery(){
 
 /* 把 /api/live 结果整理成 gid → {finished, tasks, 体力信息} 的映射。
    只有拿到"当日数据"的游戏才进入映射 —— 它的完成状态有"发言权"，
-   KPI 与迷你卡以它为准；查询失败、数据待更新、未创建角色的都没有当日记录，
+   KPI 与迷你卡以它为准；查询失败、待上线更新、未创建角色的都没有当日记录，
    回落巡检历史。 */
 function buildLiveMap(d){
   const map = {};
@@ -2092,8 +2092,8 @@ function renderLive(d){
           '<div class="live-msg err-t">' + escHtml(g.error || '未知错误') + '</div></div>';
       }
       if (g.stale) {
-        /* 数据待更新 ≠ 失败：凭证/网络/解析都正常，只是游戏里今天还没刷新 */
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st">数据待更新</span></div>' +
+        /* 日常 04:00 已归零 ≠ 失败：等玩家上线，数据自然更新 */
+        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st">待上线更新</span></div>' +
           '<div class="live-msg dim">' + escHtml(g.stale) + '</div></div>';
       }
       if (g.no_account) {
@@ -2691,7 +2691,7 @@ function gameCardHtml(g){
   })[0];
 
   /* 今日状态（一眼层）：今天要不要动手。
-     优先级：查询失败（红，需要行动）> 数据待更新/未创建角色（灰，非失败）
+     优先级：查询失败（红，需要行动）> 待上线更新/未创建角色（灰，非失败）
              > 实时判定 > 巡检历史 > 无数据。
      彩色徽章只给异常，已完成/待更新/无数据一律灰字（项目色彩纪律）。 */
   let badge, why = '';
@@ -2699,7 +2699,7 @@ function gameCardHtml(g){
     badge = '<span class="badge err">查询失败</span>';
     why = String(raw.error || '查询失败');
   } else if (raw && raw.stale) {
-    badge = '<span class="dim">数据待更新</span>';
+    badge = '<span class="dim">待上线更新</span>';
     why = String(raw.stale);
   } else if (raw && raw.no_account) {
     badge = '<span class="dim">未创建角色</span>';
