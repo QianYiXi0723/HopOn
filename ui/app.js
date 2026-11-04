@@ -2372,17 +2372,28 @@ function actCardHtml(it, isHero, heroSlim){
     ? '<span class="act-reward" title="这个活动给抽卡资源">' + escHtml(it.reward) + '</span>'
     : '';
   const prog = actProgHtml(it);
+  /* 合并组卡：成员小字清单（这才是「有信息的 2x2」）；× 不渲染——
+     data-del 只认单活动 id，成员随窗口结束自然拆回，拆回后单卡再删 */
+  const mergedList = (it.merged && it.merged.length > 1)
+    ? '<div class="act-merged">' + it.merged.map(function(t){
+        return '<div>· ' + escHtml(t) + '</div>';
+      }).join('') + '</div>'
+    : '';
+  const delBtn = it.merged
+    ? '<span class="act-merged-tag">' + it.merged.length + ' 项同止</span>'
+    : '<button type="button" class="act-del" data-del="' + id +
+      '" title="删除，之后不再提醒">×</button>';
   return '<div class="card acard' + (isHero && !heroSlim ? ' hero' : '') + '"' +
     actUrgencyAttr(it, isHero) + ' data-id="' + id + '"' +
     ' style="--gc:' + gameDotColor(it.game) + '">' +
     '<div class="acard-top"><span class="act-game">' + actIconHtml(it) +
       '<span class="act-name">' + escHtml(it.game_name) + '</span></span>' +
-      '<button type="button" class="act-del" data-del="' + id +
-      '" title="删除，之后不再提醒">×</button></div>' +
+      delBtn + '</div>' +
     '<div class="acard-title" title="' + escHtml(it.title) + '">' + escHtml(it.title) + reward + '</div>' +
     '<div class="act-time ' + timeCls + '">始 ' + (st || '时间待定') +
       (en ? ' · 止 ' + en : '') + '</div>' +
     '<div class="act-cd ' + cdCls + '">' + escHtml(it.countdown || '') + '</div>' +
+    mergedList +
     prog +
     '</div>';
 }
@@ -2399,29 +2410,36 @@ function actProgHtml(it){
 }
 
 /* 找最紧急的 1 张（剩余小时最小且 >0），做 2x2 英雄卡 + data-urgency 标记 */
-/* 卡里有没有「可看的内容」：进度条或奖励明细。2x2 英雄卡只有内容足才配占
-   （纯文字卡占 2x2 = 大片留白，2026-11-05 P6-2 实测空置 241px） */
+/* 卡里有没有「可看的内容」：进度条、奖励明细，或合并组卡的成员清单。
+   2x2 英雄卡只有内容足才配占（纯文字卡占 2x2 = 大片留白，
+   2026-11-05 P6-2 实测空置 241px） */
 function actHasContent(it){
-  return actProgHtml(it) !== '' || !!it.reward;
+  return actProgHtml(it) !== '' || !!it.reward || !!(it.merged && it.merged.length > 1);
 }
 
-function pickHeroIndex(pool){
-  /* 最紧急优先；hours_left 平局时优先「有内容可展示」的卡——此前平局按
-     后端返回序裁决，同截止活动谁抢到英雄卡全看 wiki 排版（P6-2 实证）；
-     再平局取先出现者 */
-  if (!pool.length) return -1;
-  const hl = function(x){ const h = +x.hours_left; return h > 0 ? h : Infinity; };
-  let best = 0;
-  for (let i = 1; i < pool.length; i++) {
-    const ha = hl(pool[i]), hb = hl(pool[best]);
-    if (ha !== hb) {
-      if (ha < hb) best = i;
-      continue;
-    }
-    if (actHasContent(pool[i]) && !actHasContent(pool[best])) best = i;
-  }
-  return best;
+/* 同游戏同截止的合并组卡（仅「即将结束」窗口内，窗口随用户设置
+   app.activity_alert_days 走——后端随 payload 给 window_hours）：
+   标题=首活动「等 N 项」，奖励去重拼接；进度不并（各自口径不同，
+   硬加会误导）；成员明细由 actCardHtml 的小字列表展示；× 不渲染
+   （窗口过了自然拆回，拆回后单卡再删） */
+function buildMergedItem(members){
+  const first = members[0];
+  const rewards = [];
+  members.forEach(function(x){
+    String(x.reward || '').split(/[、,，;；]/).forEach(function(r){
+      const t = r.trim();
+      if (t && rewards.indexOf(t) < 0) rewards.push(t);
+    });
+  });
+  return Object.assign({}, first, {
+    id: 'merged:' + members.map(function(x){ return x.id || ''; }).join('|'),
+    title: (first.title || '') + ' 等 ' + members.length + ' 项',
+    reward: rewards.join('、'),
+    progress: '',
+    merged: members.map(function(x){ return x.title || ''; }),
+  });
 }
+
 
 /* 活动视图模式：'time' 按剩余时间（默认）/ 'game' 按游戏分区（方案 A）。
    选择记忆在 localStorage('rl-actview')——与 rl-theme 同机制 */
@@ -2471,15 +2489,35 @@ function renderActivities(d){
     const upcoming = items.filter(function(x){ return x.group === 'upcoming'; });
     const finished = items.filter(function(x){ return x.status === '已完成'; });
     const hlOf = function(x){ const h = +x.hours_left; return h > 0 ? h : Infinity; };
+    /* 显示排序 = 唯一裁决（2026-11-05 英雄卡三改）：hours_left 升序 →
+       平局「有内容可展示」的卡排前（英雄给谁一目了然，不再依赖后端返回序）
+       → 再平局标题 zh 序。英雄 = 排序后 pool 的第一张，最紧急 = 视觉第一。 */
     const byUrgency = function(a, b){
-      return hlOf(a) - hlOf(b) ||
-        String(a.title || '').localeCompare(String(b.title || ''), 'zh');
+      const diff = hlOf(a) - hlOf(b);
+      if (diff) return diff;
+      const ra = actHasContent(a) ? 1 : 0, rb = actHasContent(b) ? 1 : 0;
+      if (ra !== rb) return rb - ra;
+      return String(a.title || '').localeCompare(String(b.title || ''), 'zh');
     };
-    /* 英雄判定改在「显示排序之后」的池上做（2026-11-05 P6-2）：
-       最紧急 = 视觉第一；平局裁决从不可见的后端返回序换成标题 zh 序 */
-    const heroPool = ongoing.slice().sort(byUrgency);
-    const heroIdx = pickHeroIndex(heroPool);
-    const heroIt = heroIdx >= 0 ? heroPool[heroIdx] : (upcoming[0] || null);
+    /* 同游戏同截止合并：仅「即将结束」（hours_left ≤ 用户提醒窗口
+       window_hours）时才并，平常各是各的卡 */
+    const winH = +d.window_hours > 0 ? +d.window_hours : 72;
+    const mergeBuckets = {};
+    const mergedOngoing = [];
+    ongoing.forEach(function(x){
+      const bucket = (x.ending_soon && (+x.hours_left || 0) <= winH)
+        ? 'm:' + x.game + '|' + String(x.end || '') : null;
+      if (!bucket) { mergedOngoing.push(x); return; }
+      (mergeBuckets[bucket] = mergeBuckets[bucket] || []).push(x);
+    });
+    Object.keys(mergeBuckets).forEach(function(key){
+      const members = mergeBuckets[key];
+      if (members.length < 2) { mergedOngoing.push(members[0]); return; }
+      members.sort(byUrgency);
+      mergedOngoing.push(buildMergedItem(members));
+    });
+    const heroPool = mergedOngoing.slice().sort(byUrgency);
+    const heroIt = heroPool.length ? heroPool[0] : (upcoming[0] || null);
     const heroSlim = !!heroIt && !actHasContent(heroIt);
 
     let html = '';
@@ -2487,7 +2525,7 @@ function renderActivities(d){
       /* 模式 A · 按游戏分区（方案 A）：组头 = 色点 + 游戏名 + 数量；
          组内按剩余时间升序；组间按「最近将有活动结束」升序 */
       const groups = [], byGid = {};
-      ongoing.concat(upcoming).forEach(function(x){
+      mergedOngoing.concat(upcoming).forEach(function(x){
         const gid = x.game || '';
         if (!byGid[gid]) {
           byGid[gid] = { gid: gid, name: x.game_name || '未知游戏', items: [] };
@@ -2496,7 +2534,7 @@ function renderActivities(d){
         byGid[gid].items.push(x);
       });
       groups.forEach(function(g){
-        g.items.sort(function(a, b){ return hlOf(a) - hlOf(b); });
+        g.items.sort(byUrgency);
         g.mins = hlOf(g.items[0]);   // 组内升序后首项即组内最早结束
       });
       groups.sort(function(a, b){ return a.mins - b.mins; });
@@ -2517,7 +2555,7 @@ function renderActivities(d){
     } else {
       /* 模式 B · 按剩余时间升序，同时间按标题首字母（localeCompare zh）；
          平坦网格无组头，最紧急一张仍是英雄卡 */
-      const pool = ongoing.concat(upcoming).sort(byUrgency);
+      const pool = mergedOngoing.concat(upcoming).sort(byUrgency);
       html = '<div class="act-grid">' +
         pool.map(function(x){ return actCardHtml(x, x === heroIt, heroSlim); }).join('') +
         '</div>';

@@ -860,6 +860,11 @@
   .act-time.t-up{color:var(--accent-blue)}
   .act-time.t-on{color:var(--text-secondary)}
   .act-time.t-end{color:var(--text-tertiary)}
+  /* 合并组卡（2026-11-05）：成员小字清单 + 「N 项同止」角标 */
+  .act-merged{font-size:12px;line-height:1.55;color:var(--text-secondary);
+    margin-top:6px;display:grid;gap:2px;min-width:0}
+  .act-merged > div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .act-merged-tag{font-size:11px;color:var(--text-tertiary);white-space:nowrap}
   /* 倒计时徽章（2026-11-01 方案 A 升格）：≤24h 红 / ≤3 天琥珀 / 其余灰，
      档位由 JS 按后端 hours_left 写成 urgent/warn；已结束去底色退为纯文字。
      中性档底色用 --fg 混透明（主题自适应）——--subtle 在浅色卡上与卡面同亮，
