@@ -679,14 +679,52 @@ class DingTalkNotifier(BaseNotifier):
         return True, ""
 
 
+class ToastNotifier(BaseNotifier):
+    """页内通知渠道：推送同步投递到打开着的控制台页面（toast 气泡）。
+
+    不走网络管线（覆写 send）：直接写 data/toasts.json 环形队列，
+    前端轮询 /api/toasts 消费（取走即标已读）。无配置、常开——
+    这是「浏览器就是控制台」的最后一块：daemon 的推送，开着页面的人
+    在页面上同步看得到。
+    """
+
+    name = "toast"
+    #: 页内投递不是远程推送，不进 push_history.json（那是「发到手机」的台账）
+    records_history = False
+
+    @property
+    def enabled(self) -> bool:
+        return True
+
+    @property
+    def ready(self) -> bool:
+        return True
+
+    def send(self, title: str, body: str, dry_run: bool = False) -> PushResult:
+        if dry_run:
+            return PushResult(self.name, ok=False, message="dry-run 未发送", skipped=True)
+        try:
+            from core.toasts import add_toasts
+
+            add_toasts(title, body)
+        except Exception as exc:  # noqa: BLE001 - 投递失败不影响其它通道
+            logger.exception("[toast] 投递失败")
+            return PushResult(self.name, ok=False, message=f"投递失败：{exc}")
+        return PushResult(self.name, ok=True, message="已投递到页内通知")
+
+
 # --------------------------------------------------------------------------- #
 # 工厂
 # --------------------------------------------------------------------------- #
 
 
 def build_notifiers(push_config: PushConfig) -> List[BaseNotifier]:
-    """按 push.channels 构造推送器列表；未选中的通道不实例化。"""
-    notifiers: List[BaseNotifier] = []
+    """按 push.channels 构造推送器列表；未选中的通道不实例化。
+
+    toast（页内通知）不占 channels 名额、常开：它是投给打开着的控制台
+    页面的本地镜像，不依赖任何远程服务配置。
+    """
+    notifiers: List[BaseNotifier] = [ToastNotifier()]
     channels = [item.lower() for item in push_config.channels]
     known = {"bark", "serverchan", "qmsg", "feishu", "dingtalk"}
     if "bark" in channels:
@@ -726,8 +764,8 @@ def push_all(
             logger.exception("[%s] 未预期异常", notifier.name)
             result = PushResult(notifier.name, ok=False, message=f"未预期异常：{exc}")
         results.append(result)
-        if not dry_run:
-            # 成功/失败都落一条结构化记录（data/push_history.json），「最近推送」直接读
+        # toast 是投给控制台页面的本地镜像，不进「发到手机」的台账
+        if not dry_run and getattr(notifier, "records_history", True):
             record_push_history(result.channel, result.ok, result.message,
                                 title=title, body=body)
     return results

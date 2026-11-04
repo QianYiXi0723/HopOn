@@ -2138,11 +2138,19 @@ def _api_autostart() -> Dict[str, Any]:
     return autostart.status()
 
 
+def _api_toasts() -> Dict[str, Any]:
+    """取走页内未读通知（消费型队列：取走即标已读）。"""
+    from core.toasts import take_unread
+
+    return {"ok": True, "items": take_unread()}
+
+
 _GET_SIMPLE_ROUTES: Dict[str, Any] = {
     "/api/accounts": accounts_status,
     "/api/env": push_status,
     "/api/push": push_detail,
     "/api/device": device_status,
+    "/api/toasts": _api_toasts,
     "/api/schedule": schedule_status,
     "/api/settings": thresholds_status,
     "/api/autostart": _api_autostart,

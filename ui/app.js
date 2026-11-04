@@ -72,6 +72,28 @@ function toast(text, isErr){
   toast._t = setTimeout(function(){ el.className = ''; }, 2800);
 }
 
+/* 页内通知轮询：daemon 的 toast 渠道把推送同步投到 data/toasts.json，
+   这里 30s 取走未读（消费型队列，服务端取走即标已读）并逐条弹出。
+   与页内操作提示共用同一个气泡位，队列 3s 一条防止互相顶掉。 */
+const _pushToastQueue = [];
+let _pushToastBusy = false;
+function _drainPushToasts(){
+  if (_pushToastBusy || !_pushToastQueue.length) return;
+  _pushToastBusy = true;
+  const item = _pushToastQueue.shift();
+  toast(item.title + '\n' + item.body);
+  setTimeout(function(){ _pushToastBusy = false; _drainPushToasts(); }, 3000);
+}
+function loadToasts(){
+  fetch('/api/toasts').then(function(r){ return r.json(); }).then(function(d){
+    if (!d.ok || !(d.items || []).length) return;
+    _pushToastQueue.push(...(d.items || []));
+    _drainPushToasts();
+  }).catch(function(){ /* 静默：页内通知不是关键路径 */ });
+}
+loadToasts();
+setInterval(loadToasts, 30000);
+
 async function postJSON(url, payload){
   const r = await fetch(url, {
     method: 'POST',
