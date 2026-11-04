@@ -39,7 +39,9 @@ from core import ipc_lock
 
 logger = logging.getLogger("dailycheck.activities")
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+from core.paths import app_root
+
+BASE_DIR = app_root()
 CACHE_PATH = BASE_DIR / "data" / "activities.json"
 IGNORED_PATH = BASE_DIR / "data" / "ignored_activities.json"
 

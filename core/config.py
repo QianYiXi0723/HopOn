@@ -466,8 +466,15 @@ class PushConfig:
 
     @staticmethod
     def _quiet_time(raw: Any, fallback: str, label: str) -> str:
-        """免打扰时间校验：HH:MM（小时可 1 位），非法直接 ConfigError。"""
-        text = str(raw or "").strip()
+        """免打扰时间校验：HH:MM（小时可 1 位）；缺省回落 fallback，非法才 ConfigError。
+
+        11-03 之前写的 config 都没有 quiet_* 键——缺省必须是合法态，
+        否则存量配置每次 parse 都炸（2026-11-05 实测 live_status 每分钟刷
+        「push.quiet_start = None 非法」警告）。
+        """
+        text = str(raw if raw is not None else "").strip()
+        if not text:
+            return fallback
         if not re.match(r"^([01]?\d|2[0-3]):([0-5]\d)$", text):
             raise ConfigError(f"push.{label} = {raw!r} 非法，格式应为 HH:MM（如 23:00）")
         hour, minute = text.split(":")

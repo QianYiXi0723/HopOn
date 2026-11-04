@@ -30,9 +30,13 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-BASE_DIR = Path(__file__).resolve().parent
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
+# engine 发行版布局锚点修复，判据与 core.paths.app_root 一致（见彼处注释）
+_BASE = Path(__file__).resolve().parent
+BASE_DIR = _BASE.parent if _BASE.name == "engine" else _BASE
+# sys.path 保持「代码=本脚本所在树」：engine 发行版导入 engine\ 下的模块；
+# 数据根（BASE_DIR）只决定 config/data/logs 落点，不参与 import 解析。
+if str(_BASE) not in sys.path:
+    sys.path.insert(0, str(_BASE))
 
 from core.analyzer import build_report
 from core.config import (

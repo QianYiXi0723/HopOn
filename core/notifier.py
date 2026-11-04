@@ -50,7 +50,9 @@ logger = logging.getLogger("dailycheck.notifier")
 # 推送历史（data/push_history.json）
 # --------------------------------------------------------------------------- #
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+from core.paths import app_root
+
+BASE_DIR = app_root()
 PUSH_HISTORY_PATH = BASE_DIR / "data" / "push_history.json"
 #: 最多保留多少条（一次检查最多几个渠道，50 条足够回看一周以上）
 PUSH_HISTORY_KEEP = 50

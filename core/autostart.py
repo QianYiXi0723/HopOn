@@ -35,7 +35,9 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger("dailycheck.autostart")
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+from core.paths import app_root
+
+BASE_DIR = app_root()
 
 #: 注册表路径（当前用户，无需管理员权限）
 RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"

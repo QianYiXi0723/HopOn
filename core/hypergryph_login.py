@@ -55,8 +55,10 @@ SCAN_EXPIRED = 4          # 二维码过期
 POLL_INTERVAL = 2
 DEFAULT_TIMEOUT = 180
 
+from core.paths import app_root
+
 #: 二维码图片输出路径（项目根目录）
-QR_PNG_PATH = Path(__file__).resolve().parent.parent / "qr_login.png"
+QR_PNG_PATH = app_root() / "qr_login.png"
 
 #: 请求头：模拟鹰角通行证网页端（与社区实现一致）
 WEB_HEADERS = {

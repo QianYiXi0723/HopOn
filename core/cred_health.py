@@ -21,7 +21,9 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger("dailycheck.credhealth")
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+from core.paths import app_root
+
+BASE_DIR = app_root()
 CRED_HEALTH_PATH = BASE_DIR / "data" / "cred_health.json"
 
 _TIME_FMT = "%Y-%m-%d %H:%M:%S"

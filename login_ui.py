@@ -43,13 +43,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, quote, urlparse
 
-BASE_DIR = Path(__file__).resolve().parent
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
+# engine 发行版布局锚点修复，判据与 core.paths.app_root 一致（见彼处注释）
+_BASE = Path(__file__).resolve().parent
+BASE_DIR = _BASE.parent if _BASE.name == "engine" else _BASE
+# sys.path 保持「代码=本脚本所在树」：engine 发行版导入 engine\ 下的模块；
+# 数据根（BASE_DIR）只决定 config/data/logs 落点，不参与 import 解析。
+if str(_BASE) not in sys.path:
+    sys.path.insert(0, str(_BASE))
 CONFIG_PATH = BASE_DIR / "config.json"
 
 #: 静态资源（游戏头像等），只允许读这个目录下的图片
-STATIC_DIR = BASE_DIR / "static"
+STATIC_DIR = _BASE / "static"
 STATIC_TYPES: Dict[str, str] = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -2081,7 +2085,7 @@ def run_skland(session: Session) -> None:
 #: __ICON_STAMP__（图标缓存戳）在每次请求时由 _render_page() 替换。
 #: 不再是导入时一次性拼装 —— get_page() 按文件指纹缓存，ui/ 改了自动重载。
 #: 拆成独立文件的原因：5800 行 Python 里的 HTML 字符串已不可维护（第三阶段架构项）。
-_UI_DIR = BASE_DIR / "ui"
+_UI_DIR = _BASE / "ui"
 _UI_FILES = ("index.html", "style.css", "app.js")
 
 #: 页面缓存。key = 三个文件的 (mtime_ns, size) 指纹，值 = 拼好的单页 HTML。

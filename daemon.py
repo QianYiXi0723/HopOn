@@ -39,9 +39,15 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-BASE_DIR = Path(__file__).resolve().parent
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
+# exe 发行版把本文件复制进 engine\ 运行：此时安装根是 engine 的上级，
+# config.json / data\ / logs\ 必须落在安装根（与 HopOn.exe 同级），
+# 否则会在 engine\ 里开出空数据岛（2026-11-05 实证回归）。
+_BASE = Path(__file__).resolve().parent
+BASE_DIR = _BASE.parent if _BASE.name == "engine" else _BASE
+# sys.path 保持「代码=本脚本所在树」：engine 发行版导入 engine\ 下的模块；
+# 数据根（BASE_DIR）只决定 config/data/logs 落点，不参与 import 解析。
+if str(_BASE) not in sys.path:
+    sys.path.insert(0, str(_BASE))
 
 CONFIG_PATH = BASE_DIR / "config.json"
 LOGS_DIR = BASE_DIR / "logs"
@@ -954,7 +960,10 @@ def start_daemon() -> Dict[str, Any]:
     # 清掉上次异常退出留下的 pid / 心跳，避免误判
     clear_state()
     try:
-        proc = spawn([str(pythonw_exe()), str(BASE_DIR / "daemon.py")])
+        # 拉起「与当前 daemon 模块同源」的脚本：engine 发行版=engine\daemon.py，
+        # 脚本模式=仓库根 daemon.py。不能写 BASE_DIR/daemon.py —— BASE_DIR 是
+        # 数据根，纯发行版的根目录没有 .py（2026-11-05 锚点分离）。
+        proc = spawn([str(pythonw_exe()), str(Path(__file__).resolve())])
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "message": f"拉起失败：{exc}"}
 
@@ -1162,7 +1171,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         code = run_check("命令行 --once", dry_run=args.dry_run)
         return code
 
-    return run_daemon(use_tray=not args.no_tray)
+    # exe 发行版（engine 布局）托盘由 C# 壳负责，daemon 恒为 headless；
+    # 脚本模式保留托盘。判据与 core.paths.app_root 一致。
+    _engine_layout = Path(__file__).resolve().parent.name == "engine"
+    return run_daemon(use_tray=not args.no_tray and not _engine_layout)
 
 
 if __name__ == "__main__":

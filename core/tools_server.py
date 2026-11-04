@@ -26,7 +26,9 @@ from urllib.parse import quote, unquote, urlparse
 
 logger = logging.getLogger("dailycheck.tools")
 
-TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
+from core.paths import app_root
+
+TOOLS_DIR = app_root() / "tools"
 DEFAULT_PORT = 8790
 
 

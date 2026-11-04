@@ -66,7 +66,9 @@ MAX_TOKEN_LEN = 128
 #: 【多账号隔离】明日方舟和终末地可能在不同的鹰角通行证账号下，凭证缓存
 #: 必须按游戏分文件（skland_cred_arknights.json / skland_cred_endfield.json），
 #: 由 _cred_cache_path() 生成，绝不能共用一个文件互相覆盖。
-_CRED_CACHE_DIR = Path(__file__).resolve().parent.parent / "logs"
+from core.paths import app_root
+
+_CRED_CACHE_DIR = app_root() / "logs"
 
 #: 允许按游戏分缓存的白名单；未知游戏落到 default（正常不会发生）
 _CRED_CACHE_GAMES = ("arknights", "endfield")

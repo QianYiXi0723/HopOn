@@ -16,8 +16,9 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from core import ipc_lock
+from core.paths import app_root
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = app_root()
 TOASTS_PATH = BASE_DIR / "data" / "toasts.json"
 KEEP = 30
 

@@ -35,7 +35,9 @@ from core.config import KNOWN_GAMES
 logger = logging.getLogger("dailycheck.history")
 
 #: 存档根目录：<项目>/data/history.json
-BASE_DIR = Path(__file__).resolve().parent.parent
+from core.paths import app_root
+
+BASE_DIR = app_root()
 DATA_DIR = BASE_DIR / "data"
 HISTORY_PATH = DATA_DIR / "history.json"
 
