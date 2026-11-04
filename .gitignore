@@ -111,3 +111,6 @@ tests/**/__pycache__/
 /shell/obj/
 /shell/publish/
 /shell/.tools/
+
+# 宣传片工作区（成片/截图素材/沙盒实例，均不入库）
+/promo/
