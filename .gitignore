@@ -114,3 +114,8 @@ tests/**/__pycache__/
 
 # 宣传片工作区（成片/截图素材/沙盒实例，均不入库）
 /promo/
+
+# 发布工具的临时验证工件（截图/探针页/一次性 patch，非源码）
+/tools/rl_release/rl_ring_fixture/
+/tools/rl_release/uitest/
+/tools/rl_release/*.patch
