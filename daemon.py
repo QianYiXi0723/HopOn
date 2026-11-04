@@ -444,8 +444,20 @@ def save_weekly_state(state: Dict[str, Any]) -> None:
         logger.warning("写周报状态失败（下周可能重发一次）：%s", exc)
 
 
-def format_weekly_body(digest: Dict[str, Any]) -> str:
-    """周报正文（纯函数）：「本周：原神 7 天全勤，星铁完成 5 天、漏做 1 次…」"""
+def format_weekly_body(
+    digest: Dict[str, Any], prev_digest: Dict[str, Any] | None = None
+) -> str:
+    """周报正文（纯函数）：「本周：原神 7 天全勤，星铁完成 5 天、漏做 1 次…」。
+
+    ``prev_digest`` 非空时逐游戏附趋势尾巴（较上周 ±N 天）——上一批
+    没查到数据的游戏不带尾巴（没有对比基线就不硬凑）。
+    """
+    prev_done: Dict[str, int] = {}
+    if prev_digest:
+        for game in prev_digest.get("games") or []:
+            prev_done[str(game.get("game") or game.get("name") or "?")] = int(
+                game.get("done_days", 0)
+            )
     parts: List[str] = []
     total_days = int(digest.get("days_count", 7))
     for game in digest.get("games") or []:
@@ -454,12 +466,17 @@ def format_weekly_body(digest: Dict[str, Any]) -> str:
         name = str(game.get("name") or game.get("game") or "?")
         done = int(game.get("done_days", 0))
         missed = int(game.get("missed_days", 0))
+        trend = ""
+        if str(game.get("game")) in prev_done:
+            delta = done - prev_done[str(game.get("game"))]
+            if delta:
+                trend = f"（较上周 {'+' if delta > 0 else ''}{delta} 天）"
         if done >= total_days and missed == 0:
-            parts.append(f"{name} {done} 天全勤")
+            parts.append(f"{name} {done} 天全勤{trend}")
         elif missed > 0:
-            parts.append(f"{name} 完成 {done} 天、漏做 {missed} 次")
+            parts.append(f"{name} 完成 {done} 天、漏做 {missed} 次{trend}")
         else:
-            parts.append(f"{name} 完成 {done} 天")
+            parts.append(f"{name} 完成 {done} 天{trend}")
     if not parts:
         return ""
     missed_any = any(
@@ -509,7 +526,8 @@ def run_weekly_report() -> bool:
         config.query.provider = "miyoushe"
     try:
         digest = history.weekly_digest(days=7)
-        body = format_weekly_body(digest)
+        prev = history.weekly_digest(days=7, offset=1)
+        body = format_weekly_body(digest, prev)
         if not body:
             logger.info("周报：过去 7 天没有任何已检查数据，跳过发送")
             return False
