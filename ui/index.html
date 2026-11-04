@@ -577,6 +577,27 @@
               <div class="hint">默认仅在存在未完成项时推送；开启后全部完成也发一条平安通知。</div>
             </div>
           </details>
+
+          <details class="set-item" id="acc-quiet">
+            <summary class="set-head">
+              <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-clock"/></svg></i>
+                <span class="set-txt"><b>免打扰时段</b>
+                  <small>窗口内推送顺延到时段结束，条件会自然重现</small></span>
+              </span>
+              <span class="set-sum" id="sum-quiet">读取中…</span>
+              <span class="set-end">
+                <label class="toggle"><input type="checkbox" id="quiet-toggle"><i></i></label>
+              </span>
+            </summary>
+            <div class="set-body">
+              <div class="row3">
+                <input type="time" id="quiet-start" value="23:00">
+                <input type="time" id="quiet-end" value="08:00">
+                <button id="btn-quiet-save" class="btn">保存时段</button>
+              </div>
+              <div class="hint">时段内所有推送顺延（可跨零点）；未完成/体力溢出等条件会自然重现，明早自动补推。</div>
+            </div>
+          </details>
         </div><!-- /rule-list -->
       </div><!-- /card__body -->
     </section>

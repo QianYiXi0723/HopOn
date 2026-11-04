@@ -459,6 +459,19 @@ class PushConfig:
     qmsg: QmsgConfig = field(default_factory=QmsgConfig)
     feishu: FeishuConfig = field(default_factory=FeishuConfig)
     dingtalk: DingTalkConfig = field(default_factory=DingTalkConfig)
+    #: 免打扰时段（HH:MM，可跨零点）：窗口内推送顺延到时段结束
+    quiet_enabled: bool = False
+    quiet_start: str = "23:00"
+    quiet_end: str = "08:00"
+
+    @staticmethod
+    def _quiet_time(raw: Any, fallback: str, label: str) -> str:
+        """免打扰时间校验：HH:MM（小时可 1 位），非法直接 ConfigError。"""
+        text = str(raw or "").strip()
+        if not re.match(r"^([01]?\d|2[0-3]):([0-5]\d)$", text):
+            raise ConfigError(f"push.{label} = {raw!r} 非法，格式应为 HH:MM（如 23:00）")
+        hour, minute = text.split(":")
+        return f"{int(hour):02d}:{minute}"
 
     @classmethod
     def from_dict(cls, data: Any) -> "PushConfig":
@@ -485,6 +498,9 @@ class PushConfig:
             qmsg=QmsgConfig.from_dict(qmsg_data),
             feishu=FeishuConfig.from_dict(data.get("feishu")),
             dingtalk=DingTalkConfig.from_dict(data.get("dingtalk")),
+            quiet_enabled=_coerce_bool(data.get("quiet_enabled", False)),
+            quiet_start=cls._quiet_time(data.get("quiet_start"), "23:00", "quiet_start"),
+            quiet_end=cls._quiet_time(data.get("quiet_end"), "08:00", "quiet_end"),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -496,6 +512,9 @@ class PushConfig:
             "qmsg": self.qmsg.to_dict(),
             "feishu": self.feishu.to_dict(),
             "dingtalk": self.dingtalk.to_dict(),
+            "quiet_enabled": self.quiet_enabled,
+            "quiet_start": self.quiet_start,
+            "quiet_end": self.quiet_end,
         }
 
 
