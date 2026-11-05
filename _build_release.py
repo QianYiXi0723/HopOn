@@ -424,17 +424,23 @@ def build_engine(out_engine: Path) -> None:
                  out_engine / "app.py")
 
     # 6) daemon 去托盘：发行版托盘归 C# 壳（与 engine/daemon.py 同一处方）
+    #    锚点只取到 "use_tray=" 为止，用整行正则替换——行尾表达式（曾从
+    #    `not args.no_tray` 演进成 `not args.no_tray and not _engine_layout`）
+    #    以后还可能变，锚全行必然再坏一次。2026-11-05 修。
     daemon_path = out_engine / "daemon.py"
     src = daemon_path.read_text(encoding="utf-8")
-    needle = "return run_daemon(use_tray=not args.no_tray)"
-    if src.count(needle) != 1:
-        print(f"[FATAL] daemon.py 托盘开关锚点异常（出现 {src.count(needle)} 次），中止")
+    hits = re.findall(r"^\s*return run_daemon\(use_tray=.*$", src, re.M)
+    if len(hits) != 1:
+        print(f"[FATAL] daemon.py 托盘开关锚点异常（匹配 {len(hits)} 处，期望 1），中止")
         sys.exit(1)
     daemon_path.write_text(
-        src.replace(
-            needle,
+        re.sub(
+            r"^\s*return run_daemon\(use_tray=.*$",
             "# exe 发行版：托盘由 C# 壳负责（HopOn.exe --tray），daemon 恒为 headless\n"
             "    return run_daemon(use_tray=False)",
+            src,
+            count=1,
+            flags=re.M,
         ),
         encoding="utf-8",
     )

@@ -119,3 +119,6 @@ tests/**/__pycache__/
 /tools/rl_release/rl_ring_fixture/
 /tools/rl_release/uitest/
 /tools/rl_release/*.patch
+
+# 安装器构建产物（Setup.exe 由 ISCC 生成，不入库）
+/installer/Output/
