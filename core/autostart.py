@@ -198,6 +198,31 @@ def _remove_legacy_value() -> None:
         logger.warning("旧版自启键清理失败（不影响本次写入）：%s", exc)
 
 
+def cleanup_legacy_autostart() -> bool:
+    """启动时清理旧版自启键（公开入口，供各入口脚本首启调用）。
+
+    老版本（改名前）注册的自启键值名是 ResinLoop、指向旧目录——新版本
+    装好后它若残留，开机会出现新旧两套同时拉起抢 8765。本函数无条件
+    删除该键（改名后任何 ResinLoop 自启项都是失效遗物），返回是否删了。
+    """
+    if not SUPPORTED:
+        return False
+    import winreg
+
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_SET_VALUE
+        ) as key:
+            winreg.DeleteValue(key, LEGACY_VALUE_NAME)
+        logger.info("首启清理：已移除旧版自启键 %s", LEGACY_VALUE_NAME)
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        logger.warning("旧版自启键清理失败（忽略）：%s", exc)
+        return False
+
+
 # --------------------------------------------------------------------------- #
 # 汇总状态（给 /api/autostart 用）
 # --------------------------------------------------------------------------- #

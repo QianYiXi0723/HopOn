@@ -53,6 +53,14 @@ from core.paths import ensure_layout as _ensure_layout, user_root as _user_root 
 
 try:
     _LAYOUT = _ensure_layout(allow_migrate=True)
+    # 旧版自启键清理（2026-11-06）：改名前注册的 ResinLoop Run 键若残留，
+    # 开机会新旧两套同时拉起抢 8765——首启无条件移除（幂等、失败忽略）
+    try:
+        from core.autostart import cleanup_legacy_autostart
+
+        cleanup_legacy_autostart()
+    except Exception:  # noqa: BLE001 - 清理失败绝不挡启动
+        pass
 except Exception as _exc:  # noqa: BLE001 - 布局失败也要让守护起得来
     print("[paths] 布局初始化失败，退回程序目录：", _exc)
     _LAYOUT = {}
