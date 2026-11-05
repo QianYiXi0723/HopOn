@@ -495,6 +495,20 @@
             <div class="hint" id="autostart-hint" hidden>读取中…</div>
           </div>
 
+          <div class="set-item set-item--flat" id="acc-alwaysnotify">
+            <div class="set-head">
+              <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-upload"/></svg></i>
+                <span class="set-txt"><b>完成也推送</b>
+                  <span class="q" data-tip="默认仅在存在未完成项时推送；开启后全部完成也发一条平安通知，免得以为守护进程坏了"></span>
+                </span>
+              </span>
+              <span class="set-sum" id="sum-alwaysnotify">读取中…</span>
+              <span class="set-end">
+                <label class="toggle"><input type="checkbox" id="always-notify"><i></i></label>
+              </span>
+            </div>
+          </div>
+
           <details class="set-item" id="acc-catchup">
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-moon"/></svg></i>
@@ -567,20 +581,6 @@
               <div class="hint">活动结束前设定天数时，在推送末尾追加提醒，1–30 天。</div>
             </div>
           </details>
-
-          <div class="set-item set-item--flat" id="acc-alwaysnotify">
-            <div class="set-head">
-              <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-upload"/></svg></i>
-                <span class="set-txt"><b>完成也推送</b>
-                  <span class="q" data-tip="默认仅在存在未完成项时推送；开启后全部完成也发一条平安通知，免得以为守护进程坏了"></span>
-                </span>
-              </span>
-              <span class="set-sum" id="sum-alwaysnotify">读取中…</span>
-              <span class="set-end">
-                <label class="toggle"><input type="checkbox" id="always-notify"><i></i></label>
-              </span>
-            </div>
-          </div>
 
           <details class="set-item" id="acc-quiet">
             <summary class="set-head">
