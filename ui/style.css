@@ -1205,23 +1205,27 @@
   .card--protagonist{box-shadow:inset 0 2px 0 var(--brand), var(--card-shadow)}
 
   /* ---------- 月报下钻弹窗（2026-11-06，双视图） ----------
-     放在 .hm-* 基础规则之后：同优先级下后者胜，此处必须压得住 7 列基础布局 */
-  .modal--month{width:min(1240px,96vw)}
+     放在 .hm-* 基础规则之后：同优先级下后者胜，此处必须压得住 7 列基础布局。
+     max-width/text-align 必须覆盖 .modal 基础规则的 420px 居中——
+     否则弹窗被拦腰截断（标题竖排折行、统计居中成一坨，2026-11-06 实测） */
+  .modal--month{width:min(480px,94vw);max-width:min(480px,94vw);text-align:left}
+  .modal--month .modal-head b{white-space:nowrap}
+  .month-toolbar{display:flex;align-items:center;gap:10px;margin:-6px 0 12px}
   .month-scroll{overflow-x:auto;padding-bottom:6px}
   .hm-row.hm-row-month, .hm-row.hm-head.hm-row-month{
     grid-template-columns:150px;grid-auto-flow:column;
-    grid-auto-columns:32px;gap:6px}
-  .hm-row-month .hm-cell{width:32px;min-width:0;padding:0;justify-content:center}
+    grid-auto-columns:26px;gap:4px}
+  .hm-row-month .hm-cell{width:26px;min-width:0;padding:0;justify-content:center;
+    font-size:11px}
   .hm-row-month.hm-head .hm-cell{min-height:24px;color:var(--muted);font-weight:400}
   .hm-cell.dim{opacity:.28}
-  .month-stats{margin-top:12px;font-size:13px;color:var(--text-secondary);line-height:1.7}
   .month-nav{display:flex;gap:6px;margin-left:10px}
   .modal--month .seg-mini{margin-left:10px}
   /* 热力日历（GitHub 贡献图范式）：7 列按周分行，深浅=当日完成游戏数 */
-  .mc-grid{display:grid;grid-template-columns:repeat(7,44px);gap:6px;justify-content:start}
-  .mc-wd{font-size:12px;color:var(--muted);text-align:center}
-  .mc-day{width:44px;height:44px;border-radius:6px;display:flex;align-items:center;
-    justify-content:center;font-size:12px;color:var(--text-secondary);cursor:default}
+  .mc-grid{display:grid;grid-template-columns:repeat(7,26px);gap:4px;justify-content:start}
+  .mc-wd{font-size:11px;color:var(--muted);text-align:center}
+  .mc-day{width:26px;height:26px;border-radius:4px;display:flex;align-items:center;
+    justify-content:center;font-size:11px;color:var(--text-secondary);cursor:default}
   .mc-day.blank{background:transparent}
   .mc-day.future{opacity:.25}
   .mc-day.today{box-shadow:inset 0 0 0 2px var(--brand)}
@@ -1230,3 +1234,20 @@
   .mc-l2{background:color-mix(in srgb, var(--ok) 55%, var(--bg-elevated))}
   .mc-l3{background:color-mix(in srgb, var(--ok) 78%, var(--bg-elevated))}
   .mc-l4{background:var(--ok);color:#fff}
+
+  /* 分游戏视图（2026-11-06 用户裁决）：单游戏整月历 + 游戏 chips */
+  .month-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+  .mchip{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;
+    background:var(--subtle);border:1px solid transparent;color:var(--text-secondary);
+    cursor:pointer;font-size:12px;font-family:inherit}
+  .mchip:hover{color:var(--fg)}
+  .mchip.on{background:var(--nav-on,var(--bg-elevated));color:var(--fg);
+    border-color:var(--brand);font-weight:600}
+  .mchip .gdot{width:8px;height:8px;border-radius:50%;flex:none}
+  .mc-day.g.done{background:var(--ok);color:#fff;font-weight:700}
+  .mc-day.g.miss{background:var(--err);color:#fff;font-weight:700}
+  .modal--month .month-stats{text-align:left;font-size:12px;color:var(--text-secondary)}
+
+  .mc-legend{display:flex;align-items:center;gap:3px;font-size:11px;
+    color:var(--muted);margin-top:10px}
+  .mc-legend-cell{width:12px;height:12px;border-radius:3px;display:inline-block}

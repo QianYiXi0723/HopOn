@@ -3176,25 +3176,20 @@ function renderMonthModal(d){
         return g.game_name + ' ' + monthGameMark(c, row);
       });
       const lv = done === 0 ? 0 : Math.max(1, Math.ceil(done / total * 4));
-      const tip = row.label + '｜完成 ' + done + '/' + total + '｜' + parts.join(' · ');
+      const tip = '完成 ' + done + '/' + total + '｜' + parts.join(' · ');
       html += '<div class="mc-day mc-l' + lv + (row.is_today ? ' today' : '') +
-        '" title="' + escHtml(tip) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
+        '" data-tip="' + escHtml(row.label + '｜' + tip) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
     });
     for (let i = lead + d.days.length; i % 7 !== 0; i++) html += '<div class="mc-day blank"></div>';
     html += '</div>';
-    const statLines = d.games.map(function(g){
-      let t = escHtml(g.game_name) + ' 完成 ' + g.done + ' 天';
-      if (g.missed > 0) t += ' · 漏 ' + g.missed;
-      if (g.nodata > 0) t += ' · 查无数据 ' + g.nodata;
-      return '· ' + t;
-    }).join('<br>');
     body = '<div class="month-scroll">' + html + '</div>' +
-      '<div class="month-stats">' + statLines + '</div>' +
-      '<div class="hm-legend">' +
-      '<span class="hm-cell ok">✓</span>完成' +
-      '<span class="hm-cell err">✗</span>未完成' +
-      '<span class="hm-cell na">⋯</span>等待中/无数据' +
-      '</div>';
+      '<div class="mc-legend">少' +
+      '<span class="mc-legend-cell mc-l0"></span>' +
+      '<span class="mc-legend-cell mc-l1"></span>' +
+      '<span class="mc-legend-cell mc-l2"></span>' +
+      '<span class="mc-legend-cell mc-l3"></span>' +
+      '<span class="mc-legend-cell mc-l4"></span>' +
+      '多</div>';
   } else {
     /* 分游戏：选中一款游戏看它的整月历——固定颜色（✓绿/✗红/⋯灰），
        顶部游戏 chips 切换；查看对象缺省 = 第一个游戏 */
@@ -3221,12 +3216,12 @@ function renderMonthModal(d){
       const c = (row.games || {})[cur.game] || {};
       const mk = monthGameMark(c, row);
       const cls = mk === '✓' ? ' done' : mk === '✗' ? ' miss' : '';
-      const tip = row.label + ' · ' + (c.known
+      const tip = (c.known
         ? (c.finished ? '已完成' : '未完成 ' + (c.unfinished_tasks || 0) + ' 项')
         : ((c.checks || 0) > 0 && c.err) ? '检查失败：' + c.err
         : ((c.checks || 0) > 0) ? '查无数据（当日无有效记录）' : '当日未巡检');
       html += '<div class="mc-day g' + cls + (row.is_today ? ' today' : '') +
-        '" title="' + escHtml(tip) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
+        '" data-tip="' + escHtml(row.label + '｜' + tip) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
     });
     for (let i = lead + d.days.length; i % 7 !== 0; i++) html += '<div class="mc-day blank"></div>';
     html += '</div>';
@@ -3270,7 +3265,7 @@ document.getElementById('month-body').addEventListener('click', function(e){
   const b = e.target.closest ? e.target.closest('.mchip') : null;
   if (!b || b.dataset.game === monthGame) return;
   monthGame = b.dataset.game;
-  if (window.__lastMonth) renderMonthModal(window.__lastMonth);
+  loadMonthGrid(monthView);   // 确定性全链：与 seg 切换同一代码路径
 });
 document.getElementById('month-modal').addEventListener('click', function(e){
   if (e.target === this) closeMonthModal();   // 点遮罩空白处关闭
