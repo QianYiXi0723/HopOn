@@ -652,19 +652,19 @@
           <button type="button" class="modal-x" id="month-close" title="关闭">✕</button>
         </div>
         <div class="month-toolbar">
-          <div class="seg-mini" id="month-view" role="group" aria-label="月报视图">
-            <button type="button" data-view="heat">热力</button>
-            <button type="button" data-view="games">分游戏</button>
+          <div class="month-drawer">
+            <button type="button" class="drawer-btn" id="month-view-btn" title="切换视图">
+              <span id="month-view-label">总表</span>
+              <span class="drawer-arrow" id="month-arrow"></span>
+            </button>
+            <div class="drawer-menu" id="month-drawer-menu" hidden></div>
           </div>
-          <button type="button" class="drawer-arrow" id="month-chips-toggle" hidden
-                  title="展开游戏列表"></button>
           <span class="spacer"></span>
           <span class="month-nav">
             <button type="button" class="btn sm" id="month-prev" title="上一月">‹</button>
             <button type="button" class="btn sm" id="month-next" title="下一月">›</button>
           </span>
         </div>
-        <div class="month-chips" id="month-chips" hidden></div>
         <div class="month-body" id="month-body"><div class="emptybox">读取中…</div></div>
       </div>
     </div>
