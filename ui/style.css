@@ -449,6 +449,11 @@
     transform:rotate(90deg)}
   .set-item[open] > .set-head::after{transform:rotate(0deg)}
   .set-body{padding:12px 16px 16px}
+  /* 纯介绍型行（2026-11-06）：无抽屉体的设置退化为纯开关行——
+     说明收进标题旁问号悬浮，展开箭头与 pointer 手势一并退场 */
+  .set-item--flat .set-head{cursor:default}
+  .set-item--flat .set-head::after{display:none}
+  .set-item--flat .hint:not([hidden]){padding:0 16px 12px;margin-top:-4px}
   .set-body .hint{font-size:12px;padding:8px 0 0}
   .hint[hidden]{display:none}
   .set-item.is-off .set-body{opacity:.55}

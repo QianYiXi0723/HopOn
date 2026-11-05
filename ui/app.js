@@ -1427,6 +1427,15 @@ async function toggleAutostart(){
 
 document.getElementById('autostart-toggle')
   .addEventListener('change', toggleAutostart);
+
+/* 抽屉头里的开关：点击只拨开关，不折叠抽屉（2026-11-06）。此前开关嵌在
+   <summary> 里，展开阅读时点落到右侧开关区 = 误拨开关并直接写配置/注册表
+   ——「开机自启每次打开变关闭」的根因。stopPropagation 后点开关不收抽屉，
+   点行其他位置才展开/收起。 */
+document.querySelectorAll('.set-head .toggle').forEach(function(label){
+  label.addEventListener('click', function(e){ e.stopPropagation(); });
+});
+
 document.getElementById('catch-up-toggle')
   .addEventListener('change', toggleCatchUp);
 

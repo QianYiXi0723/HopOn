@@ -477,21 +477,23 @@
       </div>
       <div class="card__body">
         <div class="rule-list">
-          <details class="set-item" id="acc-autostart">
-            <summary class="set-head">
+          <!-- 2026-11-06 纯介绍型抽屉退役：body 只有说明文字的行不再做抽屉
+               （展开的唯一产出是读一段话，却让开关嵌在 summary 里被展开点击
+               误拨——开机自启「每次打开变关闭」的根因）。说明收进问号悬浮 -->
+          <div class="set-item set-item--flat" id="acc-autostart">
+            <div class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-laptop"/></svg></i>
-                <span class="set-txt"><b>开机自启动</b></span>
+                <span class="set-txt"><b>开机自启动</b>
+                  <span class="q" data-tip="登录后自动在后台运行并挂载托盘（写注册表 HKCU Run 键，卸载不影响已存数据）。路径变更后这里会提示「路径已失效」，重开一次开关即可"></span>
+                </span>
               </span>
               <span class="set-sum" id="autostart-state">读取中</span>
               <span class="set-end">
                 <label class="toggle"><input type="checkbox" id="autostart-toggle"><i></i></label>
               </span>
-            </summary>
-            <div class="set-body">
-              <div class="hint">登录后自动在后台运行并挂载托盘。</div>
-              <div class="hint" id="autostart-hint" hidden>读取中…</div>
             </div>
-          </details>
+            <div class="hint" id="autostart-hint" hidden>读取中…</div>
+          </div>
 
           <details class="set-item" id="acc-catchup">
             <summary class="set-head">
@@ -566,20 +568,19 @@
             </div>
           </details>
 
-          <details class="set-item" id="acc-alwaysnotify">
-            <summary class="set-head">
+          <div class="set-item set-item--flat" id="acc-alwaysnotify">
+            <div class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-upload"/></svg></i>
-                <span class="set-txt"><b>完成也推送</b></span>
+                <span class="set-txt"><b>完成也推送</b>
+                  <span class="q" data-tip="默认仅在存在未完成项时推送；开启后全部完成也发一条平安通知，免得以为守护进程坏了"></span>
+                </span>
               </span>
               <span class="set-sum" id="sum-alwaysnotify">读取中…</span>
               <span class="set-end">
                 <label class="toggle"><input type="checkbox" id="always-notify"><i></i></label>
               </span>
-            </summary>
-            <div class="set-body">
-              <div class="hint">默认仅在存在未完成项时推送；开启后全部完成也发一条平安通知。</div>
             </div>
-          </details>
+          </div>
 
           <details class="set-item" id="acc-quiet">
             <summary class="set-head">
