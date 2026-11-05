@@ -170,87 +170,28 @@ def collect_secrets() -> List[str]:
     return sorted(found)
 
 
-# 文案铁律（改这段前先读）：
+# 文案单源（2026-11-06）：使用说明真身在 tools/rl_release/小白使用说明.txt
+# （与 verify_release 的门禁断言同源），这里只读入并替换版本占位——
+# 此前内嵌 README_TXT 与单源模板漂移，发出去的是旧文案（数据位置、
+# 仓库地址、LICENSE 段全过期）。铁律不变：
 #   1. 不写「点哪个按钮 → 勾哪几个 → 怎么扫」这类分步扫码教学；
-#   2. 绑定关系按游戏写，不写平台之间的扫码次数对比
-#      （「米游社 1 次 / 森空岛每款 1 次」），也不写「一次扫码绑三款」「每款必须单独扫」；
+#   2. 绑定关系按游戏写，不写平台之间的扫码次数对比；
 #   3. 不替用户判断谁是「小白」，语气与 README / 界面保持一致。
-README_TXT = """HopOn v{VERSION} · 日常巡查 —— 小白使用说明
-================================================
-
-每天定时查一次游戏日常进度，没做完就推送到手机（微信 / QQ）。
-支持：原神、崩坏：星穹铁道、绝区零、明日方舟、明日方舟：终末地
-
-本版本是免安装绿色版：不用装 Python、不用装任何运行库，
-整个文件夹拷到哪台 64 位 Windows 10/11 电脑都能直接用。
+README_TEMPLATE = ROOT / "tools" / "rl_release" / "小白使用说明.txt"
 
 
-第一步：双击 HopOn.exe
-------------------------------------------------
-会弹出一个独立窗口（右下角同时出现托盘图标）。
-
-第一次打开是【演示模式】，页面上方有蓝色横幅提示 —— 这是正常的！
-说明你还没登录任何账号，看到的数据都是空的。
-
-点横幅上的「去扫码登录 →」进入下一步。
-
-
-第二步：绑定账号
-------------------------------------------------
-【账号绑定】页按平台分组：米游社（原神 / 崩坏：星穹铁道 / 绝区零）、
-森空岛（明日方舟 / 明日方舟：终末地）。每个游戏的登录状态分开显示，
-跟着页面上的提示做就行。
-
-状态点：绿 = 已绑定，黄 = 超过 7 天未更新，红 = 未绑定。
-全部绑定后，顶部的演示模式横幅会自己消失。
-
-【游戏监控】的开关 = 这款游戏要不要每天提醒，随手拨一下就行。
+def _read_readme() -> str:
+    if not README_TEMPLATE.exists():
+        raise SystemExit(f"[FATAL] 说明模板缺失：{README_TEMPLATE}")
+    text = README_TEMPLATE.read_text(encoding="utf-8-sig")
+    if "{VERSION}" not in text:
+        raise SystemExit("[FATAL] 说明模板缺少 {VERSION} 占位，版本号会印错")
+    if "github.com/QianYiXi0723/HopOn" not in text:
+        raise SystemExit("[FATAL] 说明模板缺源码仓库地址（P5 门禁会同挂）")
+    return text.replace("{VERSION}", VERSION)
 
 
-第三步：通知绑定（让提醒到你手机上）
-------------------------------------------------
-【通知绑定】页，二选一或都填：
-  Server酱（微信推送）：打开 https://sct.ftqq.com 微信扫码，复制 SendKey 填进去
-  Qmsg 酱（QQ 推送）  ：打开 https://qmsg.zendee.cn 登录，复制 key 填进去
-
-填完先点「发送测试推送」，手机收到了再点「保存配置」。
-
-
-第四步：挂机，完事
-------------------------------------------------
-默认每天 08:30 / 20:30 各检查一次（【定时与状态】页可改）。
-到点自动检查、自动推送，你什么都不用做。
-
-  · 点窗口右上角 X = 最小化到托盘，巡查照常运行
-  · 想彻底退出：托盘图标右键 → 「彻底退出」
-  · 想开机自启：【定时与状态】页 → 「开机自启动」拨到开
-
-
-常见问题
-------------------------------------------------
-Q：双击没反应 / 被杀毒软件拦了？
-A：本软件完全由本地脚本构成、未购买代码签名证书，部分杀软会误报。
-   在杀软里选择「信任/允许运行」即可。不放心可到 GitHub 阅读全部源码。
-
-Q：提示缺 WebView2 运行时？
-A：极少数精简系统没有它。到微软官网搜 "WebView2 Runtime" 装一下（免费，几 MB）。
-
-Q：扫码报 1034 / 5003（风控）？
-A：换个网络（比如手机热点）重试；或在【账号绑定】页展开「设备伪装」，
-   按提示贴上自己手机的设备指纹，通过率更高。
-
-Q：数据存在哪？安全吗？
-A：全部数据（登录凭证、巡检历史）只存在本机这个文件夹的 engine 子目录里，
-   不上传任何服务器。注意：别把自己配好的文件夹原样发给别人。
-
-Q：只读查询，不会代打游戏、不会自动签到。
-A：是的。本项目使用 MIT 许可证，可自由修改分发。
-"""
-
-# 版本号只写在上面的 {VERSION} 占位里，别在文案中再抄一遍数字
-if "{VERSION}" not in README_TXT:
-    raise SystemExit("[FATAL] README_TXT 缺少 {VERSION} 占位，版本号会印错")
-README_TXT = README_TXT.replace("{VERSION}", VERSION)
+README_TXT = _read_readme()
 
 
 def write_crlf_bom(path: Path, text: str) -> None:
@@ -417,6 +358,9 @@ def build_engine(out_engine: Path) -> None:
         (out_engine / "tools").mkdir()
         for item in sorted(tools_src.iterdir()):
             if item.is_file() and not item.name.startswith("."):
+                # P4（2026-11-06）：设备伪装 APK 不随包分发（verify_release 1b 门禁）
+                if item.suffix.lower() == ".apk":
+                    continue
                 shutil.copy2(item, out_engine / "tools" / item.name)
 
     # 5) 入口：exe 专用引擎模板（纯 HTTP 无窗口），不是源码仓的 app.py
@@ -504,12 +448,31 @@ def main() -> None:
             print("  -", item)
         sys.exit(1)
 
-    # 5) 打包
+    # 5) LICENSE 随包（P5：verify_release 顶层五件门禁）
+    lic = ROOT / "LICENSE"
+    if lic.exists():
+        shutil.copy2(lic, OUT / "LICENSE")
+
+    # 6) 打包
     ZIP_DIR.mkdir(parents=True, exist_ok=True)
     zip_path = ZIP_DIR / ZIP_NAME
     if zip_path.exists():
         zip_path.unlink()
     archive = shutil.make_archive(str(zip_path), "zip", root_dir=OUT.parent, base_dir=OUT.name)
+
+    # 7) 校验和清单（最佳实践：哈希自己的构建产物并随发布附 SHA256SUMS）
+    import hashlib
+    lines = []
+    artifacts = {archive, str(OUT / "HopOn.exe")}
+    setup_exe = ROOT / "installer" / "Output" / f"HopOn_v{VERSION}_Setup.exe"
+    if setup_exe.exists():
+        artifacts.add(str(setup_exe))
+    for artifact in sorted(artifacts):
+        digest = hashlib.sha256(Path(artifact).read_bytes()).hexdigest()
+        lines.append(f"{digest}  {Path(artifact).name}")
+    sums = ZIP_DIR / "SHA256SUMS.txt"
+    sums.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"SHA256SUMS: {sums}")
 
     total = sum(f.stat().st_size for f in OUT.rglob("*") if f.is_file())
     print(f"OUT_DIR   : {OUT}")
