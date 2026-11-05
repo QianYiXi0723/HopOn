@@ -96,6 +96,9 @@ def main() -> None:
 
     setup = ROOT / "installer" / "Output" / f"HopOn_v{version}_Setup.exe"
     if setup.exists():
+        # Setup.exe 归位到 dist/：zip/校验和/安装器一个文件夹全齐，用户好找
+        import shutil as _shutil
+        _shutil.copy2(setup, ROOT / "dist" / setup.name)
         run("5/6 安装包审计（28 项）",
             [sys.executable, str(ROOT / "tools" / "check_installer.py")])
     else:
