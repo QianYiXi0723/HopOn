@@ -2788,6 +2788,42 @@ function loadWeekTrend(){
     .catch(function(){ /* 静默：徽章保留主链已画的 done/total 口径 */ });
 }
 
+/* 热力图格子状态判定（最近 7 天与月报下钻共用，2026-11-06 抽出）。
+   返回 {cls, mark, tip}：live 实时合并只对「今天的行」生效，历史月不受影响。 */
+function hmCellState(c, row, lv){
+  let cls = 'na', mark = '', tip;
+  if (lv && lv.finished != null) {
+    cls = lv.finished ? 'ok' : 'na wait';
+    mark = lv.finished ? '✓' : '⋯';
+    tip = row.label + ' · ' + (lv.finished ? '已完成（实时）' : '进行中（今日未完成）');
+  } else if (c && c.known) {
+    cls = c.finished ? 'ok' : 'err';
+    mark = c.finished ? '✓' : '✗';
+    tip = row.label + ' · ' + (c.finished ? '已完成'
+        : '未完成 ' + (c.unfinished_tasks || 0) + ' 项');
+  } else if (row.is_today) {
+    /* 今日列三态（P2）：检查失败/快照过期不再伪装成「等待巡检」 */
+    if (c && (c.checks || 0) > 0 && c.err) {
+      cls = 'na';
+      mark = '✗';
+      tip = row.label + ' · 检查失败：' + c.err;
+    } else if (c && (c.checks || 0) > 0 && (c.stale || c.noacc)) {
+      cls = 'na';
+      mark = '⋯';
+      tip = row.label + ' · ' + (c.stale || '账号下未创建角色');
+    } else {
+      cls = 'na wait';
+      mark = '⋯';
+      tip = row.label + ' · 等待今日巡检';
+    }
+  } else if (c && (c.checks || 0) > 0 && c.err) {
+    tip = row.label + ' · 检查失败：' + c.err;
+  } else {
+    tip = row.label + ' · 无数据';
+  }
+  return { cls: cls, mark: mark, tip: tip };
+}
+
 function renderHistory(d){
   d = d || {};
   lastHistory = d;
@@ -2970,38 +3006,9 @@ function renderHeatmap(d){
          live 报告已完成 → 今日格立即变绿，不等下一轮巡检；
          live 未覆盖/未完成 → 维持巡检事实或"等待中"，绝不提前画红叉 */
       const lv = (row.is_today && window.__liveMap) ? window.__liveMap[gid] : null;
-      let cls = 'na', mark = '', tip;
-      if (lv && lv.finished != null) {
-        cls = lv.finished ? 'ok' : 'na wait';
-        mark = lv.finished ? '✓' : '⋯';
-        tip = row.label + ' · ' + (lv.finished ? '已完成（实时）' : '进行中（今日未完成）');
-      } else if (c && c.known) {
-        cls = c.finished ? 'ok' : 'err';
-        mark = c.finished ? '✓' : '✗';
-        tip = row.label + ' · ' + (c.finished ? '已完成'
-            : '未完成 ' + (c.unfinished_tasks || 0) + ' 项');
-      } else if (row.is_today) {
-        /* 今日列三态（P2）：检查失败/快照过期不再伪装成「等待巡检」 */
-        if (c && (c.checks || 0) > 0 && c.err) {
-          cls = 'na';
-          mark = '✗';
-          tip = row.label + ' · 检查失败：' + c.err;
-        } else if (c && (c.checks || 0) > 0 && (c.stale || c.noacc)) {
-          cls = 'na';
-          mark = '⋯';
-          tip = row.label + ' · ' + (c.stale || '账号下未创建角色');
-        } else {
-          cls = 'na wait';
-          mark = '⋯';
-          tip = row.label + ' · 等待今日巡检';
-        }
-      } else if (c && (c.checks || 0) > 0 && c.err) {
-        tip = row.label + ' · 检查失败：' + c.err;
-      } else {
-        tip = row.label + ' · 无数据';
-      }
-      html += '<div class="hm-cell ' + cls + (row.is_today ? ' today' : '') +
-        '" title="' + escHtml(tip) + '">' + mark + '</div>';
+      const st = hmCellState(c, row, lv);
+      html += '<div class="hm-cell ' + st.cls + (row.is_today ? ' today' : '') +
+        '" title="' + escHtml(st.tip) + '">' + st.mark + '</div>';
     });
     html += '</div>';
   });
@@ -3086,6 +3093,112 @@ document.getElementById('btn-run-now').addEventListener('click', function(){
       console.error('立即巡检失败', err);
       kpiSet('k-next-sub', '触发失败：' + err);
     });
+});
+
+/* ========================= 月报下钻（2026-11-06） ========================= */
+/* 徽章（h-month）点击 → 整月月历弹窗：格子复用最近 7 天的 hmCellState，
+   未来日期画暗格；‹ › 切换月份；后端 /api/history?month=YYYY-MM */
+let monthView = null;                          // 当前查看的月份（YYYY-MM）
+let monthNav = { prev: null, next: null };
+
+function openMonthModal(){
+  const mask = document.getElementById('month-modal');
+  if (!mask) return;
+  mask.hidden = false;
+  if (!monthView) {
+    const badge = document.getElementById('h-month');
+    const m = ((badge ? badge.textContent : '') || '').trim().split(' ')[0];
+    monthView = /^\d{4}-\d{2}$/.test(m) ? m : null;
+  }
+  loadMonthGrid(monthView);
+}
+
+function closeMonthModal(){
+  const mask = document.getElementById('month-modal');
+  if (mask) mask.hidden = true;
+}
+
+function loadMonthGrid(month){
+  const body = document.getElementById('month-body');
+  if (body) body.innerHTML = '<div class="emptybox">读取中…</div>';
+  fetch('/api/history?month=' + encodeURIComponent(month || ''))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (!d || d.ok === false) {
+        body.innerHTML = '<div class="emptybox">' +
+          escHtml((d && d.message) || '读取失败') + '</div>';
+        return;
+      }
+      monthView = d.month;
+      monthNav = { prev: d.prev || null, next: d.next || null };
+      renderMonthModal(d);
+    })
+    .catch(function(e){
+      body.innerHTML = '<div class="emptybox">读取失败：' + escHtml(String(e)) + '</div>';
+    });
+}
+
+function renderMonthModal(d){
+  document.getElementById('month-title').textContent = d.label + ' · 月报';
+  document.getElementById('month-prev').disabled = !d.prev;
+  document.getElementById('month-next').disabled = !d.next;
+
+  let html = '<div class="hm-row hm-head hm-row-month"><div class="hm-label"></div>' +
+    d.days.map(function(row){
+      return '<div class="hm-cell' + (row.is_today ? ' today' : '') + '">' +
+        String(row.label).replace(/^\d+\//, '') + '</div>';
+    }).join('') + '</div>';
+
+  d.games.forEach(function(g){
+    html += '<div class="hm-row hm-row-month"><div class="hm-label">' +
+      '<span class="gdot" style="background:' + gameDotColor(g.game) + '"></span>' +
+      escHtml(g.game_name) + '</div>';
+    d.days.forEach(function(row){
+      const c = (row.games || {})[g.game];
+      if (c && c.future) {
+        html += '<div class="hm-cell dim" title="还没到"></div>';
+        return;
+      }
+      const lv = (row.is_today && window.__liveMap) ? window.__liveMap[g.game] : null;
+      const st = hmCellState(c, row, lv);
+      html += '<div class="hm-cell ' + st.cls + (row.is_today ? ' today' : '') +
+        '" title="' + escHtml(st.tip) + '">' + st.mark + '</div>';
+    });
+    html += '</div>';
+  });
+
+  const statLines = d.games.map(function(g){
+    let t = escHtml(g.game_name) + ' 完成 ' + g.done + ' 天';
+    if (g.missed > 0) t += ' · 漏 ' + g.missed;
+    if (g.nodata > 0) t += ' · 查无数据 ' + g.nodata;
+    return '· ' + t;
+  }).join('<br>');
+
+  document.getElementById('month-body').innerHTML =
+    '<div class="month-scroll">' + html + '</div>' +
+    '<div class="month-stats">' + statLines + '</div>' +
+    '<div class="hm-legend">' +
+    '<span class="hm-cell ok">✓</span>完成' +
+    '<span class="hm-cell err">✗</span>未完成' +
+    '<span class="hm-cell na">⋯</span>等待中/无数据' +
+    '</div>';
+}
+
+const hMonthBadge = document.getElementById('h-month');
+if (hMonthBadge) {
+  hMonthBadge.addEventListener('click', openMonthModal);
+  hMonthBadge.title = '点击查看整月月历';
+  hMonthBadge.style.cursor = 'pointer';
+}
+document.getElementById('month-prev').addEventListener('click', function(){
+  if (monthNav.prev) loadMonthGrid(monthNav.prev);
+});
+document.getElementById('month-next').addEventListener('click', function(){
+  if (monthNav.next) loadMonthGrid(monthNav.next);
+});
+document.getElementById('month-close').addEventListener('click', closeMonthModal);
+document.getElementById('month-modal').addEventListener('click', function(e){
+  if (e.target === this) closeMonthModal();   // 点遮罩空白处关闭
 });
 
 /* ========================= 主题（三态：跟随系统 / 深色 / 浅色） ========================= */

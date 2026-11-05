@@ -667,6 +667,115 @@ def _summary_unsafe(
     }
 
 
+def month_grid(
+    month: str,
+    *,
+    today: Optional[datetime] = None,
+    enabled_games: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """月报下钻：任意月份的整月格子 + 每游戏当月完成/漏做统计。
+
+    格子形状与 summary 的 recent 明细完全一致（known/finished/checks/
+    last/err/stale/noacc 原样透出），前端月历表直接复用最近 7 天的渲染
+    规则；未来日期标 future=True，前端画成暗格（还没到的天不算漏）。
+    月末归属沿用游戏日界：格子的 key 就是自然日，record() 写入时已按
+    game_date_key 归好档，这里只读不算。
+    """
+    now = today or datetime.now()
+    try:
+        view = datetime.strptime(str(month or ""), "%Y-%m")
+    except (TypeError, ValueError):
+        view = now
+    if view > now:                      # 还没发生的月份钳回当月
+        view = now
+    year, mon = view.year, view.month
+    month_key = "%04d-%02d" % (year, mon)
+
+    data = load()
+    store = data.get("days") or {}
+    if not isinstance(store, dict):
+        store = {}
+    meta = _game_meta(store, enabled_games)
+    games = _ordered_games(meta)
+
+    next_month = datetime(year + (mon == 12), (mon % 12) + 1, 1)
+    days_in_month = (next_month - datetime(year, mon, 1)).days
+    today_key = now.strftime("%Y-%m-%d")
+
+    rows: List[Dict[str, Any]] = []
+    tally: Dict[str, Dict[str, int]] = {g: {"done": 0, "missed": 0} for g in games}
+    for dnum in range(1, days_in_month + 1):
+        cursor = datetime(year, mon, dnum)
+        key = cursor.strftime("%Y-%m-%d")
+        future = cursor.date() > now.date()
+        day = store.get(key) if not future else None
+        if not isinstance(day, dict):
+            day = {}
+        cells: Dict[str, Any] = {}
+        for game in games:
+            if future:
+                cells[game] = {"future": True, "known": False, "finished": False,
+                               "checks": 0, "last": ""}
+                continue
+            node = day.get(game)
+            nd = node if isinstance(node, dict) else None
+            if nd is not None and nd.get("known"):
+                finished = bool(nd.get("finished"))
+                cells[game] = {
+                    "finished": finished, "known": True,
+                    "checks": int(nd.get("checks") or 0),
+                    "last": nd.get("last") or "",
+                    "unfinished_tasks": int(nd.get("unfinished_tasks") or 0),
+                }
+                tally[game]["done" if finished else "missed"] += 1
+                continue
+            cell = {"finished": False, "known": False,
+                    "checks": int((nd or {}).get("checks") or 0),
+                    "last": (nd or {}).get("last") or ""}
+            if nd:
+                if nd.get("err"):
+                    cell["err"] = str(nd.get("err"))
+                elif nd.get("stale"):
+                    cell["stale"] = str(nd.get("stale"))
+                elif nd.get("noacc"):
+                    cell["noacc"] = True
+            cells[game] = cell
+            if (cell["checks"] or 0) > 0 and not cell.get("known"):
+                # 查过但没拿到有效数据：既不是完成也不算漏（与最近 7 天口径一致）
+                tally[game].setdefault("nodata", 0)
+                tally[game]["nodata"] += 1
+        rows.append({
+            "date": key,
+            "label": "%d/%d" % (mon, dnum),
+            "weekday": _WEEKDAYS[cursor.weekday()],
+            "is_today": key == today_key,
+            "future": future,
+            "games": cells,
+        })
+
+    game_stats = [{
+        "game": game,
+        "game_name": (meta.get(game) or {}).get("game_name") or game,
+        "nickname": (meta.get(game) or {}).get("nickname") or "",
+        "done": tally[game]["done"],
+        "missed": tally[game]["missed"],
+        "nodata": tally[game].get("nodata", 0),
+    } for game in games]
+
+    prev_month = (datetime(year, mon, 1) - timedelta(days=1)).strftime("%Y-%m")
+    next_month_key = next_month.strftime("%Y-%m")
+    return {
+        "ok": True,
+        "month": month_key,
+        "label": "%d 年 %d 月" % (year, mon),
+        "prev": prev_month,
+        "next": next_month_key if next_month_key <= now.strftime("%Y-%m") else None,
+        "today": today_key,
+        "days": rows,
+        "games": game_stats,
+    }
+
+
 def clear() -> None:
     """清空存档（界面上没暴露，留给手动维护 / 测试）。"""
     _atomic_write(_empty())

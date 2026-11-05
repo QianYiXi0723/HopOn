@@ -455,6 +455,14 @@
   .set-item--flat .set-head{cursor:default}
   .set-item--flat .set-head::after{visibility:hidden}
   .set-item--flat .hint:not([hidden]){padding:0 16px 12px;margin-top:-4px}
+  /* 月报下钻弹窗（2026-11-06）：整月格横向滚动，列宽固定 30px */
+  .modal--month{width:min(1200px,96vw)}
+  .month-scroll{overflow-x:auto;padding-bottom:6px}
+  .hm-row-month{grid-template-columns:150px;grid-auto-flow:column;
+    grid-auto-columns:30px;gap:6px}
+  .hm-cell.dim{opacity:.28}
+  .month-stats{margin-top:12px;font-size:13px;color:var(--text-secondary);line-height:1.7}
+  .month-nav{display:flex;gap:6px;margin-left:10px}
   .set-body .hint{font-size:12px;padding:8px 0 0}
   .hint[hidden]{display:none}
   .set-item.is-off .set-body{opacity:.55}

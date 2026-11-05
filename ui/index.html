@@ -309,6 +309,22 @@
       </div>
     </div>
 
+    <!-- ======== 月报下钻（2026-11-06）：徽章点击 → 整月月历 ======== -->
+    <div class="modal-mask" id="month-modal" hidden>
+      <div class="modal modal--month">
+        <div class="modal-head">
+          <b id="month-title">月报</b>
+          <span class="month-nav">
+            <button type="button" class="btn sm" id="month-prev">‹ 上一月</button>
+            <button type="button" class="btn sm" id="month-next">下一月 ›</button>
+          </span>
+          <span class="spacer"></span>
+          <button type="button" class="modal-x" id="month-close" title="关闭">✕</button>
+        </div>
+        <div class="month-body" id="month-body"><div class="emptybox">读取中…</div></div>
+      </div>
+    </div>
+
     <!-- ======== 通知推送（并入账号页）：渠道切换改分段控件——约定形态自带
          可点击意符（Norman），原「渠道」空卡删除；两卡 8+4 配满 12 栅格 ======== -->
     <div class="scan-subhead" style="grid-column:1/-1"><svg class="ico"><use href="#i-send"/></svg> 通知推送</div>

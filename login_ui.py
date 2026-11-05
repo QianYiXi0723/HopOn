@@ -2307,6 +2307,17 @@ class Handler(BaseHTTPRequestHandler):
             # 任何异常都必须变成"200 + 空报表"，绝不能 500：
             # 前端 fetch 拿到 500 时 r.json() 会失败，弹的是一句让人摸不着头脑的
             # "无法读取历史记录"红字，而真实原因只是 data/history.json 还没生成。
+            # 月报下钻（2026-11-06）：?month=YYYY-MM → 整月格子 + 当月统计
+            month_q = (query.get("month") or [""])[0]
+            if month_q:
+                try:
+                    payload = history.month_grid(month_q, enabled_games=enabled_games)
+                except Exception:  # noqa: BLE001
+                    logger.exception("读取月报失败，返回空月历")
+                    payload = {"ok": False, "message": "读取月报失败（详见运行日志）",
+                               "days": [], "games": []}
+                self._json(payload)
+                return
             try:
                 payload = history.summary(days=days, enabled_games=enabled_games)
             except Exception:  # noqa: BLE001
