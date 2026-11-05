@@ -1208,25 +1208,34 @@
      放在 .hm-* 基础规则之后：同优先级下后者胜，此处必须压得住 7 列基础布局。
      max-width/text-align 必须覆盖 .modal 基础规则的 420px 居中——
      否则弹窗被拦腰截断（标题竖排折行、统计居中成一坨，2026-11-06 实测） */
-  .modal--month{width:fit-content;min-width:320px;max-width:min(560px,94vw);text-align:left}
+  .modal--month{width:min(420px,94vw);max-width:min(420px,94vw);text-align:left}
   .modal--month .modal-head b{white-space:nowrap}
-  .month-toolbar{display:flex;align-items:center;gap:14px;margin:-6px 0 12px}
+  .month-toolbar{display:flex;align-items:center;gap:10px;margin:-6px 0 12px}
   .month-nav{display:flex;gap:4px}
   .month-nav .btn{min-width:34px;padding:4px 10px;font-weight:700}
+  /* 抽屉箭头（沿用定时页抽屉的朝向约定：收纳 ◀ / 展开 ▼） */
+  .drawer-arrow{width:26px;height:26px;border-radius:4px;border:none;background:transparent;
+    color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;
+    flex:none;padding:0}
+  .drawer-arrow:hover{color:var(--fg);background:var(--hover)}
+  .drawer-arrow::after{content:"";width:0;height:0;flex:none;
+    border-left:4.5px solid transparent;border-right:4.5px solid transparent;
+    border-top:5.5px solid currentColor;transform:rotate(90deg);transition:transform .15s ease}
+  .drawer-arrow.open::after{transform:rotate(0)}
+  .month-chips{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 12px}
   .month-scroll{overflow-x:auto;padding-bottom:6px}
   .hm-row.hm-row-month, .hm-row.hm-head.hm-row-month{
-    grid-template-columns:150px;grid-auto-flow:column;
-    grid-auto-columns:26px;gap:4px}
-  .hm-row-month .hm-cell{width:26px;min-width:0;padding:0;justify-content:center;
-    font-size:11px}
+    grid-template-columns:110px;grid-auto-flow:column;
+    grid-auto-columns:1fr;gap:4px}
+  .hm-row-month .hm-cell{min-width:0;padding:0;justify-content:center;font-size:11px}
   .hm-row-month.hm-head .hm-cell{min-height:24px;color:var(--muted);font-weight:400}
   .hm-cell.dim{opacity:.28}
   .month-nav{display:flex;gap:6px;margin-left:10px}
   .modal--month .seg-mini{margin-left:10px}
   /* 热力日历（GitHub 贡献图范式）：7 列按周分行，深浅=当日完成游戏数 */
-  .mc-grid{display:grid;grid-template-columns:repeat(7,26px);gap:4px;justify-content:start}
+  .mc-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
   .mc-wd{font-size:11px;color:var(--muted);text-align:center}
-  .mc-day{width:26px;height:26px;border-radius:4px;display:flex;align-items:center;
+  .mc-day{height:30px;border-radius:4px;display:flex;align-items:center;
     justify-content:center;font-size:11px;color:var(--text-secondary);cursor:default}
   .mc-day.blank{background:transparent}
   .mc-day.future{opacity:.25}

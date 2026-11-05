@@ -120,7 +120,6 @@
         <h2><svg class="ico"><use href="#i-grid"/></svg> 游戏概览
           <span class="q" data-tip="每款游戏一张卡：今日完成状态、当前体力与连续完成天数"></span>
         </h2>
-        <span class="badge" id="h-month">-</span>
       </div>
       <div id="h-stats"></div>
     </section>
@@ -129,6 +128,9 @@
       <div class="card-head">
         <h2><svg class="ico"><use href="#i-list"/></svg> 最近 7 天</h2>
         <span class="q" data-tip="绿色 = 当天完成，红色 = 查过但未完成，灰 = 当天未运行或未查到"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn sm" id="h-month-entry" style="height:24px"
+                title="打开整月月历（热力 / 分游戏）">每月报表</button>
       </div>
       <div id="h-table"></div>
     </section>
@@ -641,6 +643,7 @@
      必须放在 .app / 所有 tabpanel 之外：嵌在任意 tab 的卡片里时，
      其它页签下整棵子树 display:none，弹窗会「点了没反应」 -->
     <!-- ======== 月报下钻（2026-11-06）：徽章点击 → 整月月历 ======== -->
+    <!-- ======== 月报下钻（2026-11-06）：徽章点击 → 整月月历 ======== -->
     <div class="modal-mask" id="month-modal" hidden>
       <div class="modal modal--month">
         <div class="modal-head">
@@ -653,15 +656,20 @@
             <button type="button" data-view="heat">热力</button>
             <button type="button" data-view="games">分游戏</button>
           </div>
+          <button type="button" class="drawer-arrow" id="month-chips-toggle" hidden
+                  title="展开游戏列表"></button>
           <span class="spacer"></span>
           <span class="month-nav">
             <button type="button" class="btn sm" id="month-prev" title="上一月">‹</button>
             <button type="button" class="btn sm" id="month-next" title="下一月">›</button>
           </span>
         </div>
-        <div class="month-body" id="month-body"><div class="emptybox">读取中…</div>
+        <div class="month-chips" id="month-chips" hidden></div>
+        <div class="month-body" id="month-body"><div class="emptybox">读取中…</div></div>
+      </div>
+    </div>
 
-<div class="modal-mask" id="addtime-modal" hidden>
+    <div class="modal-mask" id="addtime-modal" hidden>
   <div class="modal" style="max-width:330px">
     <div class="modal-head">
       <b id="addtime-title">添加提醒时间点</b>

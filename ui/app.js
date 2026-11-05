@@ -3105,15 +3105,15 @@ let monthView = null;                          // 当前查看的月份（YYYY-M
 let monthNav = { prev: null, next: null };
 let monthMode = localStorage.getItem('rl-monthview') === 'games' ? 'games' : 'heat';
 let monthGame = null;                          // 分游戏模式选中的游戏 id
+let monthChipsOpen = false;                    // 游戏 chips 抽屉展开态（仅分游戏模式）
 
 function openMonthModal(){
   const mask = document.getElementById('month-modal');
   if (!mask) return;
   mask.hidden = false;
   if (!monthView) {
-    const badge = document.getElementById('h-month');
-    const m = ((badge ? badge.textContent : '') || '').trim().split(' ')[0];
-    monthView = /^\d{4}-\d{2}$/.test(m) ? m : null;
+    const n = new Date();   // 月报视图按自然月（month_grid 同口径）
+    monthView = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
   }
   loadMonthGrid(monthView);
 }
@@ -3151,6 +3151,11 @@ function renderMonthModal(d){
   if (seg) seg.querySelectorAll('button').forEach(function(b){
     b.classList.toggle('on', b.dataset.view === monthMode);
   });
+
+  const chipsWrap = document.getElementById('month-chips');
+  const arrow = document.getElementById('month-chips-toggle');
+  if (chipsWrap) chipsWrap.hidden = monthMode !== 'games' || !monthChipsOpen;
+  if (arrow) arrow.hidden = monthMode !== 'games';
 
   let body;
   if (monthMode === 'heat') {
@@ -3197,14 +3202,13 @@ function renderMonthModal(d){
       monthGame = d.games.length ? d.games[0].game : null;
     }
     const cur = d.games.filter(function(g){ return g.game === monthGame; })[0] || d.games[0];
-    let html = '<div class="month-chips">' +
-      d.games.map(function(g){
-        return '<button type="button" class="mchip' + (g.game === monthGame ? ' on' : '') +
-          '" data-game="' + escHtml(g.game) + '">' +
-          '<span class="gdot" style="background:' + gameDotColor(g.game) + '"></span>' +
-          escHtml(g.game_name) + '</button>';
-      }).join('') + '</div>';
-    html += '<div class="mc-grid">';
+    if (chipsWrap) chipsWrap.innerHTML = d.games.map(function(g){
+      return '<button type="button" class="mchip' + (g.game === monthGame ? ' on' : '') +
+        '" data-game="' + escHtml(g.game) + '">' +
+        '<span class="gdot" style="background:' + gameDotColor(g.game) + '"></span>' +
+        escHtml(g.game_name) + '</button>';
+    }).join('');
+    let html = '<div class="mc-grid">';
     const wdMap = { '周一': 0, '周二': 1, '周三': 2, '周四': 3, '周五': 4, '周六': 5, '周日': 6 };
     const lead = wdMap[d.days[0].weekday] || 0;
     for (let i = 0; i < lead; i++) html += '<div class="mc-day blank"></div>';
@@ -3248,11 +3252,9 @@ function monthGameMark(c, row){
   return '⋯';
 }
 
-const hMonthBadge = document.getElementById('h-month');
-if (hMonthBadge) {
-  hMonthBadge.addEventListener('click', openMonthModal);
-  hMonthBadge.title = '点击查看整月月历';
-  hMonthBadge.style.cursor = 'pointer';
+const hMonthEntry = document.getElementById('h-month-entry');
+if (hMonthEntry) {
+  hMonthEntry.addEventListener('click', openMonthModal);
 }
 document.getElementById('month-prev').addEventListener('click', function(){
   if (monthNav.prev) loadMonthGrid(monthNav.prev);
@@ -3261,6 +3263,12 @@ document.getElementById('month-next').addEventListener('click', function(){
   if (monthNav.next) loadMonthGrid(monthNav.next);
 });
 document.getElementById('month-close').addEventListener('click', closeMonthModal);
+document.getElementById('month-chips-toggle').addEventListener('click', function(){
+  monthChipsOpen = !monthChipsOpen;
+  this.classList.toggle('open', monthChipsOpen);
+  const wrap = document.getElementById('month-chips');
+  if (wrap) wrap.hidden = monthMode !== 'games' || !monthChipsOpen;
+});
 document.getElementById('month-body').addEventListener('click', function(e){
   const b = e.target.closest ? e.target.closest('.mchip') : null;
   if (!b || b.dataset.game === monthGame) return;
