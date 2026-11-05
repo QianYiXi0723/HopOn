@@ -3104,6 +3104,7 @@ document.getElementById('btn-run-now').addEventListener('click', function(){
 let monthView = null;                          // 当前查看的月份（YYYY-MM）
 let monthNav = { prev: null, next: null };
 let monthMode = localStorage.getItem('rl-monthview') === 'games' ? 'games' : 'heat';
+let monthGame = null;                          // 分游戏模式选中的游戏 id
 
 function openMonthModal(){
   const mask = document.getElementById('month-modal');
@@ -3151,18 +3152,6 @@ function renderMonthModal(d){
     b.classList.toggle('on', b.dataset.view === monthMode);
   });
 
-  const statLines = d.games.map(function(g){
-    let t = escHtml(g.game_name) + ' 完成 ' + g.done + ' 天';
-    if (g.missed > 0) t += ' · 漏 ' + g.missed;
-    if (g.nodata > 0) t += ' · 查无数据 ' + g.nodata;
-    return '· ' + t;
-  }).join('<br>');
-  const legend = '<div class="hm-legend">' +
-    '<span class="hm-cell ok">✓</span>完成' +
-    '<span class="hm-cell err">✗</span>未完成' +
-    '<span class="hm-cell na">⋯</span>等待中/无数据' +
-    '</div>';
-
   let body;
   if (monthMode === 'heat') {
     /* 热力日历：周一~周日 7 列按周分行，颜色深浅 = 当日完成委托的游戏数，
@@ -3193,39 +3182,70 @@ function renderMonthModal(d){
     });
     for (let i = lead + d.days.length; i % 7 !== 0; i++) html += '<div class="mc-day blank"></div>';
     html += '</div>';
+    const statLines = d.games.map(function(g){
+      let t = escHtml(g.game_name) + ' 完成 ' + g.done + ' 天';
+      if (g.missed > 0) t += ' · 漏 ' + g.missed;
+      if (g.nodata > 0) t += ' · 查无数据 ' + g.nodata;
+      return '· ' + t;
+    }).join('<br>');
     body = '<div class="month-scroll">' + html + '</div>' +
-      '<div class="month-stats">' + statLines + '</div>' + legend;
+      '<div class="month-stats">' + statLines + '</div>' +
+      '<div class="hm-legend">' +
+      '<span class="hm-cell ok">✓</span>完成' +
+      '<span class="hm-cell err">✗</span>未完成' +
+      '<span class="hm-cell na">⋯</span>等待中/无数据' +
+      '</div>';
   } else {
-    /* 分游戏：每游戏一行整月格（列宽固定，横向滚动） */
-    let rows = '<div class="hm-row hm-head hm-row-month"><div class="hm-label"></div>' +
-      d.days.map(function(row){
-        return '<div class="hm-cell' + (row.is_today ? ' today' : '') + '">' +
-          Number(String(row.date).slice(-2)) + '</div>';
+    /* 分游戏：选中一款游戏看它的整月历——固定颜色（✓绿/✗红/⋯灰），
+       顶部游戏 chips 切换；查看对象缺省 = 第一个游戏 */
+    if (!monthGame || !d.games.some(function(g){ return g.game === monthGame; })) {
+      monthGame = d.games.length ? d.games[0].game : null;
+    }
+    const cur = d.games.filter(function(g){ return g.game === monthGame; })[0] || d.games[0];
+    let html = '<div class="month-chips">' +
+      d.games.map(function(g){
+        return '<button type="button" class="mchip' + (g.game === monthGame ? ' on' : '') +
+          '" data-game="' + escHtml(g.game) + '">' +
+          '<span class="gdot" style="background:' + gameDotColor(g.game) + '"></span>' +
+          escHtml(g.game_name) + '</button>';
       }).join('') + '</div>';
-    d.games.forEach(function(g){
-      rows += '<div class="hm-row hm-row-month"><div class="hm-label">' +
-        '<span class="gdot" style="background:' + gameDotColor(g.game) + '"></span>' +
-        escHtml(g.game_name) + '</div>';
-      d.days.forEach(function(row){
-        const c = (row.games || {})[g.game];
-        if (c && c.future) {
-          rows += '<div class="hm-cell dim" title="还没到"></div>';
-          return;
-        }
-        const lv = (row.is_today && window.__liveMap) ? window.__liveMap[g.game] : null;
-        const st = hmCellState(c, row, lv);
-        rows += '<div class="hm-cell ' + st.cls + (row.is_today ? ' today' : '') +
-          '" title="' + escHtml(st.tip) + '">' + st.mark + '</div>';
-      });
-      rows += '</div>';
+    html += '<div class="mc-grid">';
+    const wdMap = { '周一': 0, '周二': 1, '周三': 2, '周四': 3, '周五': 4, '周六': 5, '周日': 6 };
+    const lead = wdMap[d.days[0].weekday] || 0;
+    for (let i = 0; i < lead; i++) html += '<div class="mc-day blank"></div>';
+    d.days.forEach(function(row){
+      if (row.future) {
+        html += '<div class="mc-day future" title="还没到"></div>';
+        return;
+      }
+      const c = (row.games || {})[cur.game] || {};
+      const mk = monthGameMark(c, row);
+      const cls = mk === '✓' ? ' done' : mk === '✗' ? ' miss' : '';
+      const tip = row.label + ' · ' + (c.known
+        ? (c.finished ? '已完成' : '未完成 ' + (c.unfinished_tasks || 0) + ' 项')
+        : ((c.checks || 0) > 0 && c.err) ? '检查失败：' + c.err
+        : ((c.checks || 0) > 0) ? '查无数据（当日无有效记录）' : '当日未巡检');
+      html += '<div class="mc-day g' + cls + (row.is_today ? ' today' : '') +
+        '" title="' + escHtml(tip) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
     });
-    body = '<div class="month-scroll">' + rows + '</div>' +
-      '<div class="month-stats">' + statLines + '</div>' + legend;
+    for (let i = lead + d.days.length; i % 7 !== 0; i++) html += '<div class="mc-day blank"></div>';
+    html += '</div>';
+    const sum = '当月：完成 ' + cur.done + ' 天' +
+      (cur.missed > 0 ? ' · 漏 ' + cur.missed : '') +
+      (cur.nodata > 0 ? ' · 查无数据 ' + cur.nodata : '');
+    body = '<div class="month-scroll">' + html + '</div>' +
+      '<div class="month-stats">' + escHtml(sum) + '</div>';
   }
   document.getElementById('month-body').innerHTML = body;
 }
 
 function monthGameMark(c, row){
+  if (c.future) return '';
+  if (c.known) return c.finished ? '✓' : '✗';
+  if ((c.checks || 0) > 0 && c.err) return '失败';
+  if ((c.checks || 0) > 0 && (c.stale || c.noacc)) return '无数据';
+  return '⋯';
+}function monthGameMark(c, row){
   if (c.future) return '';
   if (c.known) return c.finished ? '✓' : '✗';
   if ((c.checks || 0) > 0 && c.err) return '失败';
@@ -3246,6 +3266,12 @@ document.getElementById('month-next').addEventListener('click', function(){
   if (monthNav.next) loadMonthGrid(monthNav.next);
 });
 document.getElementById('month-close').addEventListener('click', closeMonthModal);
+document.getElementById('month-body').addEventListener('click', function(e){
+  const b = e.target.closest ? e.target.closest('.mchip') : null;
+  if (!b || b.dataset.game === monthGame) return;
+  monthGame = b.dataset.game;
+  if (window.__lastMonth) renderMonthModal(window.__lastMonth);
+});
 document.getElementById('month-modal').addEventListener('click', function(e){
   if (e.target === this) closeMonthModal();   // 点遮罩空白处关闭
 });
@@ -3260,7 +3286,10 @@ document.getElementById('month-modal').addEventListener('click', function(e){
     seg.querySelectorAll('button').forEach(function(x){
       x.classList.toggle('on', x.dataset.view === monthMode);
     });
-    if (window.__lastMonth) renderMonthModal(window.__lastMonth);
+    /* 确定性切换：走 loadMonthGrid 全链（拉取+渲染同一代码路径），
+       不依赖 __lastMonth 缓存时点——此前缓存未就绪时点击会被静默跳过，
+       用户实测「切换无反应，必须重开窗口」 */
+    loadMonthGrid(monthView);
   });
 })();
 
