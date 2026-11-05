@@ -87,6 +87,27 @@ def run() -> None:
     garbage = ss.MARK_PREFIX + base64.b64encode(b"\x00\x01\x02garbage").decode()
     check("S6b 伪 blob 原样返回", ss.decrypt_value(garbage) == garbage)
 
+
+    # ---- P 组：推送渠道密钥（2026-11-06 P3 收口）----
+    pushy = {"accounts": [{"game": "genshin", "credential": dict(cred)}],
+             "push": {"serverchan": {"enabled": True, "sendkey": "SCT123456abcdef", "timeout": 10},
+                      "qmsg": {"enabled": True, "key": "qmsgkey999", "server": "https://qmsg.zendee.cn"},
+                      "bark": {"enabled": False, "device_key": "BarkDevKey", "server": "https://api.day.app"},
+                      "feishu": {"enabled": False, "webhook": "", "secret": ""}}}
+    login_ui.save_raw_config(json.loads(json.dumps(pushy)))
+    on_disk = login_ui.CONFIG_PATH.read_text(encoding="utf-8")
+    check("P1a 磁盘无明文 sendkey/key/device_key",
+          all(x not in on_disk for x in ("SCT123456abcdef", "qmsgkey999", "BarkDevKey")))
+    check("P1b 磁盘带 dpapi 标记（4 个机密值）", on_disk.count("dpapi:v1:") >= 4)
+    loaded = login_ui.load_raw_config()
+    push = loaded["push"]
+    check("P2 读端解密还原推送密钥",
+          push["serverchan"]["sendkey"] == "SCT123456abcdef"
+          and push["qmsg"]["key"] == "qmsgkey999"
+          and push["bark"]["device_key"] == "BarkDevKey")
+    check("P3 空值/非机密字段不动",
+          push["feishu"]["webhook"] == "" and push["serverchan"]["timeout"] == 10)
+
     check("R0 测试目录隔离", str(tmp) in str(login_ui.CONFIG_PATH))
 
 

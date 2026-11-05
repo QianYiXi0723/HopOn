@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -283,9 +284,42 @@ def record(report: Any, *, at: Optional[datetime] = None) -> Dict[str, Any]:
     days = _prune(days)
     data["days"] = days
     _atomic_write(data)
+    _snapshot_history_daily()
     save_report_snapshot(report, at=moment)
     logger.debug("已写入历史：%s（%d 个游戏）", date_key, len(day))
     return data
+
+
+#: 每日快照的保留份数（7 天，覆盖一次长假不管）
+HISTORY_BACKUP_KEEP = 7
+
+
+def _snapshot_history_daily(now: Optional[datetime] = None) -> Optional[Path]:
+    """history.json 的每日滚动快照（data/backup/history.YYYY-MM-DD.json）。
+
+    巡检历史是全应用唯一不可再生的资产（凭证可重扫、活动可重抓，历史丢
+    了就永远是 ✗）——2026-11-06 前已经事故两次。每次写入检查一次：当天
+    的快照不存在就复制一份，按文件名滚动保留 HISTORY_BACKUP_KEEP 份。
+    每天最多一次复制，成本可忽略；失败绝不影响写入主流程。
+    """
+    try:
+        current = now or datetime.now()
+        backup_dir = DATA_DIR / "backup"
+        target = backup_dir / ("history.%s.json" % current.strftime("%Y-%m-%d"))
+        if target.exists():
+            return target
+        if not HISTORY_PATH.exists():
+            return None
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(HISTORY_PATH, target)
+        snapshots = sorted(backup_dir.glob("history.*.json"))
+        for stale in snapshots[:-HISTORY_BACKUP_KEEP]:
+            stale.unlink(missing_ok=True)
+        logger.info("已留存历史每日快照：%s", target.name)
+        return target
+    except Exception:  # noqa: BLE001 - 备份失败不拖垮写入主流程
+        logger.exception("历史快照失败（忽略）")
+        return None
 
 
 def _snapshot_alert_dict(alert: Any) -> Dict[str, Any]:

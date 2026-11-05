@@ -24,6 +24,16 @@ MARK_PREFIX = "dpapi:v1:"
 #: accounts[].credential 里的机密字段（uid/server/updated_at 非机密，不加密）
 SECRET_KEYS = ("cookie", "token")
 
+#: push 节点里的机密字段（按渠道，2026-11-06 P3 收口）：webhook 地址本身
+#: 含接入点密钥，一并加密
+PUSH_SECRET_MAP = {
+    "serverchan": ("sendkey",),
+    "qmsg": ("key",),
+    "bark": ("device_key",),
+    "feishu": ("webhook", "secret"),
+    "dingtalk": ("webhook", "secret"),
+}
+
 _CRYPTPROTECT_UI_FORBIDDEN = 0x1
 
 
@@ -103,19 +113,31 @@ def _walk_credentials(config: Dict[str, Any]):
             yield cred
 
 
-def encrypt_config_dict(config: Dict[str, Any]) -> Dict[str, Any]:
-    """把 accounts[].credential 的机密字段就地加密（写盘前调用）。"""
+def _iter_secret_fields(config: Dict[str, Any]):
+    """遍历 (宿主 dict, 字段名)：账号凭证 + 推送渠道密钥两类机密字段。"""
     for cred in _walk_credentials(config):
         for key in SECRET_KEYS:
-            if cred.get(key) is not None:
-                cred[key] = encrypt_value(cred[key])
+            yield cred, key
+    push = (config or {}).get("push")
+    if isinstance(push, dict):
+        for channel, fields in PUSH_SECRET_MAP.items():
+            node = push.get(channel)
+            if isinstance(node, dict):
+                for field in fields:
+                    yield node, field
+
+
+def encrypt_config_dict(config: Dict[str, Any]) -> Dict[str, Any]:
+    """把账号凭证与推送渠道密钥就地加密（写盘前调用）。"""
+    for host, field in _iter_secret_fields(config):
+        if host.get(field) is not None:
+            host[field] = encrypt_value(host[field])
     return config
 
 
 def decrypt_config_dict(config: Dict[str, Any]) -> Dict[str, Any]:
-    """把 accounts[].credential 的机密字段就地解密（读盘后调用）。"""
-    for cred in _walk_credentials(config):
-        for key in SECRET_KEYS:
-            if cred.get(key) is not None:
-                cred[key] = decrypt_value(cred[key])
+    """把账号凭证与推送渠道密钥就地解密（读盘后调用）。"""
+    for host, field in _iter_secret_fields(config):
+        if host.get(field) is not None:
+            host[field] = decrypt_value(host[field])
     return config
