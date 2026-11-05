@@ -63,6 +63,9 @@ LOGS_DIR = USER_DIR / "logs"
 PID_FILE = LOGS_DIR / "daemon.pid"
 HEARTBEAT_FILE = LOGS_DIR / "daemon.heartbeat"
 RUN_NOW_FLAG = LOGS_DIR / ".run_now"
+#: 关机前落盘旗标（2026-11-06）：壳「彻底退出」前由控制台写入，daemon 跑完
+#: 一轮 quiet_push 检查后自行删除——控制台端点靠「旗标消失」判断落盘完成
+QUIET_RUN_FLAG = LOGS_DIR / ".quiet_run"
 LAST_RUN_FILE = LOGS_DIR / ".last_run"
 STOP_FLAG = LOGS_DIR / ".stop"
 CONSOLE_PORT = 8765
@@ -382,6 +385,15 @@ def read_dayend_refresh_at() -> str:
         return DEFAULT_DAYEND_REFRESH_AT
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
         logger.warning("config.json 的 dayend_refresh_at 越界（%r），回退默认值", text)
+        return DEFAULT_DAYEND_REFRESH_AT
+    if (hour, minute) >= (4, 0):
+        # 落点在 04:00 游戏日界或之后：pending_dayend_refresh 的窗口
+        # [target, 04:00) 为空，这一班会静默永不触发——几乎必然是配错
+        logger.warning(
+            "config.json 的 dayend_refresh_at=%s 在 04:00 游戏日界之后，"
+            "该班次永远不会触发，回退默认值 %s",
+            text, DEFAULT_DAYEND_REFRESH_AT,
+        )
         return DEFAULT_DAYEND_REFRESH_AT
     return text
 
@@ -798,11 +810,13 @@ def _run_check_locked(
 # --------------------------------------------------------------------------- #
 
 
-def _wait(seconds: float, stop_event: threading.Event) -> bool:
+def _wait(seconds: float, stop_event: threading.Event) -> str:
     """可中断的休眠。
 
-    返回 True = 检测到 .run_now 手动巡检标记（调用方应立即跑一轮）；
-    返回 False = 正常到点 / stop_event 被置位 / STOP_FLAG。
+    返回 ``"run-now"`` = 检测到 .run_now 手动巡检标记（调用方立即跑一轮）；
+    返回 ``"quiet-run"`` = 检测到 .quiet_run 关机前落盘标记（调用方跑一轮
+    quiet_push 检查后**自行删旗标**——控制台端点靠旗标消失判断完成，故这里
+    不能删）；返回 ``""`` = 正常到点 / stop_event 被置位 / STOP_FLAG。
     本质仍是 sleep（CPU 0），拆成 0.5 秒一片：既能马上响应"停止"，
     也能让托盘里的"立即巡检"不用干等 30 秒。
     """
@@ -810,12 +824,16 @@ def _wait(seconds: float, stop_event: threading.Event) -> bool:
     while not stop_event.is_set():
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            return False
+            return ""
         if STOP_FLAG.exists():
             logger.info("检测到停止标记 %s", STOP_FLAG.name)
             stop_event.set()
-            return False
+            return ""
         stop_event.wait(min(0.5, remaining))
+        if QUIET_RUN_FLAG.exists():
+            # 关机在即：优先于手动巡检（落盘完这轮再响手动也不迟）
+            logger.info("收到关机前落盘请求 %s", QUIET_RUN_FLAG.name)
+            return "quiet-run"
         if RUN_NOW_FLAG.exists():
             try:
                 RUN_NOW_FLAG.unlink()
@@ -825,8 +843,8 @@ def _wait(seconds: float, stop_event: threading.Event) -> bool:
                 logger.warning("手动巡检标记删除失败（%s），本轮跳过等待下个 tick 重试", exc)
                 continue
             logger.info("收到立即巡检请求 %s", RUN_NOW_FLAG.name)
-            return True
-    return False
+            return "run-now"
+    return ""
 
 
 def _tick(stop_event: threading.Event) -> None:
@@ -963,7 +981,18 @@ def _loop(stop_event: threading.Event) -> None:
             # 2026-11-05 实证：watcher 一抛 NameError 整个 check-loop 线程无声
             # 死掉（pythonw 无 stderr），心跳停在启动那一笔、巡检永远停摆。
             logger.exception("体力回满 watcher 异常（已忽略，继续运行）")
-        if _wait(TICK_SECONDS, stop_event):
+        signal = _wait(TICK_SECONDS, stop_event)
+        if signal == "quiet-run":
+            # 关机前落盘：照常查询并写历史、不推送；旗标在检查完成后删除，
+            # 控制台的 /api/daemon/quiet-run 靠旗标消失判断落盘完成
+            try:
+                run_check("关机前落盘", quiet_push=True)
+            finally:
+                try:
+                    QUIET_RUN_FLAG.unlink(missing_ok=True)
+                except OSError:
+                    pass   # 删不掉顶多让下次启动多发一轮静默检查，无实害
+        elif signal:
             run_check("手动")
     logger.info("轮询线程已退出")
 

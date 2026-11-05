@@ -116,6 +116,48 @@ def run() -> None:
 
     check("R0 LOGS_DIR 已整体打桩", WATCH_PATHS_OK)
 
+    # ---- W 组：main._record_resin_watch（预测记录器）----
+    # 2026-11-06 实证：run_once 从 W2 首日就误传 config 当 alert_games，
+    # TypeError 被「忽略」兜底吞掉 → 预测从未写进去，回满即推整条链是死的。
+    import main as main_mod  # noqa: E402
+    from core.models import GameStatus, TaskItem  # noqa: E402
+
+    main_mod._RESIN_WATCH_PATH = TMP / ".resin_watch.json"
+    due_future = {"full_at": "2099-01-01 08:00:00"}
+
+    def status_with_recover(gid, recover):
+        return GameStatus(
+            game_id=gid, game_name=gid, nickname="",
+            tasks=[TaskItem(name="体力", done=False, progress="0/240",
+                            recover_seconds=recover)],
+        )
+
+    # W1 正常记录：有恢复倒计时的游戏写预测
+    main_mod._RESIN_WATCH_PATH.unlink(missing_ok=True)
+    main_mod._record_resin_watch(
+        [status_with_recover("genshin", 3600)], set())
+    st = json.loads(main_mod._RESIN_WATCH_PATH.read_text(encoding="utf-8"))
+    check("W1 有倒计时写预测", "genshin" in (st.get("predictions") or {}),
+          str(st)[:120])
+
+    # W2 本轮已到预警阈值的游戏不写预测（调用方传 resource_alerts 的 id 集）
+    main_mod._RESIN_WATCH_PATH.unlink(missing_ok=True)
+    main_mod._record_resin_watch(
+        [status_with_recover("zzz", 3600)], {"zzz"})
+    st = json.loads(main_mod._RESIN_WATCH_PATH.read_text(encoding="utf-8"))
+    check("W2 预警中的游戏跳过预测",
+          "zzz" not in (st.get("predictions") or {}), str(st)[:120])
+
+    # W3 调用契约：第二实参必须是可迭代的 game_id 集合——传 AppConfig 这类
+    # 不可迭代对象必须当场 TypeError（不许被兜底吞成静默失效）。
+    # 注意 statuses 不能为空：空列表走不到 `gid in alert_games` 那一行。
+    try:
+        main_mod._record_resin_watch(
+            [status_with_recover("x", 60)], object())
+        check("W3 非集合实参当场 TypeError", False, "没有抛异常")
+    except TypeError:
+        check("W3 非集合实参当场 TypeError", True)
+
 
 if __name__ == "__main__":
     run()

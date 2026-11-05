@@ -2682,6 +2682,39 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"ok": False, "message": f"重启失败：{exc}"}, 500)
             return
 
+        if path == "/api/daemon/quiet-run":
+            # 关机前落盘（2026-11-06）：壳「彻底退出」/系统关机前调用。写
+            # .quiet_run 旗标，daemon 0.5s 内接手跑一轮 quiet_push 检查
+            # （写历史、不推送）后自行删旗标；本端点阻塞等旗标消失——
+            # 壳侧超时更短，超时也会照常走收尸，数据由在途检查兜底
+            payload = self._read_json_body()
+            if payload is None:
+                return
+            try:
+                import daemon as daemon_mod
+
+                flag = daemon_mod.QUIET_RUN_FLAG
+                if not daemon_status().get("running"):
+                    self._json({"ok": False,
+                                "message": "守护进程未运行，跳过关机前落盘"})
+                    return
+                flag.write_text(
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n",
+                    encoding="utf-8")
+                deadline = time.time() + 25
+                while time.time() < deadline and flag.exists():
+                    time.sleep(0.3)
+                done = not flag.exists()
+                self._json({
+                    "ok": done,
+                    "message": ("关机前落盘完成" if done
+                                else "落盘超时（引擎侧可能在收尾，数据由在途检查兜底）"),
+                })
+            except Exception as exc:  # noqa: BLE001 - 退出路径绝不 500 卡壳
+                logger.warning("关机前落盘失败：%s", exc)
+                self._json({"ok": False, "message": f"关机前落盘失败：{exc}"})
+            return
+
         if path in ("/api/daemon/start", "/api/daemon/stop"):
             payload = self._read_json_body()
             if payload is None:

@@ -864,13 +864,6 @@ def run_once(config: AppConfig, dry_run: bool = False, quiet_push: bool = False)
     # 1) 查询
     statuses = collect_statuses(config)
 
-    # 1.1) 体力回满预测：写进 watch 文件（daemon tick 预测到点 → 复核巡检）
-    if not dry_run:
-        try:
-            _record_resin_watch(statuses, config)
-        except Exception:  # noqa: BLE001 - 预测失败不影响巡检本身
-            logger.exception("体力回满预测写入失败（忽略）")
-
     # 1.2) 凭证健康记账：成功/失败都记；连续 >=2 次 auth 失败且 24h 内未提醒过 → 独立提醒
     #      key = "<uid>:<game_id>"（与 logs/mihoyo_binding.json 语义对齐）；
     #      米游社取不到 uid 的账号（森空岛/空凭证）退回昵称，再退回序号。
@@ -932,6 +925,18 @@ def run_once(config: AppConfig, dry_run: bool = False, quiet_push: bool = False)
         activity_alerts=activity_alerts,
         activity_start_alerts=activity_start_alerts,
     )
+    # 2.1) 体力回满预测：写进 watch 文件（daemon tick 预测到点 → 复核巡检）。
+    #      必须放在 build_report 之后——第二轮实参是「本轮已到预警阈值的游戏」，
+    #      那些走当轮预警即时提醒，不需要预测。2026-11-06 实证：原调用从 W2
+    #      首日就误传 config，TypeError 被「忽略」兜底吞掉，预测从未写进去过，
+    #      回满即推整条链一直是死的。
+    if not dry_run:
+        try:
+            _record_resin_watch(
+                statuses, {a.game_id for a in report.resource_alerts}
+            )
+        except Exception:  # noqa: BLE001 - 预测失败不影响巡检本身
+            logger.exception("体力回满预测写入失败（忽略）")
     _safe_console(report.to_console_text())
     logger.info(
         "汇总：总数=%d 已完成=%d 未完成=%d 失败=%d 漏做任务=%d 体力预警=%d 活动提醒=%d",

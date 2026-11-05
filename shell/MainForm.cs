@@ -637,6 +637,18 @@ namespace HopOn
                                             "\"running\"\\s*:\\s*true");
         }
 
+        /// <summary>关机前落盘：POST /api/daemon/quiet-run，阻塞到 daemon 跑完静默检查或超时。
+        /// 引擎/守护不在时端点秒回 ok:false，不拖慢退出。</summary>
+        private void QuietRunBeforeExit(int timeoutMs)
+        {
+            try
+            {
+                string resp = HttpJson(_port, "/api/daemon/quiet-run", "POST", "{}", timeoutMs);
+                Log("关机前落盘：" + (string.IsNullOrEmpty(resp) ? "超时未完成（收尸照常）" : resp));
+            }
+            catch (Exception ex) { Log("关机前落盘异常（收尸照常）：" + ex.Message); }
+        }
+
         private void EnsureDaemon(int port)
         {
             if (DaemonRunning(port))
@@ -706,7 +718,12 @@ namespace HopOn
             // 点 X / 最小化：藏进托盘（Job 活着 = 引擎活着），只有「彻底退出」才真退
             if (_reallyExit || e.CloseReason == CloseReason.ApplicationExitCall
                 || e.CloseReason == CloseReason.WindowsShutDown)
+            {
+                // 系统关机：宽限极短，尽力抢一轮静默落盘（失败不拦关机）
+                if (e.CloseReason == CloseReason.WindowsShutDown)
+                    QuietRunBeforeExit(4000);
                 return;
+            }
             e.Cancel = true;
             Hide();
             Log("已取消关闭并隐藏到托盘");
@@ -720,6 +737,10 @@ namespace HopOn
         private void ReallyExit()
         {
             _reallyExit = true;
+            // 关机前落盘（2026-11-06）：让 daemon 跑一轮静默检查（写历史、
+            // 不推送），把「今天到底做没做完」冻进历史——22:00 最后一轮之后
+            // 才打完的游戏不再被记成漏做。引擎没在跑时这一步秒回，不拖慢退出。
+            QuietRunBeforeExit(25000);
             Log("壳彻底退出：开始收尸引擎");
             try
             {
