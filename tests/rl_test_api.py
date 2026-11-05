@@ -86,6 +86,23 @@ check("T3.9 再次 stop 后 running=False / alive=False / pid=None（真停）",
 print("      结束态: " + json.dumps({k: d6.get(k) for k in ("running", "pid", "alive")}, ensure_ascii=False)
       + "（基线 running=" + str(base_running) + "）")
 
+# ---- 恢复基线（2026-11-06）：测试 3 打的是用户真实实例，此前测完永远把
+#      守护留在停止态——真机验收当晚就是这么把用户守护停掉 31 分钟的。
+#      基线在跑 → 拉回运行态并等心跳；基线本就停止 → 保持停止不画蛇添足。
+if base_running:
+    r = session.post(BASE + "/api/daemon/start", json={}, timeout=15)
+    d7 = r.json()
+    check("T3.10 恢复基线：start → ok", r.status_code == 200 and d7.get("ok") is True,
+          d7.get("message", ""))
+    d8 = wait_daemon(True)
+    check("T3.11 恢复后真身 running=True 且心跳在跳",
+          d8.get("running") is True and isinstance(d8.get("heartbeat_age"), (int, float))
+          and d8["heartbeat_age"] >= 0,
+          json.dumps({k: d8.get(k) for k in ("running", "pid", "heartbeat_age")}, ensure_ascii=False))
+    print("      已恢复基线（守护回到运行态）")
+else:
+    print("      基线本为停止态，保持停止（不越权拉起）")
+
 # ================= 测试 1：DOM 渲染与初始化（临时实例 8766） =================
 print("== 测试 1：DOM 渲染与初始化（临时服务 127.0.0.1:%d） ==" % TMP_PORT)
 import login_ui
