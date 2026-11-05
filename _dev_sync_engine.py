@@ -22,6 +22,7 @@ HopOn.exe 只是 C# 壳，真正的业务代码全在 engine/ 里（engine/pytho
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -33,7 +34,12 @@ ENTRY_TEMPLATE = ROOT / "shell" / "engine_app.py"
 
 #: (相对路径, 是否需要 daemon 去托盘改写)
 PY_FILES = ("login_ui.py", "main.py", "daemon.py")
-DAEMON_NEEDLE = "return run_daemon(use_tray=not args.no_tray)"
+#: 2026-11-05 修复：daemon.py 的托盘调用改过一次，锚点没跟着改，同步从此静默失效。
+#:   旧：return run_daemon(use_tray=not args.no_tray)
+#:   新：return run_daemon(use_tray=not args.no_tray and not _engine_layout)
+#: 锚点只取到 "use_tray=" 为止——行尾表达式以后还可能变，锚全行必然再坏一次。
+#: 用整行正则替换，把 "=...到行尾" 一并吃掉，才不会被行尾差异绊倒。
+DAEMON_NEEDLE_RE = re.compile(r"^(\s*)return run_daemon\(use_tray=.*$", re.M)
 DAEMON_PATCHED = (
     "# exe 发行版：托盘由 C# 壳负责（HopOn.exe --tray），daemon 恒为 headless\n"
     "    return run_daemon(use_tray=False)"
@@ -47,11 +53,13 @@ def digest(data: bytes) -> str:
 def daemon_bytes() -> bytes:
     """工作树 daemon.py + 去托盘改写（与发行包完全一致的处理）。"""
     src = (ROOT / "daemon.py").read_text(encoding="utf-8")
-    if src.count(DAEMON_NEEDLE) != 1:
+    hits = DAEMON_NEEDLE_RE.findall(src)
+    if len(hits) != 1:
         raise SystemExit(
-            f"[FATAL] daemon.py 托盘开关锚点异常（出现 {src.count(DAEMON_NEEDLE)} 次）"
+            f"[FATAL] daemon.py 托盘开关锚点异常（匹配 {len(hits)} 处，期望 1）\n"
+            "        锚点规则见 _dev_sync_engine.py 的 DAEMON_NEEDLE_RE"
         )
-    return src.replace(DAEMON_NEEDLE, DAEMON_PATCHED).encode("utf-8")
+    return DAEMON_NEEDLE_RE.sub(DAEMON_PATCHED, src, count=1).encode("utf-8")
 
 
 def plan() -> list[tuple[Path, bytes, str]]:
