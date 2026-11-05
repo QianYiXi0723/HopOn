@@ -37,7 +37,10 @@ import main
 _calls = {"run_once": 0}
 
 
-def _fake_run_once(cfg, dry_run=False):
+def _fake_run_once(cfg, dry_run=False, quiet_push=False):
+    # 2026-11-05：run_once 新增 quiet_push（日界前落盘班次用它抑制推送）。
+    # 替身签名必须与真实函数同步，否则 daemon 透传时抛 TypeError 被兜底吞掉，
+    # 测试只能看到「run_once 调用 0 次」这种误导性症状。
     _calls["run_once"] += 1
     time.sleep(0.5)
     return 0
