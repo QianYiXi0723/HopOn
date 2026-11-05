@@ -645,16 +645,19 @@
       <div class="modal modal--month">
         <div class="modal-head">
           <b id="month-title">月报</b>
+          <span class="spacer"></span>
+          <button type="button" class="modal-x" id="month-close" title="关闭">✕</button>
+        </div>
+        <div class="month-toolbar">
           <div class="seg-mini" id="month-view" role="group" aria-label="月报视图">
             <button type="button" data-view="heat">热力</button>
             <button type="button" data-view="games">分游戏</button>
           </div>
-          <span class="month-nav">
-            <button type="button" class="btn sm" id="month-prev">‹ 上一月</button>
-            <button type="button" class="btn sm" id="month-next">下一月 ›</button>
-          </span>
           <span class="spacer"></span>
-          <button type="button" class="modal-x" id="month-close" title="关闭">✕</button>
+          <span class="month-nav">
+            <button type="button" class="btn sm" id="month-prev" title="上一月">‹</button>
+            <button type="button" class="btn sm" id="month-next" title="下一月">›</button>
+          </span>
         </div>
         <div class="month-body" id="month-body"><div class="emptybox">读取中…</div>
 

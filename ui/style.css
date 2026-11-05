@@ -1208,9 +1208,11 @@
      放在 .hm-* 基础规则之后：同优先级下后者胜，此处必须压得住 7 列基础布局。
      max-width/text-align 必须覆盖 .modal 基础规则的 420px 居中——
      否则弹窗被拦腰截断（标题竖排折行、统计居中成一坨，2026-11-06 实测） */
-  .modal--month{width:min(480px,94vw);max-width:min(480px,94vw);text-align:left}
+  .modal--month{width:fit-content;min-width:320px;max-width:min(560px,94vw);text-align:left}
   .modal--month .modal-head b{white-space:nowrap}
-  .month-toolbar{display:flex;align-items:center;gap:10px;margin:-6px 0 12px}
+  .month-toolbar{display:flex;align-items:center;gap:14px;margin:-6px 0 12px}
+  .month-nav{display:flex;gap:4px}
+  .month-nav .btn{min-width:34px;padding:4px 10px;font-weight:700}
   .month-scroll{overflow-x:auto;padding-bottom:6px}
   .hm-row.hm-row-month, .hm-row.hm-head.hm-row-month{
     grid-template-columns:150px;grid-auto-flow:column;
