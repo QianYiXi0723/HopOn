@@ -63,6 +63,11 @@ CONSOLE_URL = f"http://127.0.0.1:{CONSOLE_PORT}/"
 TICK_SECONDS = 30
 #: 时间点容错（秒）：±1 分钟
 SLOT_TOLERANCE = 60
+
+#: 日界前落盘班次的默认时刻。04:00 是游戏日界（见 core.history.GAME_DAY_OFFSET），
+#: 留 10 分钟余量给查询耗时与网络抖动——晚了就会跨过日界，当天的真实完成
+#: 状态取不回来（游戏已清零）。
+DEFAULT_DAYEND_REFRESH_AT = "03:50"
 #: 错过时间点后的补发窗口（分钟）：0 = 关闭补发
 CATCH_UP_MINUTES_DEFAULT = 180
 CATCH_UP_MINUTES_MAX = 720
@@ -323,6 +328,105 @@ def save_last_run(state: Dict[str, Any]) -> None:
         logger.warning("写 %s 失败，本轮防重复记录可能丢失", LAST_RUN_FILE.name)
 
 
+def _coerce_bool(raw: Any, fallback: bool) -> bool:
+    """把配置里的「像布尔」的值收敛成真布尔；拿不准就用 fallback。
+
+    缺省（None）走 fallback，而不是 False——新增开关默认开启时，
+    老配置里根本没有这个键，不能因为"没写"就当作关闭。
+    """
+    if raw is None:
+        return fallback
+    if isinstance(raw, bool):
+        return raw
+    text = str(raw).strip().lower()
+    if text in ("1", "true", "yes", "on"):
+        return True
+    if text in ("0", "false", "no", "off"):
+        return False
+    return fallback
+
+
+def read_dayend_refresh() -> bool:
+    """是否启用「日界前落盘」。缺省开启（这是修 bug，不是新功能）。
+
+    04:00 是游戏日界，跨过去之后当天的真实完成状态就取不回来了——游戏的
+    每日进度会清零，而森空岛给的是"上次登录时的快照"，我们只能看到 0。
+    所以在日界前补一次只落盘、不推送的巡检，把"今天到底做没做完"冻进历史。
+    """
+    section = _read_app_section()
+    return _coerce_bool(section.get("dayend_refresh_enabled"), True)
+
+
+def read_dayend_refresh_at() -> str:
+    """日界前那次刷新定在几点，默认 ``03:50``。
+
+    GAME_DAY_OFFSET 是凌晨 4 点，留 10 分钟余量给查询本身的耗时与网络抖动。
+    """
+    raw = _read_app_section().get("dayend_refresh_at")
+    text = str(raw).strip() if raw is not None else ""
+    if not text:
+        return DEFAULT_DAYEND_REFRESH_AT
+    try:
+        hour, minute = (int(part) for part in text.split(":"))
+    except ValueError:
+        logger.warning("config.json 的 dayend_refresh_at 不合法（%r），回退默认值", text)
+        return DEFAULT_DAYEND_REFRESH_AT
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        logger.warning("config.json 的 dayend_refresh_at 越界（%r），回退默认值", text)
+        return DEFAULT_DAYEND_REFRESH_AT
+    return text
+
+
+def pending_dayend_refresh(
+    now: Optional[datetime] = None,
+    state: Optional[Dict[str, Any]] = None,
+    tolerance: int = SLOT_TOLERANCE,
+) -> Optional[Tuple[str, int]]:
+    """日界前那一班（默认 03:50）是否该跑；该跑返回 ``(slot_key, 迟到秒数)``。
+
+    与普通班次的三点不同：
+
+    1. **不参与长补发**。普通班次睡过头可以在 ``catch_up_minutes``（3 小时）内
+       补跑，但这一班的意义就是"在 04:00 之前把今天的状态冻下来"——过了日界
+       数据已被游戏清零，补跑毫无意义，所以只在 [目标时刻, 日界) 之间补。
+    2. **静默推送**（调用方用 ``quiet_push=True``）——凌晨三点半不该弹提醒。
+    3. 槽位键仍按普通格式 ``<日期> <时刻>``，复用同一份 ``fired`` 账本防重复。
+
+    归属：03:50 属于「昨日 04:00 起」那个游戏日，``history.record`` 经
+    ``game_date_key`` 会自然归到那一天——这正是我们要的"当日最终状态"。
+    """
+    if not read_dayend_refresh():
+        return None
+
+    current = now or datetime.now()
+    text = read_dayend_refresh_at()
+    try:
+        hour, minute = (int(part) for part in text.split(":"))
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return None
+    except ValueError:
+        return None
+
+    dayend = current.replace(hour=4, minute=0, second=0, microsecond=0)
+    target = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    delta = int((current - target).total_seconds())
+
+    # 只认「已经到了目标时刻、且还没跨过 04:00 日界」这段窗口
+    if delta < -tolerance:
+        return None
+    if current >= dayend:
+        return None
+    if delta > (dayend - target).total_seconds():
+        return None
+
+    book = state if state is not None else load_last_run()
+    fired = book.get("fired") or {}
+    key = f"{current.strftime('%Y-%m-%d')} {text}"
+    if key in fired:
+        return None
+    return (key, delta)
+
+
 def pending_slots(
     now: Optional[datetime] = None,
     check_times: Optional[List[str]] = None,
@@ -461,9 +565,16 @@ def format_weekly_body(
     prev_done: Dict[str, int] = {}
     if prev_digest:
         for game in prev_digest.get("games") or []:
-            prev_done[str(game.get("game") or game.get("name") or "?")] = int(
-                game.get("done_days", 0)
-            )
+            # 2026-11-05 修：缺 done_days 时不能默认 0 —— 那会让「上周根本没
+            # 查到数据」伪装成「上周 0 天全勤」，凭空算出「较上周 +5 天」的假进步。
+            # 没有对比基线就不带趋势尾巴（与 docstring 的承诺一致）。
+            raw = game.get("done_days")
+            if raw is None:
+                continue
+            try:
+                prev_done[str(game.get("game") or game.get("name") or "?")] = int(raw)
+            except (TypeError, ValueError):
+                continue
     parts: List[str] = []
     total_days = int(digest.get("days_count", 7))
     for game in digest.get("games") or []:
@@ -602,8 +713,11 @@ def setup_logging(console: bool = False) -> None:
 _CHECK_GATE = threading.Lock()
 
 
-def run_check(reason: str, dry_run: bool = False) -> int:
+def run_check(reason: str, dry_run: bool = False, quiet_push: bool = False) -> int:
     """跑一轮检查，任何异常都不许冒出去。返回退出码（失败也返回非 0）。
+
+    ``quiet_push=True``：照常查询并写历史，但抑制推送——供「日界前落盘」
+    这类只为取数、不该打扰用户的班次使用。
 
     进程内重入保护见 _CHECK_GATE；CLI --once 是独立进程，不在此闸内。
     """
@@ -611,12 +725,14 @@ def run_check(reason: str, dry_run: bool = False) -> int:
         logger.warning("上一轮检查尚未结束，本次触发跳过：%s", reason)
         return 0
     try:
-        return _run_check_locked(reason, dry_run=dry_run)
+        return _run_check_locked(reason, dry_run=dry_run, quiet_push=quiet_push)
     finally:
         _CHECK_GATE.release()
 
 
-def _run_check_locked(reason: str, dry_run: bool = False) -> int:
+def _run_check_locked(
+    reason: str, dry_run: bool = False, quiet_push: bool = False
+) -> int:
     """run_check 的实体（调用方必须已持 _CHECK_GATE）。"""
     try:
         from core.config import load_config
@@ -660,7 +776,7 @@ def _run_check_locked(reason: str, dry_run: bool = False) -> int:
     )
     try:
         _apply_mihoyo_query_config(config)
-        code = run_once(config, dry_run=dry_run)
+        code = run_once(config, dry_run=dry_run, quiet_push=quiet_push)
         logger.info("本轮结束，退出码=%d", code)
         return code
     except Exception:  # noqa: BLE001 - 断网 / 接口改版都不许弄死守护进程
@@ -717,14 +833,27 @@ def _tick(stop_event: threading.Event) -> None:
 
     state = load_last_run()
     pending = pending_slots(check_times=check_times, state=state)
+
+    # 日界前落盘（03:50，静默推送）：把当天最终状态在 04:00 之前冻进历史。
+    # 排在普通班次之前——它有时间窗（Δ到 04:00），错过就再也不会有。
+    dayend = pending_dayend_refresh(state=state)
+    if dayend is not None:
+        pending = [dayend] + pending
+
     if not pending:
         return
 
     for slot, late_seconds in pending:
+        # 是不是日界前那一班：决定要不要抑制推送。
+        # 用「目标时刻 == 配置的 dayend_refresh_at」判定，而不是靠位置——
+        # 普通班的补发也可能排在它前面。
+        is_dayend = slot.endswith(" " + read_dayend_refresh_at()) and read_dayend_refresh()
         # 先记账、后执行：即便执行途中进程被杀，也不会在下一轮重复推送
         state.setdefault("fired", {})[slot] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         save_last_run(state)
-        if abs(late_seconds) > SLOT_TOLERANCE:
+        if is_dayend:
+            logger.info("日界前落盘班次 %s：照常查询并写历史，不推送（凌晨不打扰）", slot)
+        elif abs(late_seconds) > SLOT_TOLERANCE:
             logger.info(
                 "错过了时间点 %s（迟到 %.0f 分钟），现在补发一次检查",
                 slot,
@@ -733,7 +862,10 @@ def _tick(stop_event: threading.Event) -> None:
         else:
             logger.info("命中时间点 %s，开始检查", slot)
 
-        code = run_check(f"补发 {slot}" if abs(late_seconds) > SLOT_TOLERANCE else f"定时 {slot}")
+        label = "日界前落盘" if is_dayend else (
+            f"补发 {slot}" if abs(late_seconds) > SLOT_TOLERANCE else f"定时 {slot}"
+        )
+        code = run_check(label, quiet_push=is_dayend)
         state = load_last_run()
         state["last_slot"] = slot
         state["last_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

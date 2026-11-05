@@ -105,6 +105,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "app": {
         "test_mode": TEST_MODE_AUTO,
         "check_times": ["08:30", "20:30"],
+        # 日界前落盘（2026-11-05）：04:00 是游戏日界，跨过去当天进度就被游戏
+        # 清零、再也取不回来。所以日界前补一次「只落盘、不推送」的巡检，
+        # 把当天最终状态冻进历史。默认开启——这是修 bug，不是可选项。
+        "dayend_refresh_enabled": True,
+        "dayend_refresh_at": "03:50",
         "catch_up_minutes": CATCH_UP_MINUTES_DEFAULT,
         "catch_up_enabled": CATCH_UP_ENABLED_DEFAULT,
         "resource_alert_enabled": RESOURCE_ALERT_ENABLED_DEFAULT,

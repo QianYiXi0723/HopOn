@@ -831,11 +831,15 @@ def _mark_resin_pushed(games: List[str]) -> None:
     _atomic_write_json(_RESIN_WATCH_PATH, state)
 
 
-def run_once(config: AppConfig, dry_run: bool = False) -> int:
+def run_once(config: AppConfig, dry_run: bool = False, quiet_push: bool = False) -> int:
     """跑一轮完整检查：查询 -> 判断 -> 推送 -> 返回退出码。
 
     命令行（cmd_run）和守护进程（daemon.py）共用这一份逻辑，避免两处行为漂移。
-    退出码含义与模块文档一致。
+
+    ``dry_run``：完全演练，不写历史、不推送。
+    ``quiet_push``：**照常查询并写入历史，但抑制一切推送**（含凭证提醒）。
+    用于「日界前落盘」这类只为取数、不该打扰用户的班次——凌晨 03:59 若
+    真发一条「日常未完成」，会把人吵醒；而数据又必须落下，于是拆成两个开关。
     """
     import logging
 
@@ -947,6 +951,10 @@ def run_once(config: AppConfig, dry_run: bool = False) -> int:
         quiet_now = in_quiet_window(
             lt.tm_hour * 60 + lt.tm_min, config.push.quiet_start, config.push.quiet_end
         )
+    # quiet_push：本轮只为落盘数据，一律不推送（等价于整段处于免打扰）
+    if quiet_push:
+        quiet_now = True
+        quiet_window = quiet_window or "日界前落盘（不打扰）"
 
     # 3) 推送决策
     alert, reason = should_push(
@@ -961,6 +969,12 @@ def run_once(config: AppConfig, dry_run: bool = False) -> int:
         quiet_now=quiet_now,
         quiet_window=quiet_window,
     )
+    # quiet_push 是**硬闸**，必须压在 should_push 之后：它的判断顺序里
+    # force_alert（测试模式=强制提醒）排在 quiet_now 之前，会绕过免打扰——
+    # 一旦用户把测试模式留在强制提醒上，凌晨 03:50 的落盘班次就会把人吵醒。
+    # 这一层的语义是「本轮只为落盘」，任何理由都不该突破。
+    if quiet_push:
+        alert, reason = False, "日界前落盘（只写历史，任何模式都不推送）"
     logger.info("推送决策：%s（%s）", "推送" if alert else "不推送", reason)
 
     push_results = []
@@ -982,7 +996,8 @@ def run_once(config: AppConfig, dry_run: bool = False) -> int:
 
     # 3.3) 凭证失效提醒：独立于日常推送门槛（不受 should_push 约束）；
     #      dry-run 不真发；通道静默由 _active_notifiers 统一过滤（2B）。
-    if cred_alerts and not dry_run:
+    #      quiet_push 同样抑制——日界前落盘只为取数，不该半夜弹凭证告警。
+    if cred_alerts and not dry_run and not quiet_push:
         notifiers = _active_notifiers(config.push)
         if not notifiers:
             logger.warning("所有推送通道均在静默期内，本轮不推送凭证提醒")

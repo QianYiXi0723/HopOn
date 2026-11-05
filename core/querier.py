@@ -17,7 +17,7 @@ import logging
 import math
 import time
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from .config import KNOWN_GAMES, AccountConfig
 from .history import GAME_DAY_OFFSET
@@ -485,6 +485,49 @@ def _zeroed_daily_total(data: Dict[str, Any]) -> Optional[int]:
     return total if total > 0 else None
 
 
+def _is_endfield_snapshot_stale(detail: Dict[str, Any]) -> bool:
+    """终末地快照是否早于今日 04:00（仅判新旧）。
+
+    与方舟 :func:`_is_snapshot_stale` 同口径、同目的，只是字段名不同：
+    终末地 ``card/detail`` 顶层用 ``base.lastLoginTime``（上次登录）表示
+    快照新鲜度，没有方舟那样的 ``status.lastOnlineTs``。
+    "现在"同样优先用服务端的 ``currentTs``（比本机时钟可信）。
+
+    字段缺失返回 False（宁可不判定，也不因可选字段把正常查询打成失败）。
+    """
+    now_ts = _optional_int(detail, "currentTs")
+    login_ts = _optional_int(detail, "base", "lastLoginTime")
+    if not now_ts or not login_ts:
+        return False
+    reset_dt = (datetime.fromtimestamp(now_ts) - GAME_DAY_OFFSET).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) + GAME_DAY_OFFSET
+    return login_ts < int(reset_dt.timestamp())
+
+
+def _endfield_zeroed_mission(
+    detail: Dict[str, Any]
+) -> Optional[Tuple[int, int]]:
+    """快照跨过今日 04:00 日界时，返回 ``(0, maxDailyActivation)``。
+
+    道理与方舟每日任务归零、与理智推算同源：每日活跃度在 04:00 由游戏自动
+    清零是确定性事实——玩家没上线，今天的活跃度必然从 0 开始。上限取自快照
+    （当日上限不变），current 直接置 0，当作普通数据返回，无特殊展示。
+
+    新鲜快照 / 字段缺失 / 上限非法返回 None（宁可不判定）。
+    """
+    if not _is_endfield_snapshot_stale(detail):
+        return None
+    mission = detail.get("dailyMission")
+    if not isinstance(mission, dict):
+        return None
+    try:
+        total = int(mission.get("maxDailyActivation"))
+    except (TypeError, ValueError):
+        return None
+    return (0, total) if total > 0 else None
+
+
 def _stale_fallback_reason(data: Dict[str, Any]) -> str:
     """total 拿不到时的兜底横幅（罕见路径：daily 字段异常）。"""
     online_ts = _optional_int(data, "status", "lastOnlineTs") or 0
@@ -705,14 +748,23 @@ class SklandQuerier(BaseQuerier):
         mission = detail.get("dailyMission")
         if not isinstance(mission, dict):
             raise SklandQueryError("终末地返回数据缺少 dailyMission 字典")
-        current = _require_int_field(
-            mission, "dailyActivation", "dailyMission.dailyActivation"
-        )
-        total = _require_int_field(
-            mission, "maxDailyActivation", "dailyMission.maxDailyActivation"
-        )
-        if total <= 0:
-            raise SklandQueryError(f"dailyMission.maxDailyActivation 异常（{total}）")
+        # 快照跨过今日 04:00 日界且玩家没上线 → 每日活跃度被游戏清零是确定性
+        # 事实（与方舟每日任务归零、与理智推算同源）。直接当普通数据返回
+        # 「0/上限」，不做特殊展示；上限取快照（当日上限不变）。
+        zeroed = _endfield_zeroed_mission(detail)
+        if zeroed is not None:
+            current, total = zeroed
+        else:
+            current = _require_int_field(
+                mission, "dailyActivation", "dailyMission.dailyActivation"
+            )
+            total = _require_int_field(
+                mission, "maxDailyActivation", "dailyMission.maxDailyActivation"
+            )
+            if total <= 0:
+                raise SklandQueryError(
+                    f"dailyMission.maxDailyActivation 异常（{total}）"
+                )
         tasks = [TaskItem("每日活跃度", done=current >= total, progress=f"{current}/{total}")]
 
         # 理智：可选字段，缺了宁可不展示，不让整款游戏变成"查询失败"

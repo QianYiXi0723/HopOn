@@ -549,13 +549,16 @@ def _gacha_reward(game_id: str, raw: Dict[str, Any], text: str = "") -> Tuple[Op
         return True, f"菲林 {count}"
 
     if game_id == "arknights":
-        # 方舟没有结构化奖励，只能在活动正文里找「合成玉 / 源石」
+        # 方舟没有结构化奖励，只能在活动正文里找「合成玉 / 源石」。
+        # 2026-11-05：正文里的数字**不能无脑相加**——同一篇公告里混着三类：
+        #   ① 累计签到第 N 日：合成玉*200        ← 真·活动赠送，要
+        #   ② 许愿签档位：可出现的合成玉数量为 200/300/400/500/600/800  ← 随机，不要
+        #   ③ 商店组合包：至纯源石*90、十连寻访凭证*1            ← 要花钱，不要
+        # 全加会算出「源石 502 / 合成玉 11200」这种胡话（把礼包售价也算了），
+        # 所以只认签到句，且同一个数值只记一次（正文常把同一句话重复两遍）。
         if not text:
             return unknown, ""
-        for keyword in keywords:
-            if keyword in text:
-                return True, keyword
-        return False, ""
+        return _arknights_signin_reward(text, keywords)
 
     items = _reward_items(raw)
     if not items:
@@ -571,6 +574,105 @@ def _gacha_reward(game_id: str, raw: Dict[str, Any], text: str = "") -> Tuple[Op
     if not hit:
         return False, ""
     return True, (f"{hit} {total}" if total > 0 else hit)
+
+
+#: 方舟正文里的「累计签到第 N 日：... 合成玉*200 ...」——只取这类句子里的奖励。
+#: 句子边界用「累计签到第」到下一个「累计签到第」或段落末，避免跨句误抓。
+_AK_SIGNIN_SPLIT_RE = re.compile(r"累计签到第[一二三四五六七八九十百\d]+日")
+#: 奖励条目固定写法「名字*数量」，名字里不含 * 、空白受控
+_AK_REWARD_ITEM_RE = re.compile(r"([^\s*、，,：:；;（）()【】\[\]]{1,12})\s*[*x×]\s*(\d+)")
+
+
+def _arknights_signin_reward(
+    text: str, keywords: Tuple[str, ...]
+) -> Tuple[Optional[bool], str]:
+    """从方舟活动正文里只挑「累计签到」段的抽卡资源奖励。
+
+    返回语义同 :func:`_gacha_reward`。为什么只认签到段：
+    ``_gacha_reward`` 的注释里列了三类数字，只有签到是"活动白送"，
+    许愿签是随机档位、组合包要花钱——混进来就是错数据。
+
+    **正文会重复**：鹰角公告的接口字段同时带纯文本版和 HTML 转义版，
+    同一组签到会出现两遍（有时三遍）。按 ``(日次, 名称, 数量)`` 去重挡不住，
+    因为第二遍的日次又从「第一日」重新数。所以这里按**一组签到的内容指纹**
+    去重：把一组内所有命中项拼成字符串，同一指纹只算一次。
+    """
+    # 用 finditer 而不是 split：split 会把分隔符（「累计签到第N日」）**吃掉**，
+    # 每段只剩下「：奖励内容」，日次信息就丢了（曾因此把每一段都当成新组）。
+    marks = list(_AK_SIGNIN_SPLIT_RE.finditer(text))
+    if not marks:
+        return False, ""      # 没有签到段 → 明确没有签到类奖励
+
+    groups: List[Dict[str, int]] = []
+    current: Dict[str, int] = {}
+    last_day = 0
+    seen_fingerprints: set = set()
+
+    for idx, mark in enumerate(marks):
+        day_no = _ak_day_number(mark.group(0))
+        # 段内容 = 本标记之后、下一个标记之前
+        start = mark.end()
+        end = marks[idx + 1].start() if idx + 1 < len(marks) else len(text)
+        piece = text[start:end]
+
+        # 每段只取「紧接着的那一小句」——后面可能还粘着许愿签档位表、
+        # 组合包清单等无关内容，遇到这些标记就截断。
+        segment = piece.split("。")[0]
+        segment = segment.split("\n")[0]
+        for marker in ("许愿签", "组合包内容", "售卖时间", "礼包"):
+            cut = segment.find(marker)
+            if cut >= 0:
+                segment = segment[:cut]
+
+        # 日次不再严格递增 = 换了一组新的签到（如「第十日」之后又见「第一日」）
+        if current and day_no <= last_day:
+            fp = tuple(sorted(current.items()))
+            if fp and fp not in seen_fingerprints:
+                seen_fingerprints.add(fp)
+                groups.append(current)
+            current = {}
+        last_day = day_no
+
+        for name, num in _AK_REWARD_ITEM_RE.findall(segment):
+            hit = next((k for k in keywords if k in name), "")
+            if not hit:
+                continue
+            key = "源石" if "源石" in name else hit
+            current[key] = current.get(key, 0) + int(num)
+
+    if current:
+        fp = tuple(sorted(current.items()))
+        if fp and fp not in seen_fingerprints:
+            seen_fingerprints.add(fp)
+            groups.append(current)
+
+    if not groups:
+        return False, ""
+    # 一篇公告常同时挂多个签到活动（纯文本版 + HTML 版还会各来一遍）。
+    # 报「总量」会重复计，所以取抽卡资源合计最多的那一组作为这篇的收益。
+    best = max(groups, key=lambda g: sum(g.values()))
+    parts = [f"{name} {cnt}" for name, cnt in best.items()]
+    return True, "、".join(parts)
+
+
+def _ak_day_number(head: str) -> int:
+    """把「累计签到第三日」的汉字/数字日次转成 int；认不出就当 0。"""
+    m = re.search(r"第([一二三四五六七八九十百\d]+)日", head)
+    if not m:
+        return 0
+    raw = m.group(1)
+    if raw.isdigit():
+        return int(raw)
+    digits = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+              "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+    if raw == "十":
+        return 10
+    if raw.startswith("十"):
+        return 10 + digits.get(raw[1:], 0)
+    if "十" in raw:
+        tens, _, ones = raw.partition("十")
+        return digits.get(tens, 0) * 10 + (digits.get(ones, 0) if ones else 0)
+    return digits.get(raw, 0)
 
 
 def fetch_genshin_activities() -> List[Dict[str, Any]]:
@@ -900,13 +1002,22 @@ def fetch_endfield_activities() -> List[Dict[str, Any]]:
         title = _clean_text(act.get("calendarTitle") or act.get("name"))
         if not title:
             continue
+        # 2026-11-05：fz.wiki 的活动节点**没有任何奖励字段**（只有 activityId/
+        # calendarTitle/tags/timeRanges 这些），挖不到「送多少」。所以这一格不
+        # 留空、也不编数字，改放**活动类型标签**（限时活动/限时签到/趣味活动），
+        # 与其它四款游戏的「原石 420」占同一个位置，视觉上对齐。
+        tag = _clean_text(act.get("calendarTag") or "")
+        if not tag:
+            tags = act.get("tags")
+            if isinstance(tags, list) and tags:
+                tag = _clean_text(str(tags[0]))
         result.append({
             "game": "endfield", "game_name": "终末地", "kind": "act", "title": title,
             "start": start.strftime("%Y-%m-%d %H:%M:%S"),
             "end": end.strftime("%Y-%m-%d %H:%M:%S") if end else "",
             "status": "", "progress": "", "icon": "",
             "remote_id": str(act.get("activityId") or title),
-            "reward": "", "reward_ok": True,
+            "reward": tag, "reward_ok": True,
         })
     result.sort(key=lambda item: item["end"])
     return result
