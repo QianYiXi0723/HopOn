@@ -85,7 +85,16 @@ def run() -> None:
     check("R0 旗标已整体指向沙箱", str(daemon.QUIET_RUN_FLAG).startswith(str(TMP)))
 
 
+def run_stop_flag():
+    """Q7/Q8：停止旗标一次性消费（读即删，残留不再毒化后续拉起）。"""
+    daemon.STOP_FLAG.write_text("x", encoding="utf-8")
+    sig = wait_short()
+    check("Q7 停止旗标返回空串并置位 stop_event", sig == "")
+    check("Q8 停止旗标已被消费（读即删）", not daemon.STOP_FLAG.exists())
+
+
 if __name__ == "__main__":
     run()
+    run_stop_flag()
     print(f"\n[结论] {PASS}/{PASS + FAIL} 通过")
     sys.exit(1 if FAIL else 0)

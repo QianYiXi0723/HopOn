@@ -827,6 +827,13 @@ def _wait(seconds: float, stop_event: threading.Event) -> str:
             return ""
         if STOP_FLAG.exists():
             logger.info("检测到停止标记 %s", STOP_FLAG.name)
+            # 旗标是一次性消息不是状态：读即消费，防止残留毒化后续拉起
+            # （2026-11-06 实证：stop/start 并发竞态留下的 .stop 让两次
+            # 新守护在首跳秒退，系统 31 分钟无守护）
+            try:
+                STOP_FLAG.unlink(missing_ok=True)
+            except OSError:
+                pass
             stop_event.set()
             return ""
         stop_event.wait(min(0.5, remaining))
@@ -850,6 +857,10 @@ def _wait(seconds: float, stop_event: threading.Event) -> str:
 def _tick(stop_event: threading.Event) -> None:
     if STOP_FLAG.exists():
         logger.info("检测到停止标记，准备退出")
+        try:
+            STOP_FLAG.unlink(missing_ok=True)   # 读即消费（同 _wait）
+        except OSError:
+            pass
         stop_event.set()
         return
 
