@@ -1276,6 +1276,7 @@
     border:none;background:transparent;border-radius:6px;color:var(--text-secondary);
     cursor:pointer;font-size:13px;font-family:inherit;text-align:left}
   .drawer-menu button:hover{background:var(--hover);color:var(--fg)}
+  .drawer-menu[hidden]{display:none}
 
   .drawer-menu button.cur{color:var(--fg);font-weight:600}
   .drawer-menu .gdot{width:8px;height:8px;border-radius:50%;flex:none}
