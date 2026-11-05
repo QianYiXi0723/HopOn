@@ -1262,3 +1262,7 @@
   .mc-legend{display:flex;align-items:center;gap:3px;font-size:11px;
     color:var(--muted);margin-top:10px}
   .mc-legend-cell{width:12px;height:12px;border-radius:3px;display:inline-block}
+
+  /* hidden 兜底（死命令：hidden 开关必须有 display:none 兜底——
+     .month-chips 的 display:flex 类规则会压过 UA 的 [hidden] 默认） */
+  .month-chips[hidden]{display:none}
