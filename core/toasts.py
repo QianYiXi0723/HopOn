@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from core import ipc_lock
-from core.paths import app_root
+from core.paths import user_root
 
-BASE_DIR = app_root()
-TOASTS_PATH = BASE_DIR / "data" / "toasts.json"
+#: 2026-11-05 数据外置：页内通知队列落用户数据根，不进程序目录
+TOASTS_PATH = user_root() / "data" / "toasts.json"
 KEEP = 30
 
 

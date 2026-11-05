@@ -21,10 +21,11 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger("dailycheck.credhealth")
 
-from core.paths import app_root
+from core.paths import app_root, user_root
 
-BASE_DIR = app_root()
-CRED_HEALTH_PATH = BASE_DIR / "data" / "cred_health.json"
+BASE_DIR = app_root()  # 程序根：定位代码
+USER_DIR = user_root()  # 数据根：落用户数据
+CRED_HEALTH_PATH = USER_DIR / "data" / "cred_health.json"
 
 _TIME_FMT = "%Y-%m-%d %H:%M:%S"
 _ALERT_COOLDOWN = timedelta(hours=24)

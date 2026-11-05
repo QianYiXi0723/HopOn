@@ -39,18 +39,27 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# exe 发行版把本文件复制进 engine\ 运行：此时安装根是 engine 的上级，
-# config.json / data\ / logs\ 必须落在安装根（与 HopOn.exe 同级），
-# 否则会在 engine\ 里开出空数据岛（2026-11-05 实证回归）。
+# exe 发行版把本文件复制进 engine\ 运行：此时安装根是 engine 的上级。
 _BASE = Path(__file__).resolve().parent
 BASE_DIR = _BASE.parent if _BASE.name == "engine" else _BASE
-# sys.path 保持「代码=本脚本所在树」：engine 发行版导入 engine\ 下的模块；
-# 数据根（BASE_DIR）只决定 config/data/logs 落点，不参与 import 解析。
+# sys.path 保持「代码=本脚本所在树」：engine 发行版导入 engine\ 下的模块。
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
-CONFIG_PATH = BASE_DIR / "config.json"
-LOGS_DIR = BASE_DIR / "logs"
+# 数据根与程序根分离（2026-11-05 数据外置）：config/data/logs 落
+# %LOCALAPPDATA%\HopOn，卸载程序不会带走凭证与历史。ensure_layout() 幂等，
+# 顺带完成旧布局迁移（失败不破坏原文件）。
+from core.paths import ensure_layout as _ensure_layout, user_root as _user_root  # noqa: E402
+
+try:
+    _LAYOUT = _ensure_layout(allow_migrate=True)
+except Exception as _exc:  # noqa: BLE001 - 布局失败也要让守护起得来
+    print("[paths] 布局初始化失败，退回程序目录：", _exc)
+    _LAYOUT = {}
+
+USER_DIR = _user_root()
+CONFIG_PATH = USER_DIR / "config.json"
+LOGS_DIR = USER_DIR / "logs"
 PID_FILE = LOGS_DIR / "daemon.pid"
 HEARTBEAT_FILE = LOGS_DIR / "daemon.heartbeat"
 RUN_NOW_FLAG = LOGS_DIR / ".run_now"
@@ -703,7 +712,7 @@ def setup_logging(console: bool = False) -> None:
         logging_cfg = LoggingConfig.from_dict(config.get("logging"))
     except Exception:  # noqa: BLE001 - 配置坏了也要能写日志
         logging_cfg = LoggingConfig()
-    setup_logger(logging_cfg, base_dir=BASE_DIR, console=console)
+    setup_logger(logging_cfg, base_dir=USER_DIR, console=console)
 
 
 #: 一轮检查的进程内重入门闩：调度 / 补发 / 托盘手动 / .run_now 四个线程入口都可能
@@ -1197,7 +1206,7 @@ def run_daemon(use_tray: bool = True) -> int:
     # pid/心跳检查保留为 UX 快速通道，正确性以这把锁为准。
     from core.ipc_lock import try_acquire
 
-    daemon_lock_fd = try_acquire(str(BASE_DIR / "logs" / "daemon.lock"))
+    daemon_lock_fd = try_acquire(str(USER_DIR / "logs" / "daemon.lock"))
     if daemon_lock_fd is None:
         print("另一个守护进程正在运行（daemon.lock 被其它进程持有），本次不重复启动")
         return 0

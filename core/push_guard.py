@@ -9,9 +9,9 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger("dailycheck.pushguard")
 
-from core.paths import app_root
+from core.paths import user_root
 
-PUSH_FAIL_PATH = app_root() / "data" / "push_fail.json"
+PUSH_FAIL_PATH = user_root() / "data" / "push_fail.json"
 _TIME_FMT = "%Y-%m-%d %H:%M:%S"
 def _load() -> Dict[str, Any]:
     try:

@@ -35,10 +35,11 @@ from core.config import KNOWN_GAMES
 logger = logging.getLogger("dailycheck.history")
 
 #: 存档根目录：<项目>/data/history.json
-from core.paths import app_root
+from core.paths import app_root, user_root
 
-BASE_DIR = app_root()
-DATA_DIR = BASE_DIR / "data"
+BASE_DIR = app_root()  # 程序根：定位代码
+USER_DIR = user_root()  # 数据根：落用户数据
+DATA_DIR = USER_DIR / "data"
 HISTORY_PATH = DATA_DIR / "history.json"
 
 #: 上一轮巡检完整快照的文件名（推送预览 /api/push_preview 的离线数据源）。

@@ -38,11 +38,27 @@ from typing import Any, Dict, Optional
 _BASE = Path(__file__).resolve().parent
 BASE_DIR = _BASE.parent if _BASE.name == "engine" else _BASE
 # sys.path 保持「代码=本脚本所在树」：engine 发行版导入 engine\ 下的模块；
-# 数据根（BASE_DIR）只决定 config/data/logs 落点，不参与 import 解析。
+# 程序根（BASE_DIR）不参与 import 解析。
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
-LOGS_DIR = BASE_DIR / "logs"
+# 数据根与程序根分离（2026-11-05 数据外置）：config/data/logs 落
+# %LOCALAPPDATA%\HopOn，卸载程序不会带走凭证与历史。ensure_layout() 顺带
+# 完成旧布局迁移（幂等，失败不破坏原文件）。
+from core.paths import describe as _paths_describe, ensure_layout, user_root  # noqa: E402
+
+try:
+    _LAYOUT = ensure_layout(allow_migrate=True)
+    if _LAYOUT["action"] == "migrate":
+        print("[paths] 已迁移旧数据 →", _LAYOUT["user_root"], _LAYOUT["moved"])
+    elif _LAYOUT["errors"]:
+        print("[paths] 迁移有失败项（原文件保留）:", _LAYOUT["errors"])
+except Exception as _exc:  # noqa: BLE001 - 布局失败也要让程序起得来
+    print("[paths] 布局初始化失败，退回程序目录：", _exc)
+    _LAYOUT = {}
+
+USER_DIR = user_root()
+LOGS_DIR = USER_DIR / "logs"
 LOG_FILE = LOGS_DIR / "desktop.log"
 
 WINDOW_TITLE = "HopOn · 日常巡查"

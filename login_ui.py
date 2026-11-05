@@ -46,11 +46,22 @@ from urllib.parse import parse_qs, quote, urlparse
 # engine 发行版布局锚点修复，判据与 core.paths.app_root 一致（见彼处注释）
 _BASE = Path(__file__).resolve().parent
 BASE_DIR = _BASE.parent if _BASE.name == "engine" else _BASE
-# sys.path 保持「代码=本脚本所在树」：engine 发行版导入 engine\ 下的模块；
-# 数据根（BASE_DIR）只决定 config/data/logs 落点，不参与 import 解析。
+# sys.path 保持「代码=本脚本所在树」：engine 发行版导入 engine\ 下的模块。
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
-CONFIG_PATH = BASE_DIR / "config.json"
+
+# 数据根与程序根分离（2026-11-05 数据外置）：config/data/logs 落
+# %LOCALAPPDATA%\HopOn。ensure_layout() 幂等，顺带完成旧布局迁移。
+from core.paths import ensure_layout as _ensure_layout, user_root as _user_root  # noqa: E402
+
+try:
+    _LAYOUT = _ensure_layout(allow_migrate=True)
+except Exception as _exc:  # noqa: BLE001 - 布局失败也要让控制台起得来
+    print("[paths] 布局初始化失败，退回程序目录：", _exc)
+    _LAYOUT = {}
+
+USER_DIR = _user_root()
+CONFIG_PATH = USER_DIR / "config.json"
 
 #: 静态资源（游戏头像等），只允许读这个目录下的图片
 STATIC_DIR = _BASE / "static"
@@ -922,7 +933,7 @@ def push_preview_payload() -> Dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 #: 指纹缓存：换设备档案后必须删掉，否则会继续用旧机型的 device_fp
-_DEVICE_CACHE_PATH = BASE_DIR / "logs" / "device_fp.json"
+_DEVICE_CACHE_PATH = USER_DIR / "logs" / "device_fp.json"
 
 #: APK 下载服务信息（main() 启动后填充）
 TOOLS_SERVER: Optional[Dict[str, Any]] = None
@@ -1247,7 +1258,7 @@ def _classify_log_block(text: str) -> Dict[str, Any]:
     return {"level": level, "noise": noise}
 
 
-def log_tail(n: int = 200, useful: bool = False) -> Dict[str, Any]:
+def log_tail(n: int = 200, useful: bool = False, log_dir: Optional[Path] = None) -> Dict[str, Any]:
     """读取运行日志最后 n 块，给底部日志控制台。
 
     双源按时间戳合并：dailycheck.log（守护进程：巡检/推送）+ desktop.log
@@ -1262,7 +1273,9 @@ def log_tail(n: int = 200, useful: bool = False) -> Dict[str, Any]:
     守护进程生命周期噪音（实测噪音占比 ~75-80%）。全窗口都是噪音时
     回退最新块，保证永远有内容。
     """
-    log_dir = BASE_DIR / "logs"
+    # 日志目录可注入（2026-11-05 数据外置改造）：默认读用户数据根的 logs\，
+    # 测试传自己的临时目录，避免读到真实运行日志里的噪音干扰断言。
+    log_dir = log_dir or (USER_DIR / "logs")
     ts_pat = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
     def _pick(path: Path) -> Path:
@@ -1423,7 +1436,7 @@ _LIVE_AUTO_REFRESH_MINUTES = 10
 #: 等锁期间别人刷完就直接吃他的结果。
 _LIVE_LOCK = threading.Lock()
 #: 磁盘缓存：服务重启后也能秒回上一次的结果，页面冷启动绝不该现场打接口
-_LIVE_DISK_CACHE = BASE_DIR / "data" / "live_cache.json"
+_LIVE_DISK_CACHE = USER_DIR / "data" / "live_cache.json"
 
 
 def _live_disk_read() -> Optional[Dict[str, Any]]:
@@ -1501,7 +1514,7 @@ def _filter_live_games(payload: Dict[str, Any], enabled: Optional[set]) -> Dict[
 #: 越刷标记越深。只管控制台「刷新」这条实时路径；定时守护进程轮次不退避
 #: （每日 3 轮是本工具的权威数据源，跳过会让历史/热力图开天窗）。
 _LIVE_RISK_COOLDOWN_HOURS = 6
-_LIVE_RISK_FILE = BASE_DIR / "data" / "live_risk_backoff.json"
+_LIVE_RISK_FILE = USER_DIR / "data" / "live_risk_backoff.json"
 _LIVE_RISK_RE = re.compile(r"retcode\s*=?\s*(1034|10041)\b")
 
 
@@ -1875,7 +1888,7 @@ def write_skland(target: str, token: str) -> str:
     save_raw_config(raw)
 
     # 清掉旧 cred 缓存，强制下次用新 token 重新换取
-    (BASE_DIR / "logs" / f"skland_cred_{target}.json").unlink(missing_ok=True)
+    (USER_DIR / "logs" / f"skland_cred_{target}.json").unlink(missing_ok=True)
     return SKLAND_TARGETS.get(target, target)
 
 
@@ -2310,6 +2323,24 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"state": "error", "message": "会话已失效，请重新开始"}, 404)
                 return
             self._json(session.snapshot())
+            return
+
+        if parsed.path == "/api/update":
+            # 检查更新（**只查不装**，2026-11-05）。refresh=1 强制走网络，
+            # 默认读 6 小时缓存——开控制台不该每次都去打 GitHub。
+            # 任何失败都返回 200 + ok:False，不打扰用户。
+            force = (query.get("refresh") or ["0"])[0].lower() in ("1", "true", "yes")
+            try:
+                from core import update as _update
+
+                if force:
+                    self._json(_update.check(force=True).to_dict())
+                else:
+                    cached = _update.peek()
+                    self._json(cached or _update.check().to_dict())
+            except Exception as exc:  # noqa: BLE001 - 查更新失败不该 500
+                logger.debug("检查更新失败：%s", exc)
+                self._json({"ok": False, "message": "暂时查不到更新（不影响使用）"})
             return
 
         if parsed.path == "/api/logtail":

@@ -39,11 +39,14 @@ from core import ipc_lock
 
 logger = logging.getLogger("dailycheck.activities")
 
-from core.paths import app_root
+from core.paths import app_root, user_root
 
+#: 程序根：只用于定位代码/静态资源，不落用户数据
 BASE_DIR = app_root()
-CACHE_PATH = BASE_DIR / "data" / "activities.json"
-IGNORED_PATH = BASE_DIR / "data" / "ignored_activities.json"
+#: 数据根（2026-11-05 数据外置）：缓存与配置落 %LOCALAPPDATA%\HopOn
+USER_DIR = user_root()
+CACHE_PATH = USER_DIR / "data" / "activities.json"
+IGNORED_PATH = USER_DIR / "data" / "ignored_activities.json"
 
 #: 缓存结构版本。版本不一致时下一轮强制重拉（v4 起带抽卡资源过滤与分组）。
 CACHE_VERSION = 4
@@ -433,7 +436,7 @@ def _miyoushe_credentials(game_id: str):
     from core import mihoyo_api  # 惰性导入，避免没配账号时拖慢启动
     from core.config import load_config
 
-    config = load_config(BASE_DIR / "config.json", auto_create=False)
+    config = load_config(USER_DIR / "config.json", auto_create=False)
     for account in config.accounts:
         if account.game == game_id and account.enabled:
             return mihoyo_api.extract_credentials(account)

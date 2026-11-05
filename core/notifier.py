@@ -50,10 +50,11 @@ logger = logging.getLogger("dailycheck.notifier")
 # 推送历史（data/push_history.json）
 # --------------------------------------------------------------------------- #
 
-from core.paths import app_root
+from core.paths import app_root, user_root
 
-BASE_DIR = app_root()
-PUSH_HISTORY_PATH = BASE_DIR / "data" / "push_history.json"
+BASE_DIR = app_root()  # 程序根：定位代码
+USER_DIR = user_root()  # 数据根：落用户数据
+PUSH_HISTORY_PATH = USER_DIR / "data" / "push_history.json"
 #: 最多保留多少条（一次检查最多几个渠道，50 条足够回看一周以上）
 PUSH_HISTORY_KEEP = 50
 _PUSH_WRITE_LOCK = threading.Lock()
@@ -138,7 +139,7 @@ def backfill_push_history_from_log(log_dir: Optional[Path] = None) -> int:
     """
     import re
 
-    log_dir = log_dir or BASE_DIR / "logs"
+    log_dir = log_dir or USER_DIR / "logs"
     pattern = re.compile(
         r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?\[(?P<ch>bark|serverchan|qmsg|dingtalk|feishu)\]"
         r".*?(推送成功|推送失败|请求异常|HTTP \d{3}|接口返回失败|未预期异常)",

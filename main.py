@@ -33,10 +33,21 @@ from typing import List, Optional
 # engine 发行版布局锚点修复，判据与 core.paths.app_root 一致（见彼处注释）
 _BASE = Path(__file__).resolve().parent
 BASE_DIR = _BASE.parent if _BASE.name == "engine" else _BASE
-# sys.path 保持「代码=本脚本所在树」：engine 发行版导入 engine\ 下的模块；
-# 数据根（BASE_DIR）只决定 config/data/logs 落点，不参与 import 解析。
+# sys.path 保持「代码=本脚本所在树」：engine 发行版导入 engine\ 下的模块。
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
+
+# 数据根与程序根分离（2026-11-05 数据外置）：config/data/logs 落
+# %LOCALAPPDATA%\HopOn。ensure_layout() 幂等，顺带完成旧布局迁移。
+from core.paths import ensure_layout as _ensure_layout, user_root as _user_root  # noqa: E402
+
+try:
+    _LAYOUT = _ensure_layout(allow_migrate=True)
+except Exception as _exc:  # noqa: BLE001
+    print("[paths] 布局初始化失败，退回程序目录：", _exc)
+    _LAYOUT = {}
+
+USER_DIR = _user_root()
 
 from core.analyzer import build_report
 from core.config import (
@@ -62,9 +73,14 @@ DEFAULT_CONFIG_NAME = "config.json"
 
 
 def resolve_path(raw: str) -> Path:
-    """相对路径按项目根目录解析，保证在任意 cwd 下都能跑。"""
+    """相对路径按**用户数据根**解析，保证在任意 cwd 下都能跑。
+
+    2026-11-05 数据外置后，相对路径的语义基准从「程序目录」改为
+    「数据目录」——``--config other.json`` 应该指向 %LOCALAPPDATA%\\HopOn
+    下的配置文件，而不是程序安装目录里的（那里现在只有代码）。
+    """
     path = Path(raw).expanduser()
-    return path if path.is_absolute() else (BASE_DIR / path)
+    return path if path.is_absolute() else (USER_DIR / path)
 
 
 def _safe_console(text: str = "") -> None:
@@ -208,7 +224,7 @@ def cmd_login_skland(config_path: Path, game: str) -> int:
         _atomic_write_json(config_path, raw)
         for target in written:
             # 清掉该游戏的旧 cred 缓存，强制下次用新 token 重新换取
-            (BASE_DIR / "logs" / f"skland_cred_{target}.json").unlink(missing_ok=True)
+            (USER_DIR / "logs" / f"skland_cred_{target}.json").unlink(missing_ok=True)
         _safe_console(
             f"已写入 config.json 的 {'、'.join(written)} 节点，下次运行自动生效"
         )
@@ -243,7 +259,7 @@ def cmd_login_mihoyo(config_path: Path, proxy: Optional[str] = None) -> int:
         _login_config = load_config(config_path, auto_create=False)
         if proxy is not None:
             _login_config.query.proxy = str(proxy).strip()
-        setup_logger(_login_config.logging, base_dir=BASE_DIR)
+        setup_logger(_login_config.logging, base_dir=USER_DIR)
         _apply_mihoyo_query_config(_login_config)
     except ConfigError as exc:
         _safe_console(f"[配置错误] {exc}")
@@ -317,7 +333,7 @@ def cmd_probe_mihoyo(config_path: Path, debug: bool = False, proxy: Optional[str
         config.query.proxy = str(proxy).strip()
     if debug:
         config.logging.level = "DEBUG"
-    setup_logger(config.logging, base_dir=BASE_DIR)
+    setup_logger(config.logging, base_dir=USER_DIR)
     _apply_mihoyo_query_config(config)
 
     _safe_console("=" * 66)
@@ -664,7 +680,7 @@ def _active_notifiers(push_cfg):
 
 #: 昵称刷新的限频记账（logs/.roles_refresh，ltuid → 上次刷新的 time.time()）
 _ROLES_REFRESH_TTL = 86400
-_ROLES_STATE_PATH = BASE_DIR / "logs" / ".roles_refresh"
+_ROLES_STATE_PATH = USER_DIR / "logs" / ".roles_refresh"
 
 
 def _refresh_mihoyo_nicknames(config: AppConfig, statuses: List[GameStatus]) -> None:
@@ -716,7 +732,7 @@ def _refresh_mihoyo_nicknames(config: AppConfig, statuses: List[GameStatus]) -> 
         if status.error:
             bucket["ok"] = False
 
-    cfg_path = Path(config.config_path) if config.config_path else (BASE_DIR / "config.json")
+    cfg_path = Path(config.config_path) if config.config_path else (USER_DIR / "config.json")
     raw = None
     changed = 0
     refreshed_any = False
@@ -769,7 +785,7 @@ def _refresh_mihoyo_nicknames(config: AppConfig, statuses: List[GameStatus]) -> 
 
 #: 回满即推的 watch 状态（logs/.resin_watch.json）：main 写预测/标记推送，
 #: daemon 的 tick 每 30s 检查一次——预测到点就触发一轮复核巡检
-_RESIN_WATCH_PATH = BASE_DIR / "logs" / ".resin_watch.json"
+_RESIN_WATCH_PATH = USER_DIR / "logs" / ".resin_watch.json"
 _RESIN_WATCH_TTL_HOURS = 48   # 预测超过两天没被触发就作废（数据早过期了）
 
 
@@ -1103,7 +1119,7 @@ def cmd_run(config_path: Path, args: argparse.Namespace) -> int:
     # 调试模式：把日志级别临时提到 DEBUG（不写回配置文件）
     if args.debug:
         config.logging.level = "DEBUG"
-    logger = setup_logger(config.logging, base_dir=BASE_DIR)
+    logger = setup_logger(config.logging, base_dir=USER_DIR)
     # 代理 / 设备模式必须在任何米游社请求之前下发（getFp 按出口 IP 签发指纹）
     _apply_mihoyo_query_config(config)
     if args.debug:

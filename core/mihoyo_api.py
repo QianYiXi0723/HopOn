@@ -86,10 +86,11 @@ APP_VERSION = "2.102.1"
 # 那会让所有用户共用同一台设备。现在 OAID 每次分配身份时随机生成，
 # device_oaid.txt 不再读取（留着也不会生效）。
 
-from core.paths import app_root
+from core.paths import user_root
 
 #: logs/ 目录：设备身份、指纹缓存与真机档案都放这里，不进版本库
-_LOGS_DIR = app_root() / "logs"
+#: 2026-11-05 数据外置：落 %LOCALAPPDATA%\HopOn\logs，卸载程序不带走
+_LOGS_DIR = user_root() / "logs"
 
 #: 完整设备档案的覆盖文件（网页「设备伪装」写入，用户真机档案走这里）
 PROFILE_OVERRIDE_PATH = _LOGS_DIR / "device_profile.json"
@@ -915,11 +916,11 @@ DEVICE_FP_URL = "https://public-data-api.mihoyo.com/device-fp/api/getFp"
 
 #: device_id / device_fp 本地缓存：每个游戏固定一套设备信息，避免每次运行
 #: 都生成新设备触发风控。存 logs/ 下（已被 .gitignore 排除）。
-_FP_CACHE_PATH = app_root() / "logs" / "device_fp.json"
+_FP_CACHE_PATH = user_root() / "logs" / "device_fp.json"
 
 #: 设备注册结果缓存：米游社账号（ltuid）维度记录"已把哪个 device_id 注册过"，
 #: 避免每轮跑都重复调 deviceLogin / saveDevice。
-_BINDING_CACHE_PATH = app_root() / "logs" / "mihoyo_binding.json"
+_BINDING_CACHE_PATH = user_root() / "logs" / "mihoyo_binding.json"
 
 
 def _generate_seed_id(length: int = 8) -> str:

@@ -61,7 +61,7 @@ DESKTOP_LOG = "\n".join([
 (log_dir / "dailycheck.log").write_text(DAEMON_LOG + "\n", encoding="utf-8")
 (log_dir / "desktop.log").write_text(DESKTOP_LOG + "\n", encoding="utf-8")
 
-full = login_ui.log_tail(200)
+full = login_ui.log_tail(200, log_dir=log_dir)
 events = full.get("events") or []
 
 # ===================== D1 分级 =====================
@@ -92,7 +92,7 @@ print("== D3 useful=1：噪音包围中挑最新非噪音 ==")
 # 为验证"最新行是噪音时向前找"，往 desktop.log 追加一行最新噪音再读
 with (log_dir / "desktop.log").open("a", encoding="utf-8") as f:
     f.write("2026-10-31 21:00:00 [INFO   ] dailycheck.app: 窗口已关闭\n")
-picked = login_ui.log_tail(60, useful=True)
+picked = login_ui.log_tail(60, useful=True, log_dir=log_dir)
 picked_text = (picked.get("lines") or [""])[0]
 check("D3a 最新行为噪音时取向前找（拿到 20:30 结果行而非窗口关闭）",
       "崩坏：星穹铁道" in picked_text or "明日方舟" in picked_text, picked_text)
@@ -107,7 +107,7 @@ all_noise = "\n".join([
 (log_dir / "dailycheck.log").write_text(all_noise + "\n", encoding="utf-8")
 (log_dir / "desktop.log").write_text(
     "2026-11-01 09:00:05 [INFO   ] dailycheck.app: 窗口已关闭\n", encoding="utf-8")
-fallback = login_ui.log_tail(60, useful=True)
+fallback = login_ui.log_tail(60, useful=True, log_dir=log_dir)
 check("D3c 全噪音时回退最新块（不空手）",
       bool((fallback.get("lines") or [])) and "窗口已关闭" in fallback["lines"][0],
       fallback.get("lines"))
@@ -133,7 +133,7 @@ check("D6a lines 恒在（旧消费方不炸）",
       isinstance(full.get("lines"), list) and len(full["lines"]) == len(events))
 check("D6b events 带 ts/level/noise/text 四键",
       events and all(set(e) >= {"ts", "level", "noise", "text"} for e in events))
-strip = login_ui.log_tail(60, useful=True)
+strip = login_ui.log_tail(60, useful=True, log_dir=log_dir)
 check("D6c useful 响应同样带 lines+events（收起条/展开共用客户端）",
       isinstance(strip.get("lines"), list) and isinstance(strip.get("events"), list))
 
