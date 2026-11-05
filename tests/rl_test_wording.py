@@ -71,10 +71,10 @@ def read_ui(name):
 
 
 def read_readme_txt():
-    src = (BASE / "_build_release.py").read_text(encoding="utf-8")
-    i = src.index('README_TXT = """')
-    j = src.index('"""', i + len('README_TXT = """'))
-    return src[i:j]
+    """使用说明单源（2026-11-06）：真身在 tools/rl_release/小白使用说明.txt，
+    _build_release 只读入替换版本占位——旧的「从 _build_release 抽 README_TXT」
+    随内嵌文案一起退役。"""
+    return (BASE / "tools" / "rl_release" / "小白使用说明.txt").read_text(encoding="utf-8-sig")
 
 
 def main():

@@ -80,9 +80,13 @@ def is_encrypted(value: object) -> bool:
 
 
 def encrypt_value(value: object) -> str:
-    """明文 → dpapi:v1: 密文；空值 / 已加密 / 非 Windows 原样返回。"""
+    """明文 → dpapi:v1: 密文；空值 / 已加密 / 出厂占位符 / 非 Windows 原样返回。
+
+    「请填写」占位符不加密：密文会骗过 cred_filled 的占位符检测（密文里
+    没有"请填写"字样），让全新安装被误判成已绑定。
+    """
     text = str(value or "")
-    if not text or is_encrypted(text):
+    if not text or is_encrypted(text) or "请填写" in text:
         return text
     try:
         blob = _dpapi_transform(text.encode("utf-8"), protect=True)

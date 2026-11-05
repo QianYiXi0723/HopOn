@@ -108,6 +108,19 @@ def run() -> None:
     check("P3 空值/非机密字段不动",
           push["feishu"]["webhook"] == "" and push["serverchan"]["timeout"] == 10)
 
+    # S7 出厂占位符不加密（密文会骗过 cred_filled 的占位符检测）
+    ph = {"accounts": [{"game": "genshin",
+                        "credential": {"cookie": "ltuid=请填写; ltoken=请填写"}}]}
+    login_ui.save_raw_config(json.loads(json.dumps(ph)))
+    disk_ph = login_ui.CONFIG_PATH.read_text(encoding="utf-8")
+    check("S7a 占位符保持明文", "ltuid=请填写" in disk_ph and "dpapi:v1:" not in disk_ph.split("config.json")[0][:0] or "请填写" in disk_ph)
+    loaded_ph = login_ui.load_raw_config()
+    check("S7b 读端原样回落占位符",
+          loaded_ph["accounts"][0]["credential"]["cookie"] == "ltuid=请填写; ltoken=请填写")
+    from core.config import cred_filled
+    check("S7c 占位符仍被 cred_filled 识别为未绑定",
+          cred_filled(loaded_ph["accounts"][0]["credential"]["cookie"]) is False)
+
     check("R0 测试目录隔离", str(tmp) in str(login_ui.CONFIG_PATH))
 
 
