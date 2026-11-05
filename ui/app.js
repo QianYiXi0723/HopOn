@@ -2177,7 +2177,11 @@ function renderLive(d){
             ' <span class="dim">/ ' + (g.resource.maximum == null ? '?' : g.resource.maximum) +
             '</span></b><span class="dim">' + escHtml(g.resource.name || '') + '</span></div>' + body;
         }
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st warn">风控冷却中</span></div>' + body;
+        /* 结构对照其它分支：head 自身不带闭合标签，紧跟的 </div> 闭合的是
+           .live-card-head；body 之后必须再补一个 </div> 才闭合 .live-card。
+           2026-11-05 修复：原写法漏了末尾这个（只有 1 个 </div>），导致整张卡
+           不闭合、后续游戏卡全被吞进第一张里，网格塌成一列、卡高变 0。 */
+        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st warn">风控冷却中</span></div>' + body + '</div>';
       }
       /* 占位卡：新勾选的游戏缓存里还没查询结果 —— 诚实占位，不伪造数据 */
       if (g.placeholder) {
