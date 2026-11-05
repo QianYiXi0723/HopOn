@@ -834,7 +834,7 @@
   .act-group-head .act-group-count{color:var(--text-tertiary);font-weight:400}
   /* 最紧急 1 张：2x2 英雄卡（占 2 条轨道宽 × 2 行），内部文字放大撑满大卡 */
   .acard.hero{grid-column:span 2;grid-row:span 2;padding:20px 20px}
-  .acard.hero .acard-title{font-size:1.5em;-webkit-line-clamp:3}
+  /* 标题字号/钳制移至 .acard-title-txt（标题行改弹性两栏后钳制随文本走） */
   .acard.hero .act-time{font-size:1.1em}
   .acard.hero .act-cd{font-size:2em;font-weight:800}
   /* 窄容器只有 1 条轨道时英雄卡改整行，防止 span 2 生成隐式列撑破网格 */
@@ -861,9 +861,19 @@
   .acard-top .act-game{flex:1;min-width:0;font-weight:600;
     display:flex;align-items:center;gap:8px}
   .acard-top .act-name{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .acard-title{font-size:1.15em;font-weight:600;line-height:1.5;margin:0;
+  /* 标题行 = 弹性两栏：标题文本左（截断省略），奖励徽章钉最右（2026-11-06
+     用户点名：菲林/星琼不许再和标题融为一体） */
+  .acard-title{display:flex;align-items:center;gap:10px;margin:0;min-width:0}
+  .acard-title-txt{flex:1 1 auto;min-width:0;font-size:1.15em;font-weight:600;line-height:1.5;
     overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;
-    -webkit-box-orient:vertical;white-space:normal}
+    -webkit-box-orient:vertical;white-space:normal;text-wrap:balance}
+  .acard.hero .acard-title-txt{font-size:1.5em;-webkit-line-clamp:3}
+  /* 奖励徽章：品牌蓝软底小药丸，与琥珀色倒计时徽章区分 */
+  .act-reward{flex:none;font-size:12px;font-weight:700;line-height:1;
+    padding:4px 9px;border-radius:999px;max-width:46%;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    background:rgba(74,155,232,.16);color:var(--brand);
+    background:color-mix(in srgb, var(--brand) 16%, transparent)}
   /* 卡片头部精确到分的时间：未开始蓝 / 进行中次级灰 / 已结束三级灰 */
   .act-time{font-size:1em;font-variant-numeric:tabular-nums;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -890,7 +900,6 @@
      多行正文用 pretty 防孤字，两行截断标题用 balance 均衡断点；
      不支持的内核忽略声明、回退原生断行（渐进增强零损害） */
   .live-msg,.act-empty,.emptybox,.log-detail,.hint{text-wrap:pretty}
-  .acard-title{text-wrap:balance}
   .act-prog{display:flex;align-items:center;gap:8px;font-size:.95em}
   .act-prog .sbar{max-width:220px;height:6px;border-radius:999px}
   .act-prog .sbar i{border-radius:999px}

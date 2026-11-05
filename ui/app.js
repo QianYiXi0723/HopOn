@@ -2380,9 +2380,10 @@ function actCardHtml(it, isHero, heroSlim){
   const cdCls = ended ? 'ended'
     : (it.not_started ? ''
     : (hl > 0 && hl <= 24 ? 'urgent' : (hl > 0 && hl <= 72 ? 'warn' : '')));
-  // reward 为空 = 接口没给奖励明细，被兜底规则保留下来的（别假装它有原石）
+  // reward 为空 = 接口没给奖励明细，被兜底规则保留下来的（别假装它有原石）。
+  // 2026-11-06 用户点名：奖励从标题文本里拆出来，放卡片最右端小徽章凸显
   const reward = it.reward
-    ? '<span class="act-reward" title="这个活动给抽卡资源">' + escHtml(it.reward) + '</span>'
+    ? '<span class="act-reward" title="' + escHtml(it.reward) + ' · 抽卡资源">' + escHtml(it.reward) + '</span>'
     : '';
   const prog = actProgHtml(it);
   /* 合并组卡：成员小字清单（这才是「有信息的 2x2」）；× 不渲染——
@@ -2402,7 +2403,7 @@ function actCardHtml(it, isHero, heroSlim){
     '<div class="acard-top"><span class="act-game">' + actIconHtml(it) +
       '<span class="act-name">' + escHtml(it.game_name) + '</span></span>' +
       delBtn + '</div>' +
-    '<div class="acard-title" title="' + escHtml(it.title) + '">' + escHtml(it.title) + reward + '</div>' +
+    '<div class="acard-title"><span class="acard-title-txt" title="' + escHtml(it.title) + '">' + escHtml(it.title) + '</span>' + reward + '</div>' +
     '<div class="act-time ' + timeCls + '">始 ' + (st || '时间待定') +
       (en ? ' · 止 ' + en : '') + '</div>' +
     '<div class="act-cd ' + cdCls + '">' + escHtml(it.countdown || '') + '</div>' +
