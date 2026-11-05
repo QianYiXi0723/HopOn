@@ -3269,7 +3269,7 @@ document.getElementById('month-chips-toggle').addEventListener('click', function
   const wrap = document.getElementById('month-chips');
   if (wrap) wrap.hidden = monthMode !== 'games' || !monthChipsOpen;
 });
-document.getElementById('month-body').addEventListener('click', function(e){
+document.getElementById('month-chips').addEventListener('click', function(e){
   const b = e.target.closest ? e.target.closest('.mchip') : null;
   if (!b || b.dataset.game === monthGame) return;
   monthGame = b.dataset.game;
