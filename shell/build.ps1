@@ -129,6 +129,11 @@ try {
     & robocopy $engineSrc (Join-Path $gate "engine") /E /XD logs __pycache__ /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "robocopy 复制 engine 失败（exit $LASTEXITCODE）" }
 
+    # 数据外置（2026-11-06）：门禁引擎的用户数据根必须隔离进 gate 沙箱——
+    # 不设的话它读写的是本机真实的 %LOCALAPPDATA%\HopOn，既污染真数据，
+    # "首启自动生成 device_identity.json" 也会因文件已存在而假通过/假失败
+    $env:HOPON_USER_DIR = Join-Path $gate "userdata"
+
     $proc = Start-Process -FilePath (Join-Path $gate "HopOn.exe") `
                           -ArgumentList "--port", $port, "--allow-multi" -WorkingDirectory $gate -PassThru
 
@@ -160,8 +165,8 @@ try {
     $dev = (& curl.exe -s --noproxy "*" --max-time 6 ("http://127.0.0.1:$port/api/device")) -join ""
     if ($dev -notmatch "model") { throw "/api/device 返回体缺少 model 字段（设备档案没建起来）" }
 
-    $idf = Join-Path $gate "engine\logs\device_identity.json"
-    if (-not (Test-Path $idf)) { throw "首启未生成 engine\logs\device_identity.json（全新安装路径没走通）" }
+    $idf = Join-Path $gate "userdata\logs\device_identity.json"
+    if (-not (Test-Path $idf)) { throw "首启未生成 userdata\logs\device_identity.json（全新安装路径没走通；外置后身份文件在用户数据根 logs 下）" }
 
     # 页面真的渲染出来了吗？壳在 NavigationCompleted 后会跑一次 DOM 自检 + fetch 探针写 shell.log。
     # 只看 /api/* 是 200 不够 —— 页面白屏、资源 404、页面接管失效都不会影响接口。
@@ -192,6 +197,7 @@ try {
     Write-Host "==> 门禁通过"
 }
 finally {
+    $env:HOPON_USER_DIR = $null   # 门禁沙箱变量不许泄漏到后续构建/本机进程
     if ($proc -ne $null -and -not $proc.HasExited) {
         Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
     }

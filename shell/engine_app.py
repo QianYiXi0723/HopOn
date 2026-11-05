@@ -29,16 +29,25 @@ BASE_DIR = _BASE.parent if _BASE.name == "engine" else _BASE
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
+# 数据外置（2026-11-06 修漏）：控制台是壳拉起的第一个进程，layout 就绪
+# （含旧布局迁移）必须在 import login_ui 之前完成——login_ui 内部也会调
+# ensure_layout（幂等），这里先调是为了 engine.log 的落点别抢先建出
+# 程序目录的 logs\，把迁移判成「目标已存在」而漏搬。
+from core.paths import ensure_layout as _ensure_layout, user_root as _user_root
+
+_LAYOUT = _ensure_layout(allow_migrate=True)
+
 import login_ui
 
 logger = logging.getLogger("dailycheck.engine")
 
-LOGS_DIR = BASE_DIR / "logs"
+# 引擎日志跟数据根走（卸载不丢排障记录）；与 desktop.log 同目录
+LOGS_DIR = _user_root() / "logs"
 LOG_FILE = LOGS_DIR / "engine.log"
 
 
 def setup_logging() -> None:
-    """引擎日志独立落盘（engine/logs/engine.log），壳崩溃时也有据可查。"""
+    """引擎日志独立落盘（<数据根>/logs/engine.log），壳崩溃时也有据可查。"""
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     handler = logging.handlers.RotatingFileHandler(
         LOG_FILE, maxBytes=500_000, backupCount=1, encoding="utf-8"
