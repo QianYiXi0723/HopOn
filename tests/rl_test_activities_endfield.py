@@ -141,4 +141,16 @@ check("C3c UNSUPPORTED 不再含终末地",
 passed = sum(1 for _, ok in results if ok)
 print("\n[结论] %d/%d 通过%s" % (passed, len(results),
       "" if passed == len(results) else "  ← 存在 FAIL"))
+print("== AK 方舟公告标题清洗（2026-11-06 用户点名） ==")
+cases = [
+    ("[活动预告]2026感谢庆典即将开启", "2026感谢庆典"),
+    ("[限定寻访·庆典]【将雪投火】限时寻访即将开启", "【将雪投火】限时寻访"),
+    ("[明日方舟]11月01日06:00版本更新停机维护公告", "11月01日06:00版本更新停机维护公告"),
+    ("《冻土与火种》网页活动开启", "《冻土与火种》网页活动开启"),
+    ("「时间啊，向前！」创作征集活动开启", "「时间啊，向前！」创作征集活动开启"),
+]
+for raw, want in cases:
+    got = A._clean_ak_title(raw)
+    check("AK标题 %s -> %s" % (raw[:14], want[:12]), got == want, got)
+
 sys.exit(0 if passed == len(results) else 1)

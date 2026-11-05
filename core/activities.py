@@ -121,6 +121,28 @@ def _clean_text(text: Any) -> str:
     return _WS_RE.sub(" ", html.unescape(raw)).strip()
 
 
+#: 鹰角公告标题的前缀媒介标签（[活动预告]/[活动公告]/[限定寻访·庆典] 等）
+_AK_TITLE_TAG_RE = re.compile(r"^[［\[][^［\］\]]{1,14}[］\]]\s*")
+#: 营销尾缀（预告型标题的「即将开启」们——活动名到这就结束了）
+_AK_TITLE_TAIL_RE = re.compile(r"\s*(即将开启|即将上线|即将复刻|即将开始)\s*$")
+
+
+def _clean_ak_title(title: Any) -> str:
+    """鹰角公告标题 → 活动名：剥前缀标签与「即将开启」类尾缀。
+
+    tab=1 里大量条目是预告/汇总型公告（一篇覆盖多个子活动），标题长这样：
+    「[活动预告]2026感谢庆典即将开启」。正文里挖到的时间窗和奖励是真实的，
+    名字却不能原样上卡片。剥干净后即活动名：「2026感谢庆典」。
+    """
+    text = _clean_text(title)
+    previous = None
+    while previous != text and text:
+        previous = text
+        text = _AK_TITLE_TAG_RE.sub("", text).strip()
+        text = _AK_TITLE_TAIL_RE.sub("", text).strip()
+    return text or _clean_text(title)
+
+
 @dataclass
 class Activity:
     """活动日历里的一条。
@@ -897,7 +919,7 @@ def fetch_arknights_activities() -> List[Dict[str, Any]]:
     for item in (payload.get("data") or {}).get("list") or []:
         if not isinstance(item, dict) or str(item.get("tab")) != "1":
             continue  # tab: 0=公告 1=活动 2=制作组通讯
-        title = _clean_text(item.get("title"))
+        title = _clean_ak_title(item.get("title"))
         cid = str(item.get("cid") or "").strip()
         if not title or not cid:
             continue
