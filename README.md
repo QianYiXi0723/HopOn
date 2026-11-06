@@ -1,4 +1,11 @@
-# HopOn · 游戏每日任务未完成提醒
+# HopOn · 日常巡查
+
+<p align="center">
+  <a href="https://github.com/QianYiXi0723/HopOn/releases/latest"><img alt="version" src="https://img.shields.io/github/v/release/QianYiXi0723/HopOn?label=%E7%89%88%E6%9C%AC&color=blue"></a>
+  <a href="https://github.com/QianYiXi0723/HopOn/releases/latest"><img alt="downloads" src="https://img.shields.io/github/downloads/QianYiXi0723/HopOn/total?label=%E4%B8%8B%E8%BD%BD&color=green"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/github/license/QianYiXi0723/HopOn?color=orange"></a>
+  <img alt="platform" src="https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows%2010%2F11%20x64-blue">
+</p>
 
 > **HopOn（日常巡查）**：名字取自「该上号了」——游戏玩家每天最熟悉的那句召唤，
 > 也是这个软件的灵魂动作：到点提醒你该上号处理日常了，查完就走。
@@ -13,16 +20,25 @@
 
 ## ✨ 功能总览
 
-- **多游戏日常提醒**：当前支持原神 / 崩坏：星穹铁道 / 绝区零（米游社）+ 明日方舟 / 终末地（森空岛），架构上新游戏按数据源接入即可扩展
-- **桌面壳 + 网页控制台**：C# 壳 + 便携 Python 引擎，双击即用；控制台也能用浏览器开
-- **手机推送**：Server酱（微信）/ Qmsg（QQ）/ Bark / 飞书 / 钉钉，多通道并发
-- **月报下钻**：整月热力日历（深浅 = 当天完成游戏数）+ 分游戏逐日明细
-- **周报 / 活动提醒**：每周日推送总结；活动结束前 72h 窗口提醒
-- **体力回满即推**：预计回满时刻自动复核，每游戏每天最多一条
-- **免打扰时段 / 完成也推送**：推送节奏完全可配
-- **凭证安全**：登录态与推送密钥 Windows DPAPI 加密落盘
-- **数据外置**：配置 / 历史 / 日志全在 `%LOCALAPPDATA%\HopOn`，重装卸载不丢
-- **开机自启 + 关机前落盘 + 凌晨日界班**：三种时刻保证「做了就记上」
+**巡查与提醒**
+- 多游戏日常提醒：原神 / 崩坏：星穹铁道 / 绝区零（米游社）+ 明日方舟 / 终末地（森空岛）——新游戏按数据源接入即可扩展
+- 体力回满即推、活动结束提醒（72h 窗口）、每周日周报
+- 免打扰时段 / 完成也推送，推送节奏完全可配
+
+**报表与回顾**
+- 月报下钻：整月热力日历（深浅 = 当天完成游戏数）+ 分游戏逐日明细
+- 周完成率、连续天数、最近 7 天三态报表（未检查 / 失败 / 无数据）
+- 页内 toast：守护进程的推送同步弹在打开的控制台里
+
+**安全与可靠**
+- 凭证安全：登录态与推送密钥 Windows DPAPI 加密落盘
+- 数据外置：全在 `%LOCALAPPDATA%\HopOn`，重装卸载不丢 + 历史每日滚动备份
+- 三重落盘时刻：定时班 + 凌晨 03:50 日界班 + 关机前自动巡检，「做了就记上」
+
+**形态**
+- 桌面壳（C# + WebView2）+ 便携 Python 引擎，双击即用；控制台也能浏览器开
+- 安装器 / 绿色版双发行形态；应用内检查更新
+- 手机推送五通道：Server酱（微信）/ Qmsg（QQ）/ Bark / 飞书 / 钉钉
 
 ## 🚀 最新版本 v2.4.7
 
@@ -46,7 +62,10 @@
 
 ---
 
-## 更新日志（历史版本）
+## 📜 更新日志（历史版本）
+
+<details>
+<summary><b>展开查看 v1.1.0 ~ v2.1.2 的历史更新记录</b></summary>
 
 ### v2.1.2
 
@@ -224,6 +243,8 @@
 
 ---
 
+
+</details>
 
 ---
 
