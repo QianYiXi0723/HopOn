@@ -56,7 +56,7 @@
 到 [Releases](https://github.com/QianYiXi0723/HopOn/releases/latest) 下载：
 - `HopOn_v2.4.7_Setup.exe` —— 安装器版（推荐，per-user 无需管理员）
 - `HopOn_v2.4.7_Windows_x64.zip` —— 绿色版（解压即用）
-- `SHA256SUMS.txt` —— 校验和
+- `SHA256SUMS.txt` —— 校验和清单：下载后核对文件完整性用（`certutil -hashfile 文件名 SHA256` 比对），不需要它的话可忽略
 - 找历史版本 / 逐版更新说明 → [全部 Releases](https://github.com/QianYiXi0723/HopOn/releases)
 
 首次打开是演示模式，按页面引导扫码绑定账号、配好推送即完成。**只读查询**：
