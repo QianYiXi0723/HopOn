@@ -462,6 +462,35 @@
   .set-item.is-off .set-body{opacity:.55}
   .set-item.is-off .set-body:focus-within{opacity:1}
   .set-item.is-off .set-txt b{color:var(--muted)}
+
+  /* ---------- 卡片级抽屉（2026-11-06）：details.card + summary.card-head ----------
+     凭证健康 / 游戏监控 由「常驻展开的卡片」改为「可折叠的卡片」。
+     要同时满足两件事：外观仍是标准卡片（描边/圆角/卡头条底色），
+     行为是 <details>（点击卡头条展开/收起）。
+     不能用 .set-item 那套：它的 padding/min-height 是给设置行用的，
+     比 .card-head 窄一圈，套在卡片上会显得卡头缩进去。 */
+  details.card{display:block}                 /* .card 默认 flex，details 用 block 才正常收纳内容 */
+  /* ⚠ 关键：details 收起时浏览器靠内部机制隐藏非 summary 子元素，
+     但一旦给 details 声明了 display（哪怕只是 block），内容仍会留在
+     布局里（实测收起状态 cred-health 仍有 241px 高度）。
+     显式兜底：隐藏非 summary 的直接子（即 .set-body），里面的东西自然跟着走。
+     用 `>` 一层即可，不要用后代 `*`——那会把卡头里的 h2/span 一起隐藏。
+     前提：details 必须真的带 .card 类（曾经漏写过，选择器静默不匹配）。 */
+  details.card:not([open]) > *:not(summary){display:none}
+  details.card > summary.card-head{list-style:none;cursor:pointer;user-select:none;
+    -webkit-tap-highlight-color:transparent}
+  details.card > summary.card-head::-webkit-details-marker{display:none}
+  details.card > summary.card-head:hover{background:var(--hover)}
+  /* 箭头：沿用抽屉三角语义（收纳 ◀ / 展开 ▼，见 set-head::after 同款写法） */
+  details.card > summary.card-head::after{content:"";width:0;height:0;flex:none;margin-left:2px;
+    border-left:4.5px solid transparent;border-right:4.5px solid transparent;
+    border-top:5.5px solid var(--muted);transition:transform .15s ease;
+    transform:rotate(90deg)}
+  details.card[open] > summary.card-head::after{transform:rotate(0deg)}
+  /* 收起时卡头圆角四面收齐（否则底部两角是直的，看起来像被切掉） */
+  details.card:not([open]) > summary.card-head{border-radius:8px}
+  /* 卡体：与 .card-body 同内边距，但不需要吃掉高度 */
+  details.card > .set-body{flex:1 1 auto;min-height:0;padding:20px 24px}
   @media (max-width:760px){
     .set-sum{display:none}
     .set-body{padding-left:48px}

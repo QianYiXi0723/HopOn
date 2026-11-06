@@ -196,64 +196,76 @@
             </button>
             <div class="btn-note caps-note">扫码只更新登录凭证；是否参与每日巡检由下方监控开关决定。</div>
           </div>
-          <div class="scan-subhead"><svg class="ico"><use href="#i-gamepad"/></svg> 游戏监控
-            <span class="q" data-tip="开启的游戏参与每日巡检并推送通知；关闭则不再巡检、不再推送。点击卡片任意位置即可切换"></span>
-          </div>
-          <div class="sel-grid">
-            <label class="sel-card on">
-              <input type="checkbox" name="m" value="genshin" checked>
-              <span class="sel-ico ph">原</span>
-              <span class="sel-name">原神</span>
-              <span class="switch"><i></i></span>
-            </label>
-            <label class="sel-card on">
-              <input type="checkbox" name="m" value="starrail" checked>
-              <span class="sel-ico ph">崩</span>
-              <span class="sel-name">崩坏：星穹铁道</span>
-              <span class="switch"><i></i></span>
-            </label>
-            <label class="sel-card on">
-              <input type="checkbox" name="m" value="zzz" checked>
-              <span class="sel-ico ph">绝</span>
-              <span class="sel-name">绝区零</span>
-              <span class="switch"><i></i></span>
-            </label>
-            <label class="sel-card on">
-              <input type="checkbox" name="s" value="arknights" checked>
-              <span class="sel-ico ph">舟</span>
-              <span class="sel-name">明日方舟</span>
-              <span class="switch"><i></i></span>
-            </label>
-            <label class="sel-card on">
-              <input type="checkbox" name="s" value="endfield" checked>
-              <span class="sel-ico ph">终</span>
-              <span class="sel-name">明日方舟：终末地</span>
-              <span class="switch"><i></i></span>
-            </label>
-          </div>
+          <details class="card set-item" id="acc-monitor" style="margin-top:10px">
+            <summary class="card-head set-head">
+              <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-gamepad"/></svg></i>
+                <span class="set-txt"><b>游戏监控</b>
+                  <span class="q" data-tip="开启的游戏参与每日巡检并推送通知；关闭则不再巡检、不再推送。点击卡片任意位置即可切换"></span>
+                </span>
+              </span>
+              <span class="set-sum" id="sum-monitor"></span>
+            </summary>
+            <div class="set-body">
+              <div class="sel-grid">
+                <label class="sel-card on">
+                  <input type="checkbox" name="m" value="genshin" checked>
+                  <span class="sel-ico ph">原</span>
+                  <span class="sel-name">原神</span>
+                  <span class="switch"><i></i></span>
+                </label>
+                <label class="sel-card on">
+                  <input type="checkbox" name="m" value="starrail" checked>
+                  <span class="sel-ico ph">崩</span>
+                  <span class="sel-name">崩坏：星穹铁道</span>
+                  <span class="switch"><i></i></span>
+                </label>
+                <label class="sel-card on">
+                  <input type="checkbox" name="m" value="zzz" checked>
+                  <span class="sel-ico ph">绝</span>
+                  <span class="sel-name">绝区零</span>
+                  <span class="switch"><i></i></span>
+                </label>
+                <label class="sel-card on">
+                  <input type="checkbox" name="s" value="arknights" checked>
+                  <span class="sel-ico ph">舟</span>
+                  <span class="sel-name">明日方舟</span>
+                  <span class="switch"><i></i></span>
+                </label>
+                <label class="sel-card on">
+                  <input type="checkbox" name="s" value="endfield" checked>
+                  <span class="sel-ico ph">终</span>
+                  <span class="sel-name">明日方舟：终末地</span>
+                  <span class="switch"><i></i></span>
+                </label>
+              </div>
+            </div>
+          </details>
         </div>
       </section>
     </div>
 
     <div class="acct-col s5">
-      <!-- 凭证健康：紧凑列表 -->
-      <section class="card">
-        <div class="card-head">
+      <!-- 凭证健康：折叠抽屉（2026-11-06 用户要求——小窗口下要先翻很久才找得到
+           通知绑定，把凭证健康与游戏监控都收成抽屉，默认只看摘要） -->
+      <details class="card set-item" id="acc-cred">
+        <summary class="card-head set-head">
           <h2><svg class="ico"><use href="#i-shield-check"/></svg> 凭证健康
             <span class="q" data-tip="绿点 = 已绑定 · 黄点 = 超过 7 天未更新 · 红点 = 未绑定；时间为相对时间，从未扫码更新的显示「从未更新」，下次扫码后开始记录"></span>
           </h2>
           <span class="spacer"></span>
           <span class="badge" id="cred-health-badge">-</span>
+        </summary>
+        <div class="set-body">
+          <div id="cred-health"><div class="emptybox">读取中…</div></div>
+          <!-- 三色图例常驻外显（Nielsen 启发式 6「靠识别而非回忆」）：
+               色点语义与行内 .cred-dot 同类同名，措辞与行文案逐字一致 -->
+          <div class="hint cred-legend">
+            <span><span class="cred-dot ok"></span>已绑定</span>
+            <span><span class="cred-dot warn"></span>超过 7 天未更新</span>
+            <span><span class="cred-dot err"></span>未绑定</span>
+          </div>
         </div>
-        <div id="cred-health"><div class="emptybox">读取中…</div></div>
-        <!-- 三色图例常驻外显（Nielsen 启发式 6「靠识别而非回忆」）：
-             色点语义与行内 .cred-dot 同类同名，措辞与行文案逐字一致 -->
-        <div class="hint cred-legend">
-          <span><span class="cred-dot ok"></span>已绑定</span>
-          <span><span class="cred-dot warn"></span>超过 7 天未更新</span>
-          <span><span class="cred-dot err"></span>未绑定</span>
-        </div>
-      </section>
+      </details>
 
       <!-- 设备伪装：点击入口卡弹配置弹窗（低频专注任务用模态，不再抽屉展开）。
            2026-11-05 P4：定位为「高级·可选」——常规用户不需要碰，APK 也不随包分发 -->
@@ -313,13 +325,15 @@
       </div>
     </div>
 
-    <!-- ======== 通知推送（并入账号页）：渠道切换改分段控件——约定形态自带
-         可点击意符（Norman），原「渠道」空卡删除；两卡 8+4 配满 12 栅格 ======== -->
-    <div class="scan-subhead" style="grid-column:1/-1"><svg class="ico"><use href="#i-send"/></svg> 通知推送</div>
+    <!-- ======== 通知绑定（并入账号页）：渠道切换改分段控件——约定形态自带
+         可点击意符（Norman），原「渠道」空卡删除；两卡 8+4 配满 12 栅格
+         2026-11-06 用户要求：标题固定为「通知绑定」而不是跟随渠道名
+         （渠道名在下方分段控件已明确显示，标题再变一次是重复信息） ======== -->
+    <div class="scan-subhead" style="grid-column:1/-1"><svg class="ico"><use href="#i-send"/></svg> 通知绑定</div>
 
     <section class="card s8">
       <div class="card-head">
-        <h2 id="ed-title">Server酱（微信）
+        <h2 id="ed-title">通知绑定
           <span class="q" data-tip="出于安全，已保存的 Key 以掩码显示：不修改输入框即保持原值，清空后保存则删除该 Key"></span>
         </h2>
       </div>

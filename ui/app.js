@@ -190,12 +190,17 @@ function pushEnabled(group, games, enabled){
     .catch(function(){ toast('无法连接本地服务', true); });
 }
 
-/* 「全选」按钮文案随状态变化 */
+/* 「全选」按钮文案随状态变化 + 游戏监控抽屉的折叠摘要
+   （2026-11-06：游戏监控收成抽屉后，收起时必须能看到「几款在监控」，
+   否则要展开才知道自己在盯哪些游戏） */
 function updateLoginButtons(){
   const boxes = [...document.querySelectorAll('.sel-card input')];
   const allOn = boxes.length > 0 && boxes.every(function(b){ return b.checked; });
   const btn = document.getElementById('btn-selall');
   if (btn) btn.textContent = allOn ? '取消全选' : '全选';
+  const onCount = boxes.filter(function(b){ return b.checked; }).length;
+  setSum('monitor', onCount + '/' + boxes.length + ' 参与',
+         boxes.length ? ('已开启 ' + onCount + ' / 共 ' + boxes.length + ' 款游戏参与每日巡检') : '');
 }
 
 /* 从后端拉取真实的巡检开关与凭证状态，覆盖页面默认值 */
@@ -869,9 +874,10 @@ function selectChannel(name){
   });
   document.getElementById('ed-serverchan').hidden = name !== 'serverchan';
   document.getElementById('ed-qmsg').hidden = name !== 'qmsg';
-  // 重建标题 + (?) 提示（textContent 会把图标一起清掉）
+  // 标题固定为「通知绑定」（2026-11-06 用户要求）：当前渠道名由上方分段控件
+  // 高亮显示，标题跟随渠道改名属于重复信息，也让卡片标题位置不断跳动。
   document.getElementById('ed-title').innerHTML =
-    escHtml(CHANNEL_NAMES[name]) +
+    '通知绑定' +
     ' <span class="q" data-tip="出于安全，已保存的 Key 以掩码显示：不修改输入框即保持原值，清空后保存则删除该 Key"></span>';
 }
 
