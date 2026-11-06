@@ -122,3 +122,4 @@ tests/**/__pycache__/
 
 # 安装器构建产物（Setup.exe 由 ISCC 生成，不入库）
 /installer/Output/
+tools/rl_release/.gitee_token

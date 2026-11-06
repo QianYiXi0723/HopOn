@@ -108,6 +108,63 @@ def main() -> None:
     run("6/6 安装内容隐私审计",
         [sys.executable, str(ROOT / "tools" / "check_release_privacy.py")])
 
+    # 第 7 步：Gitee 国内镜像同步（2026-11-07 上线；失败不阻断发版，
+    # Gitee 只是加速镜像，GitHub 才是主渠道）
+    gitee_release_ok = False
+    print("\n=== 7/7 Gitee 国内镜像同步 ===")
+    try:
+        token_file = ROOT / "tools" / "rl_release" / ".gitee_token"
+        if not token_file.exists():
+            print("[SKIP] 无 tools/rl_release/.gitee_token —— Gitee 不同步（该文件放私人令牌，已 gitignore）")
+        else:
+            gtok = token_file.read_text(encoding="utf-8").strip()
+            import urllib.request as _uq
+
+            def _gitee_api(url, payload=None):
+                data = json.dumps(payload).encode() if payload else None
+                req = _uq.Request(url, data=data, method="POST" if payload else "GET",
+                    headers={"Content-Type": "application/json"})
+                with _uq.urlopen(req, timeout=60) as r:
+                    return json.loads(r.read().decode())
+
+            # 7a. 推 main + tags（git 凭据里的 gitee 远端）
+            run("7a Gitee 推代码", ["git", "push", "gitee", "main", "--tags"])
+            # 7b. 建 Release（target_commitish 必填，漏了 400）
+            notes_v = ROOT / "tools" / "rl_release" / "notes" / f"v{version}.md"
+            rel = _gitee_api(
+                "https://gitee.com/api/v5/repos/qianyixi/HopOn/releases",
+                {"access_token": gtok, "tag_name": f"v{version}",
+                 "name": f"HopOn v{version}",
+                 "body": notes_v.read_text(encoding="utf-8") if notes_v.exists() else f"HopOn v{version}",
+                 "prerelease": False, "target_commitish": "main"})
+            print(f"    Release 已建（id={rel['id']}）")
+            # 7c. 传资产
+            boundary = "----HopOnBoundary7d1a2c"
+            for asset in (ROOT / "dist" / f"HopOn_v{version}_Setup.exe",
+                          ROOT / "dist" / f"HopOn_v{version}_Windows_x64.zip",
+                          ROOT / "dist" / "SHA256SUMS.txt"):
+                if not asset.exists():
+                    continue
+                content = asset.read_bytes()
+                body = (
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="access_token"\r\n\r\n{gtok}\r\n'
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="file"; filename="{asset.name}"\r\n'
+                    f"Content-Type: application/octet-stream\r\n\r\n"
+                ).encode() + content + f"\r\n--{boundary}--\r\n".encode()
+                req = _uq.Request(
+                    f"https://gitee.com/api/v5/repos/qianyixi/HopOn/releases/{rel['id']}/attach_files",
+                    data=body, method="POST",
+                    headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+                with _uq.urlopen(req, timeout=300) as r:
+                    print(f"    ✓ {asset.name}")
+            gitee_release_ok = True
+    except SystemExit:
+        raise   # run() 的失败要如实中断
+    except Exception as exc:  # noqa: BLE001 - 镜像失败不阻断主发版
+        print(f"[WARN] Gitee 同步失败（不影响 GitHub 主渠道）：{exc}")
+
     print("\n================ 发版编排完成 ================")
     for artifact in (
         ROOT / "release" / f"HopOn_v{version}",
@@ -117,7 +174,8 @@ def main() -> None:
     ):
         mark = "✓" if Path(artifact).exists() else "－"
         print(f"  [{mark}] {artifact}")
-    print("下一步（人工）：核对产物 → gh_release_v21.py 上传（发版红线：tag/资产人工触发）")
+    print(f"  [{'✓' if gitee_release_ok else '－'}] Gitee 国内镜像（gitee.com/qianyixi/HopOn）")
+    print("下一步（人工）：核对产物 → gh_release.py 上传 GitHub（发版红线：tag/资产人工触发）")
 
 
 if __name__ == "__main__":
