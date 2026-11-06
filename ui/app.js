@@ -3068,6 +3068,18 @@ document.getElementById('btn-hist-refresh').addEventListener('click', function()
     .then(function(){ btn.disabled = false; btn.textContent = '刷新'; });
 });
 
+/* 游戏概览卡的刷新（2026-11-06）：只重拉报表并重绘本卡，不触发游戏查询。
+   与上方「刷新」的区别：那个会先 loadLive(true) 真去查一遍游戏（写历史、
+   可能触发风控冷却），代价高；概览只是展示，用已有数据重绘就够。 */
+document.getElementById('btn-stats-refresh').addEventListener('click', function(){
+  const btn = this;
+  if (!btn || btn.disabled) return;              // 防连点
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+  loadHistory()
+    .catch(function(err){ console.error('刷新游戏概览失败', err); })
+    .then(function(){ btn.disabled = false; btn.textContent = '刷新'; });
+});
+
 /* 立即巡检（2026-11-05 P2）：让 daemon 跑一轮并写历史，绑号当天不用等到
    明天第一个时间点才见报表。成功后 12 秒自动重拉一次报表（daemon 0.5s 内
    响应 .run_now 标记，一轮并行查询约 6-15s）。 */
