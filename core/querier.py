@@ -355,8 +355,17 @@ class MiyousheQuerier(BaseQuerier):
         current_stamina = _optional_int(data, "current_stamina")
         max_stamina = _optional_int(data, "max_stamina")
         if current_stamina is not None and max_stamina:
+            # 备用开拓力（体力溢出转存槽）：接口有数据（2026-11-07 实测
+            # current_reserve_stamina=298 + is_reserve_stamina_full 标志），
+            # 满员判断把备用计入——只看主线会低估可用体力
+            reserve = _optional_int(data, "current_reserve_stamina")
+            reserve_full = bool(data.get("is_reserve_stamina_full"))
+            progress = (f"{current_stamina}/{max_stamina}"
+                        + (f" + 备用 {reserve}" if reserve else "")
+                        + ("（备用已满）" if reserve_full else ""))
             tasks.append(TaskItem(
-                "开拓力", current_stamina >= max_stamina, f"{current_stamina}/{max_stamina}",
+                "开拓力", current_stamina >= max_stamina or reserve_full,
+                progress,
                 counted=_resource_counted(),
                 recover_seconds=normalize_recover_seconds(
                     _optional_int(data, "stamina_recover_time")),
