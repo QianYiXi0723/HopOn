@@ -1739,6 +1739,8 @@ def live_status(force: bool = False) -> Dict[str, Any]:
                 current, maximum = _split_progress(task.progress)
                 percent = None
                 if current is not None and maximum:
+                    # 道具可把体力顶破上限（current > max）：进度条钳 100%，
+                    # 数字原样透传（2026-11-07 用户裁决：三态全用真实值）
                     percent = max(0, min(100, round(current * 100 / maximum)))
                 resource = {
                     "name": task.name,

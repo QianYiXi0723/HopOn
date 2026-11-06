@@ -2929,21 +2929,22 @@ function gameCardHtml(g){
   }
 
   /* 体力（一眼层）：数值/进度条/预计回满，实时化成果原样保留。
-     满员统一显示「已满」（2026-11-07 用户裁决）——不再渲染 N/N：
-     星铁/绝区零的溢出存量接口拿不全（星铁备用体力在任务行里另有展示），
-     写 X/N 会让用户误以为只有 N */
+     三态全用真实值（2026-11-07 用户终裁）：未满 N/N、满 N/N、
+     道具突破上限后 N/N（current 原样透传，服务器给多少显示多少）——
+     「已满」只出现在进度条悬浮提示里，不替代数字 */
   let stamina;
   if (live && live.percent != null) {
     const full = live.current >= live.maximum;
+    const over = live.current > live.maximum;
     const hot = live.percent >= 85;
+    const tip = over ? '超出上限 ' + (live.current - live.maximum) + '（道具/效果临时提升）'
+      : full ? '体力已满' : '';
     stamina = '<div class="gcard-stam"><span class="dim">' + escHtml(live.name || '体力') +
       '</span><span class="sbar"><i class="' + (hot ? 'hot' : '') +
       '" style="width:' + live.percent + '%"></i><i class="progress-glow' +
       (hot ? ' hot' : '') + '" style="left:' + live.percent + '%"></i></span>' +
-      (full
-        ? '<span class="mono" title="体力已达上限' +
-          (gid === 'zzz' || gid === 'starrail' ? '，溢出部分进游戏查看' : '') + '">已满</span>'
-        : '<span class="mono">' + live.current + '/' + live.maximum + '</span>') +
+      '<span class="mono"' + (tip ? ' title="' + escHtml(tip) + '"' : '') + '>' +
+      live.current + '/' + live.maximum + '</span>' +
       staminaEtaHtml(gid, live) + '</div>';
   } else {
     stamina = '<div class="gcard-stam"><span class="dim">体力</span>' +

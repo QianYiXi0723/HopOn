@@ -281,13 +281,18 @@ class DailyReport:
 
 
 def _parse_progress(progress: str) -> Optional[Tuple[int, int]]:
-    """把 "160/200" 解析成 (160, 200)；格式不对返回 None。"""
+    """把 "160/200" 解析成 (160, 200)；格式不对返回 None。
+
+    兼容带后缀的进度串（星铁备用开拓力："201/300 + 备用 298"）——
+    只取 "/" 两侧的整数，后缀不影响 (current, maximum) 提取。
+    """
     text = (progress or "").strip()
     if "/" not in text:
         return None
     left, _, right = text.partition("/")
+    right = right.strip().split()[0] if right.strip() else ""   # 丢弃 " + 备用 N" 后缀
     try:
-        return int(left.strip()), int(right.strip())
+        return int(left.strip()), int(right)
     except ValueError:
         return None
 
