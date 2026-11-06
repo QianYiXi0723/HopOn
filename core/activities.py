@@ -1326,12 +1326,22 @@ def _prune_notified(notified: Dict[str, Any]) -> Dict[str, Any]:
     return kept
 
 
-def summary() -> Dict[str, Any]:
+def summary(*, window_hours: Optional[int] = None) -> Dict[str, Any]:
     """给界面/接口用的汇总：活动（已分好组）+ 暂不支持的游戏 + 缓存状态。"""
     cache = load_cache()
     fetched_at = str(cache.get("fetched_at") or "")
     age = _cache_age_hours(fetched_at)
     activities = [act.to_dict() for act in ongoing()]
+    # 「即将结束」徽章口径跟用户设置的提醒天数走（2026-11-07 用户裁决）：
+    # 传入 window_hours 时按它重算 ending_soon，不依赖缓存时定格的 72h 固定值
+    window = window_hours if (window_hours and window_hours > 0) else ALERT_WINDOW_HOURS
+    if window != ALERT_WINDOW_HOURS:
+        for act in activities:
+            hours = act.get("hours_left")
+            act["ending_soon"] = bool(
+                act.get("end") is not None
+                and isinstance(hours, (int, float)) and 0 < hours <= window
+                and not act.get("not_started"))
     soon = [item for item in activities if item.get("ending_soon")]
     ignored = load_ignored()
     upcoming = [item for item in activities if item.get("group") == "upcoming"]
@@ -1342,7 +1352,7 @@ def summary() -> Dict[str, Any]:
         "stale": (age is None) or (age >= CACHE_TTL_HOURS),
         "age_hours": round(age, 1) if age is not None else None,
         "last_error": str(cache.get("last_error") or ""),
-        "window_hours": ALERT_WINDOW_HOURS,
+        "window_hours": window,
         "items": activities,
         "unsupported": [dict(item) for item in UNSUPPORTED],
         "soon_count": len(soon),

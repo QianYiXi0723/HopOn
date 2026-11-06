@@ -2409,7 +2409,16 @@ class Handler(BaseHTTPRequestHandler):
             from core import activities
 
             try:
-                payload = activities.summary()
+                # 「即将结束」窗口随用户设置走（app.activity_alert_days 天）：
+                # 徽章 ending_soon 在 summary 内按它重算，与推送提醒同口径
+                # （2026-11-07 用户裁决：徽章不再固定 72h）
+                try:
+                    raw_cfg = load_raw_config()
+                    days = _normalize_alert_days(
+                        (raw_cfg.get("app") or {}).get("activity_alert_days"))
+                except Exception:  # noqa: BLE001 - 读不到配置按默认窗口
+                    days = _normalize_alert_days(None)
+                payload = activities.summary(window_hours=days * 24)
                 # 未勾选的游戏：活动卡与「暂不支持」提示也从所有展示面消失
                 # （活动缓存仍全量抓取，重新勾选即恢复；过滤只影响本响应）
                 enabled = set(_enabled_game_ids())
@@ -2417,16 +2426,6 @@ class Handler(BaseHTTPRequestHandler):
                                     if it.get("game") in enabled]
                 payload["unsupported"] = [u for u in (payload.get("unsupported") or [])
                                           if u.get("game") in enabled]
-                # 「即将结束」窗口随用户设置走（app.activity_alert_days 天，
-                # 与推送提醒 main.pending_alerts 同口径）——前端同截止合并
-                # 按它裁剪，而不是活动项里固定的 72h ending_soon
-                try:
-                    raw_cfg = load_raw_config()
-                    days = _normalize_alert_days(
-                        (raw_cfg.get("app") or {}).get("activity_alert_days"))
-                except Exception:  # noqa: BLE001 - 读不到配置按默认窗口
-                    days = _normalize_alert_days(None)
-                payload["window_hours"] = days * 24
                 self._json(payload)
             except Exception as exc:  # noqa: BLE001 - 页面读不到也要给人话
                 logger.exception("读取活动缓存失败")
