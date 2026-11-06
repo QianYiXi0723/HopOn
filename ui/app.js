@@ -3035,6 +3035,10 @@ function loadHistory(){
         renderHistory(d);
         renderKpiToday(d);
         loadWeekTrend();          // 周对比徽章旁路：独立 fetch，失败不影响主链
+        /* 报表刷新时顺带更新月报——两个视图读同一份 history，
+           用户点了刷新就该看到全部同步，而不是只更新一半。 */
+        const mmask = document.getElementById('month-modal');
+        if (mmask && !mmask.hidden) loadMonthGrid(monthView, true);
       } catch (e) {
         console.error('渲染历史报表失败', e);
         renderHistoryEmpty('报表渲染出错，请点「刷新」重试。');
@@ -3106,6 +3110,9 @@ let monthView = null;                          // 当前查看的月份（YYYY-M
 let monthNav = { prev: null, next: null };
 let monthGame = null;                          // null = 总表；否则 = 游戏 id
 let monthMenuOpen = false;
+let monthTimer = null;                         // 弹窗打开期间的自动刷新定时器
+let monthSig = '';                             // 上次渲染的数据指纹，无变化则不重绘
+const MONTH_REFRESH_MS = 30000;                 // 与 loadToasts / loadConsoleLast 同节奏
 
 function monthGameMark(c, row){
   if (c.future) return '';
@@ -3124,12 +3131,31 @@ function openMonthModal(){
     monthView = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
   }
   loadMonthGrid(monthView);
+  startMonthTimer();
 }
 
 function closeMonthModal(){
   const mask = document.getElementById('month-modal');
   if (mask) mask.hidden = true;
+  stopMonthTimer();
   closeMonthMenu();
+}
+
+/* 弹窗开着的时候数据会变（巡检随时写 history），必须自己跟上——
+   否则「当日完成」永远停在打开弹窗那一刻，得关掉重开才更新。
+   只在弹窗可见时轮询，关掉即停，不占资源。 */
+function startMonthTimer(){
+  stopMonthTimer();
+  monthTimer = setInterval(function(){
+    const mask = document.getElementById('month-modal');
+    if (!mask || mask.hidden) { stopMonthTimer(); return; }
+    if (document.hidden) return;          // 窗口最小化/切走时不刷
+    loadMonthGrid(monthView, true);       // silent：不闪「读取中」
+  }, MONTH_REFRESH_MS);
+}
+
+function stopMonthTimer(){
+  if (monthTimer) { clearInterval(monthTimer); monthTimer = null; }
 }
 
 function closeMonthMenu(){
@@ -3157,26 +3183,49 @@ function monthViewLabel(){
   return '总表';
 }
 
-function loadMonthGrid(month){
+function loadMonthGrid(month, silent){
   const body = document.getElementById('month-body');
-  if (body) body.innerHTML = '<div class="emptybox">读取中…</div>';
-  closeMonthMenu();
-  fetch('/api/history?month=' + encodeURIComponent(month || ''))
+  if (!body) return;
+  if (!silent) body.innerHTML = '<div class="emptybox">读取中…</div>';
+  if (!silent) closeMonthMenu();
+  fetch('/api/history?month=' + encodeURIComponent(month || ''), { cache: 'no-store' })
     .then(function(r){ return r.json(); })
     .then(function(d){
       if (!d || d.ok === false) {
-        body.innerHTML = '<div class="emptybox">' +
+        if (!silent) body.innerHTML = '<div class="emptybox">' +
           escHtml((d && d.message) || '读取失败') + '</div>';
         return;
       }
       monthView = d.month;
       monthNav = { prev: d.prev || null, next: d.next || null };
       window.__lastMonth = d;
+      /* 自动刷新：数据没变就不重绘（重绘会把用户滚动位置与
+         悬浮细节冲掉，白白打断浏览）。只看「日期+每游戏完成态」。 */
+      const sig = monthDataSig(d);
+      if (silent && sig === monthSig) return;
+      monthSig = sig;
       renderMonthModal(d);
     })
     .catch(function(e){
-      body.innerHTML = '<div class="emptybox">读取失败：' + escHtml(String(e)) + '</div>';
+      if (!silent) body.innerHTML = '<div class="emptybox">读取失败：' + escHtml(String(e)) + '</div>';
     });
+}
+
+/* 渲染相关指纹：日期集合 + 每格每游戏的 finished/known/checks。
+   不含统计数与 label——那些由前者推导，变了必然一起变。 */
+function monthDataSig(d){
+  const parts = [];
+  (d.days || []).forEach(function(row){
+    const cells = [];
+    const gs = row.games || {};
+    Object.keys(gs).sort().forEach(function(k){
+      const c = gs[k] || {};
+      cells.push(k + ':' + (c.finished ? 1 : 0) + (c.known ? 1 : 0) + (c.checks || 0));
+    });
+    parts.push(row.date + '|' + (row.future ? 'F' : '') + '|' + cells.join(','));
+  });
+  (d.games || []).forEach(function(g){ parts.push(g.game + '=' + g.done + '/' + g.missed); });
+  return parts.join(';');
 }
 
 function renderMonthModal(d){
