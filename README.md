@@ -18,6 +18,14 @@
 
 ---
 
+## 📸 界面预览
+
+| 每日报表（月报热力 + 三态格） | 月报弹窗（深浅 = 当天完成游戏数） |
+|---|---|
+| ![每日报表](docs/img/report.png) | ![月报](docs/img/month-heatmap.png) |
+| **实时体力 + 活动日历** | **账号绑定 + 推送预览** |
+| ![实时查询](docs/img/live-activities.png) | ![账号页](docs/img/account.png) |
+
 ## ✨ 功能总览
 
 **巡查与提醒**
