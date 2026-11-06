@@ -66,6 +66,7 @@
 - `HopOn_v2.4.7_Windows_x64.zip` —— 绿色版（解压即用）
 - `SHA256SUMS.txt` —— 校验和清单：下载后核对文件完整性用（`certutil -hashfile 文件名 SHA256` 比对），不需要它的话可忽略
 - 找历史版本 / 逐版更新说明 → [全部 Releases](https://github.com/QianYiXi0723/HopOn/releases)
+- 🇨🇳 **国内免梯下载** → [Gitee 镜像](https://gitee.com/qianyixi/HopOn/releases)（与 GitHub 同步发版）
 
 首次打开是演示模式，按页面引导扫码绑定账号、配好推送即完成。**只读查询**：
 不签到、不代打、不修改任何游戏数据，账号零风险。
