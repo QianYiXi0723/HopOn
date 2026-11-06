@@ -57,6 +57,7 @@
 - `HopOn_v2.4.7_Setup.exe` —— 安装器版（推荐，per-user 无需管理员）
 - `HopOn_v2.4.7_Windows_x64.zip` —— 绿色版（解压即用）
 - `SHA256SUMS.txt` —— 校验和
+- 找历史版本 / 逐版更新说明 → [全部 Releases](https://github.com/QianYiXi0723/HopOn/releases)
 
 首次打开是演示模式，按页面引导扫码绑定账号、配好推送即完成。**只读查询**：
 不签到、不代打、不修改任何游戏数据，账号零风险。
@@ -255,7 +256,6 @@
 
 - **[docs/DEVELOPING.md](docs/DEVELOPING.md)** —— 目录结构、安装依赖、米游社/森空岛接入细节、
   验收方法、测试模式、三种启动方式（全文 4 万字级的开发手册）
-- [Releases](https://github.com/QianYiXi0723/HopOn/releases) —— 历史版本与逐版更新日志
 
 ## 📄 许可证
 
