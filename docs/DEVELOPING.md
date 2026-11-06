@@ -1048,6 +1048,7 @@ dev.bat exe      # 同步 + 启动 HopOn.exe
 | `core/querier.py` `parse_zzz` | 每日活跃度 `vitality.progress` 与电量 `energy.progress` 的字段路径为占位写法，需对照真实返回修正 |
 | `core/querier.py` 各 parse | 树脂/开拓力/电量"回满=完成"的信息项语义，可按喜好调整 |
 | 风控 | 若真实 Cookie 报 retcode=1034，需极验/device_fp 方案，暂未实现 |
+| 推送渠道 | **Bark / 飞书 / 钉钉三渠道配置界面未做**：后端 Notifier 类已实装（core/notifier.py，含签名/重试/掩码管线），但前端无渠道卡（index.html 无 ch-item）、PUSH_CHANNELS 注册表未登记（login_ui.py:670 只认 serverchan/qmsg）——用户在界面上配不了这三个渠道。要做：①三张 ch-item 卡（Bark: server+device_key；飞书/钉钉: webhook+secret）②PUSH_CHANNELS 登记三项 ③PUSH_LABELS 补标签 ④每渠道真机发一条验证 |
 
 端点路径已实测确认（无凭证探测）：原神 `/game_record/app/genshin/api/dailyNote`、崩铁 `/game_record/app/hkrpg/api/note`、绝区零 `/event/game_record_zzz/api/zzz/note`，均为 GET。`DS_SALT` 未填时脚本会在发请求前直接报"DS_SALT 尚未配置"，不会发出一个必被拒绝的请求。
 
