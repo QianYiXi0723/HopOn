@@ -60,7 +60,11 @@
       </button>
       <!-- 版本号由 /api/env 的 version 字段填入（唯一来源 core/__init__.py），
            这里只放一个不含数字的占位，别再写死 - 写死过 v2.1 而程序是 2.1.2 -->
-      <div style="margin-top:5px" id="ver-line">本地运行</div>
+      <!-- 2026-11-07：版本行升级为「关于·检查更新」入口（VS Code/Win11 范式：
+           查更新放在版本信息旁），点击调 /api/update，结果走 toast -->
+      <button type="button" id="ver-line" style="margin-top:5px;width:100%;border:none;background:transparent;
+              color:var(--muted);cursor:pointer;font-family:inherit;font-size:12px;padding:2px 0"
+              data-tip="点击检查更新（联网比对最新版本，当前版本与下载地址见此）">本地运行</button>
     </div>
   </aside>
 

@@ -564,6 +564,38 @@ function reset(){
   document.getElementById('detail').hidden = true;
 }
 
+/* 「关于·检查更新」（2026-11-07，VS Code/Win11 范式：查更新放版本信息旁）：
+   点击侧栏版本行 → /api/update（refresh=1 强制联网）→ toast 三态结果 */
+let _updateChecking = false;
+function checkUpdate(){
+  if (_updateChecking) return;              // 防连点
+  _updateChecking = true;
+  const btn = document.getElementById('ver-line');
+  const old = btn ? btn.textContent : '';
+  if (btn) btn.textContent = '检查中…';
+  fetch('/api/update?refresh=1')
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (!d || !d.ok) {
+        toast((d && d.message) || '检查失败：网络不可用', true);
+        return;
+      }
+      if (d.has_update) {
+        // 有新版：toast 带版本与下载指引（下载仍走 GitHub/Gitee，双渠道）
+        toast('发现新版本 v' + d.latest + '！当前 v' + d.current + '，打开下载页', false);
+        if (d.url) window.open(d.url, '_blank');
+      } else {
+        toast('已是最新版本（v' + d.current + '）');
+      }
+    })
+    .catch(function(e){ toast('检查失败：' + e, true); })
+    .finally(function(){
+      _updateChecking = false;
+      if (btn) btn.textContent = old;
+    });
+}
+document.getElementById('ver-line').addEventListener('click', checkUpdate);
+
 function refreshNotice(){
   fetch('/api/env').then(function(r){ return r.json(); }).then(function(d){
     /* 左下角版本号：以 /api/env 的 version 为准（HTML 里不再写死数字）。
