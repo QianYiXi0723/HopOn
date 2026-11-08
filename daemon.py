@@ -95,7 +95,10 @@ CONSOLE_URL = f"http://127.0.0.1:{CONSOLE_PORT}/"
 
 #: 轮询间隔（秒）
 TICK_SECONDS = 30
-#: 时间点容错（秒）：±1 分钟
+#: 时间点容错（秒）：**只吸收迟到**（0~60s），早到一律不触发。
+#: 轮询粒度 30s，早到跳过的代价是最多晚一个 tick——本质仍是准点。
+#: 2026-11-09 用户实证：旧对称容差 abs(delta)<=60 会把 11:59:xx 的轮询
+#: 判成 12:00 的班提前跑掉，推送固定早一分钟。
 SLOT_TOLERANCE = 60
 
 #: 日界前落盘班次的默认时刻。04:00 是游戏日界（见 core.history.GAME_DAY_OFFSET），
@@ -480,7 +483,7 @@ def pending_slots(
     """列出该触发的时间点，返回 ``[(slot_key, 迟到秒数), ...]``。
 
     迟到秒数 = 当前时间 - 目标时间：
-      * 落在 ±``tolerance`` 内 → 正常到点（迟到约 0）
+      * 落在 ``[0, tolerance]`` 内 → 正常到点（早到不触发，见 SLOT_TOLERANCE）
       * 超出容差但仍在 ``catch_up_minutes`` 窗口内 → 补发（合盖睡过去醒来的情况）
       * 超过补发窗口 → 当天不再触发
 
@@ -508,8 +511,9 @@ def pending_slots(
         target = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
         delta = int((current - target).total_seconds())
 
-        if abs(delta) <= tolerance:
-            # 正常到点（含 ±tolerance 内的轻微抖动）
+        if 0 <= delta <= tolerance:
+            # 正常到点（**只吸收迟到**——早到不触发：11:59:xx 的轮询必须等
+            # 12:00 过了才跑，否则推送固定早一分钟；代价是最多晚一个 tick）
             key = f"{today} {text}"
             if key not in fired:
                 pending.append((key, delta))
