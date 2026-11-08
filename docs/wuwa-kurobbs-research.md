@@ -62,7 +62,7 @@ token 实证寿命：数月级（文档示例 2023-07 的 token 2025 年仍在�
 - `core/history.py`：GAME_ORDER 加 `wuwa`
 - 绑定：账号页新增「库街区」卡（token 粘贴 + 校验），DPAPI 加密复用 `secure_store`
 - UI 七处机械活清单：`ui/app.js` 游戏列表/阈值输入/图标/游戏色 + `index.html` 绑定卡与阈值框
-- 活动日历：库街区活动组 API 已过期；kuro.py 有公告组件可后续接——v1 先标「暂不支持」（同终末地路径）
+- 活动日历：**已接入**（2026-11-09）——notice.json 毫秒时间戳 + 详情正文挖星声（社区普查：game-schedule/game-cal 都只有标题+时间，无结构化奖励）；wiki「版本活动」侧栏为交叉验证源，v1 未接
 
 ## 风险与未决项
 
