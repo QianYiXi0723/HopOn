@@ -217,6 +217,12 @@ function loadAccounts(){
       box.checked = !!it.enabled;
       syncSelCard(box);
     });
+    /* 存量配置里还没有账号行的游戏（如后加的鸣潮）：勾选框不跟 HTML 默认的
+       checked 走——没有账号行就不算"参与巡检"，诚实显示未勾；绑定后
+       write_kuro 建行，下次 loadAccounts 自动勾上 */
+    [...document.querySelectorAll('.sel-card input')].forEach(function(box){
+      if (!window.__accounts[box.value]) { box.checked = false; syncSelCard(box); }
+    });
     renderCredHealth(d);
     renderKpiCred(d);
     renderCapsuleDots(d);
@@ -2362,6 +2368,7 @@ const GAME_ICON = {
   endfield:  '/static/icons/endfield',
   wuwa:      '/static/icons/wuwa',
   miyoushe:  '/static/icons/miyoushe',
+  kuro:      '/static/icons/wuwa',   // 平台胶囊复用鸣潮图标
   skland:    '/static/icons/skland'
 };
 
