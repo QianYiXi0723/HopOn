@@ -71,6 +71,18 @@ except Exception as _exc:  # noqa: BLE001 - 布局失败也要让控制台起得
 USER_DIR = _user_root()
 CONFIG_PATH = USER_DIR / "config.json"
 
+# 开机自启自愈（2026-11-09）：Run 键被安全软件清理时按用户意图重写，
+# 与 daemon.py 启动链同款；失败绝不挡控制台启动。
+try:
+    import json as _json
+
+    from core.autostart import self_heal as _autostart_heal
+
+    with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
+        _autostart_heal(bool((_json.load(_f).get("app") or {}).get("autostart_desired")))
+except Exception:  # noqa: BLE001 - 自愈失败绝不挡启动
+    pass
+
 #: 静态资源（游戏头像等），只允许读这个目录下的图片
 STATIC_DIR = _BASE / "static"
 STATIC_TYPES: Dict[str, str] = {
@@ -1477,14 +1489,31 @@ def _live_disk_write(payload: Dict[str, Any]) -> None:
 
 
 def _split_progress(text: Any) -> Tuple[Optional[int], Optional[int]]:
-    """把 "160/200" 拆成 (160, 200)；解析不了返回 (None, None)。"""
+    """把 "160/200" 拆成 (160, 200)；解析不了返回 (None, None)。
+
+    进度串允许带说明后缀（v2.4.7 起星铁体力是 "240/240 + 备用 298"，
+    鸣潮将是 "146/240 + 结晶单质 345"）——只取斜杠两侧的**前导数字**，
+    右值遇到第一个非数字字符即停。此前整段 int() 会 ValueError 返回
+    (None, None)，实时页资源格被误判成「暂不支持体力查询」。
+    """
     if not isinstance(text, str) or "/" not in text:
         return None, None
     left, right = text.split("/", 1)
+
+    def _leading_int(chunk: str) -> Optional[int]:
+        digits = ""
+        for ch in chunk.strip():
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        return int(digits) if digits else None
+
     try:
-        return int(left.strip()), int(right.strip())
+        current = int(left.strip())
     except ValueError:
         return None, None
+    return current, _leading_int(right)
 
 
 def _filter_live_games(payload: Dict[str, Any], enabled: Optional[set]) -> Dict[str, Any]:
@@ -2686,7 +2715,21 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     from core import autostart
 
-                    self._json(autostart.apply(payload.get("enable")))
+                    result = autostart.apply(payload.get("enable"))
+                    # 意图持久化（2026-11-09）：拨开关 = 记下用户要什么。
+                    # 之后 Run 键被安全软件删掉时，启动链按它自愈重写。
+                    want = payload.get("enable")
+                    desired = want is True or str(want).strip().lower() in ("1", "true", "on", "yes")
+                    try:
+                        with _CONFIG_WRITE_LOCK:
+                            raw = load_raw_config()
+                            app_node = raw.get("app")
+                            if isinstance(app_node, dict):
+                                app_node["autostart_desired"] = bool(desired)
+                                save_raw_config(raw)
+                    except Exception:  # noqa: BLE001 - 意图落盘失败不影响本次开关
+                        logger.warning("autostart_desired 意图落盘失败（不影响开关本身）")
+                    self._json(result)
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("切换开机自启失败")
                     self._json({"ok": False, "message": f"操作失败：{exc}"}, 500)

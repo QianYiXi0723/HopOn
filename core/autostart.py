@@ -228,6 +228,35 @@ def cleanup_legacy_autostart() -> bool:
 # --------------------------------------------------------------------------- #
 
 
+def self_heal(desired: bool) -> str:
+    """开机自启自愈：用户意图为开、但注册表键丢失/过期时重写。
+
+    背景（2026-11-09 实证）：本机 Run 键被外部工具整条删除（日志只有
+    enable 无 disable，StartupApproved 也无禁用标记——典型安全软件
+    「开机加速」行为）。光靠用户重新拨开关还会被再删，所以启动链
+    （daemon / login_ui 首启）按配置里的 autostart_desired 意图自愈。
+
+    Returns:
+        动作说明；无需动作时返回空串（调用方不用记日志）。
+    """
+    if not SUPPORTED or not desired:
+        return ""
+    value = read_value()
+    expected = build_command()
+    if value is not None and value.strip().lower() == expected.strip().lower():
+        return ""
+    result = enable()
+    if result.get("ok"):
+        logger.info(
+            "自启自愈触发：注册表键%s，已按用户意图重写（%s）",
+            "路径过期" if value else "丢失（疑似被外部工具清理）",
+            result.get("message", ""),
+        )
+        return "healed"
+    logger.warning("自启自愈失败：%s", result.get("message", ""))
+    return "heal-failed"
+
+
 def status() -> Dict[str, Any]:
     """当前状态 + 是否与当前路径一致（stale 表示注册表里是旧路径）。"""
     if not SUPPORTED:
