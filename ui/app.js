@@ -2124,20 +2124,26 @@ function loadQuery(){
 function buildLiveMap(d){
   const map = {};
   (d.games || []).forEach(function(g){
-    if (!g.ok || g.stale || g.no_account) return;
-    map[g.game] = {
-      finished: !!g.finished,
-      tasks: (g.tasks || []).map(function(t){
-        return { name: t.name, done: !!t.done, progress: t.progress || '' };
-      }),
-    };
+    if (!g.ok || g.no_account) return;
+    /* stale（04:00 归零 / 每日活跃未解锁 / 崩3风控）也进表——体力节点是
+       真实可用的（2026-11-09 用户实测：鸣潮/战双未解锁场景概览卡体力被
+       吞成「查询后显示」）。只是 stale 不带 finished/tasks 判定（数据待
+       更新，没有完成度语义），消费方一律以 finished != null 守卫回落 */
+    const entry = {};
     if (g.resource && g.resource.percent != null) {
-      map[g.game].name = g.resource.name;
-      map[g.game].current = g.resource.current;
-      map[g.game].maximum = g.resource.maximum;
-      map[g.game].percent = g.resource.percent;
-      map[g.game].recover = g.resource.recover;
+      entry.name = g.resource.name;
+      entry.current = g.resource.current;
+      entry.maximum = g.resource.maximum;
+      entry.percent = g.resource.percent;
+      entry.recover = g.resource.recover;
     }
+    if (!g.stale) {
+      entry.finished = !!g.finished;
+      entry.tasks = (g.tasks || []).map(function(t){
+        return { name: t.name, done: !!t.done, progress: t.progress || '' };
+      });
+    }
+    map[g.game] = entry;
   });
   return map;
 }
