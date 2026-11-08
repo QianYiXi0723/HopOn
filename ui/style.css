@@ -988,6 +988,11 @@
   .gcard-ico{width:40px;height:40px;border-radius:8px;object-fit:cover;flex:none}
   .gcard-daily{display:flex;align-items:center;gap:6px;min-height:20px;
                font-size:12px;overflow:hidden}
+  /* 日常进度条行：与体力条同形态（名称 + 条 + N/N），小窗一行一任务 */
+  .gcard-task{display:flex;align-items:center;gap:8px;font-size:12px;min-width:0}
+  .gcard-task .dim{flex:none}
+  .gcard-task .sbar{flex:1 1 auto;min-width:40px}
+  .gcard-task .mono{flex:none;color:var(--fg)}
   .gcard-ico.ph{display:grid;place-items:center;background:var(--subtle);
     color:var(--muted);font-size:16px}
   .gcard-name{flex:1;min-width:0}
@@ -1148,6 +1153,9 @@
     .gcard-name b{font-size:13px}
     .gcard-streak b{font-size:18px}
     .gcard{padding:10px 12px}
+    /* 小窗两列（2026-11-09 用户裁决）：minmax 收到 300 让 auto-fit 排下两列，
+       极窄（内容 <620px）时 auto-fit 自然回落单列 */
+    .gcards{grid-template-columns:repeat(auto-fit, minmax(300px, 1fr))}
     .gcard-tasks .tp-item{font-size:12px}
     .hm-row{min-height:32px}
   }
