@@ -1885,6 +1885,20 @@ def write_mihoyo(
     roles = roles or {}
     updated: List[str] = []
     absent: List[str] = []
+    # 存量配置没有的后加游戏（如崩坏3）：**先按出厂模板补行、再进写循环**——
+    # 补行若发生在写循环之后，勾选的游戏永远拿不到 Cookie（只勾崩3时更会
+    # 触发「没有写入任何游戏」误报；2026-11-09 用户实测无法绑定崩3的根因）
+    present = {a.get("game") for a in raw.get("accounts", []) if isinstance(a, dict)}
+    missing = wanted - present
+    if missing:
+        for game in sorted(missing):
+            raw.setdefault("accounts", []).append({
+                "game": game,
+                "nickname": _MISSING_ACCOUNT_NICKNAMES.get(game, game),
+                "enabled": True,
+                "credential": {},
+            })
+        logger.info("补建缺失账号节点：%s（存量配置迁移）", ", ".join(sorted(missing)))
     for account in raw.get("accounts", []):
         game = account.get("game")
         if game not in wanted:
@@ -1905,19 +1919,6 @@ def write_mihoyo(
             updated.append(str(account.get("nickname") or MIHOYO_GAMES.get(game, game)))
         else:
             absent.append(game)
-    # 存量配置没有的后加游戏（如崩坏3）：按出厂模板补行再写（与 write_kuro
-    # 同款可创建语义——扫码勾选不该被「找不到节点」挡住）
-    present = {a.get("game") for a in raw.get("accounts", [])}
-    missing = wanted - present
-    if missing:
-        for game in sorted(missing):
-            raw.setdefault("accounts", []).append({
-                "game": game,
-                "nickname": _MISSING_ACCOUNT_NICKNAMES.get(game, game),
-                "enabled": True,
-                "credential": {},
-            })
-        logger.info("补建缺失账号节点：%s（存量配置迁移）", ", ".join(sorted(missing)))
     if not updated and not absent:
         raise RuntimeError("没有写入任何游戏，请检查 config.json 的 accounts")
 
