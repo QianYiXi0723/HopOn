@@ -360,6 +360,13 @@ def push_status() -> Dict[str, Any]:
     }
 
 
+def _is_cn_mobile(mobile: str) -> bool:
+    """国内手机号格式：1[3-9] 开头 11 位数字。"""
+    import re as _re
+
+    return bool(_re.fullmatch(r"1[3-9]\d{9}", mobile or ""))
+
+
 def _game_display_map() -> Dict[str, str]:
     """游戏 id -> 中文名，唯一来源是 core.config.KNOWN_GAMES。"""
     try:
@@ -1931,6 +1938,42 @@ def write_skland(target: str, token: str) -> str:
     return SKLAND_TARGETS.get(target, target)
 
 
+@_serialized_write
+def write_kuro(token: str, nickname: str = "") -> str:
+    """写入库街区 token（鸣潮）。与 write_skland 的差异：**可创建账号行**——
+    森空岛上线时全量注入过账号节点，鸣潮是后加游戏，存量 config.json 里没有，
+    找不到就按出厂模板形态补一行（enabled=true，查询层按未绑定提示）。
+    """
+    raw = load_raw_config()
+    hit = None
+    for account in raw.get("accounts", []):
+        if isinstance(account, dict) and account.get("game") == "wuwa":
+            hit = account
+            break
+    if hit is None:
+        hit = {
+            "game": "wuwa",
+            "nickname": nickname or "漂泊者",
+            "enabled": True,
+            "credential": {},
+        }
+        raw.setdefault("accounts", []).append(hit)
+        logger.info("wuwa 账号节点不存在，已按出厂模板创建（存量配置迁移）")
+    cred = hit.setdefault("credential", {})
+    cred["token"] = token
+    cred["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if nickname:
+        hit["nickname"] = nickname
+    if not hit.get("enabled", True):
+        hit["enabled"] = True   # 绑定了就参与巡检；不想查可以再关开关
+
+    query = raw.setdefault("query", {})
+    if str(query.get("provider", "")).strip().lower() == "mock":
+        query["provider"] = "miyoushe"
+    save_raw_config(raw)
+    return str(hit.get("nickname") or "漂泊者")
+
+
 # --------------------------------------------------------------------------- #
 # 登录流程（后台线程）
 # --------------------------------------------------------------------------- #
@@ -2733,6 +2776,96 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("切换开机自启失败")
                     self._json({"ok": False, "message": f"操作失败：{exc}"}, 500)
+            return
+
+        if path == "/api/kuro/verify":
+            # token 粘贴模式预检：只读校验，不落盘
+            payload = self._read_json_body()
+            if payload is not None:
+                try:
+                    from core.kuro_api import verify_kuro_token
+
+                    self._json(verify_kuro_token(str(payload.get("token") or "")))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("库街区 token 校验失败")
+                    self._json({"ok": False, "error": f"校验失败：{exc}"}, 500)
+            return
+
+        if path == "/api/kuro/save":
+            # token 粘贴模式保存：校验通过才落盘（DPAPI 由 save_raw_config 透明处理）
+            payload = self._read_json_body()
+            if payload is not None:
+                try:
+                    from core.kuro_api import verify_kuro_token
+
+                    token = str(payload.get("token") or "").strip()
+                    check = verify_kuro_token(token)
+                    if not check.get("ok"):
+                        self._json({"ok": False, "error": check.get("error") or "token 校验未通过"})
+                        return
+                    roles = check.get("wuwa_roles") or []
+                    nickname = str(roles[0].get("roleName") or "") if roles else ""
+                    saved_name = write_kuro(token, nickname)
+                    self._json({"ok": True, "nickname": saved_name,
+                                "message": f"已绑定库街区账号：{saved_name}"})
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("库街区 token 保存失败")
+                    self._json({"ok": False, "error": f"保存失败：{exc}"}, 500)
+            return
+
+        if path == "/api/kuro/sms/send":
+            # 短信模式第一步：前端极验弹窗通过后，带 validate 结果发码
+            payload = self._read_json_body()
+            if payload is not None:
+                try:
+                    from core.kuro_api import KuroSmsError, send_sms_code
+
+                    mobile = str(payload.get("mobile") or "").strip()
+                    if not _is_cn_mobile(mobile):
+                        self._json({"ok": False, "error": "手机号格式不对（仅支持国内号段）"})
+                        return
+                    send_sms_code(mobile, str(payload.get("gee_test_data") or ""))
+                    self._json({"ok": True, "message": "验证码已发送，注意查收短信"})
+                except KuroSmsError as exc:
+                    self._json({"ok": False, "error": str(exc)})
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("库街区发送验证码失败")
+                    self._json({"ok": False, "error": f"发送失败：{exc}"}, 500)
+            return
+
+        if path == "/api/kuro/sms/login":
+            # 短信模式第二步：验证码登录 → 落盘。
+            # 注意 sdkLogin 是 APP 端登录，会顶掉手机库街区 App 的登录态（单设备策略）
+            payload = self._read_json_body()
+            if payload is not None:
+                try:
+                    from core.kuro_api import KuroSmsError, list_roles, sdk_login
+
+                    mobile = str(payload.get("mobile") or "").strip()
+                    code = str(payload.get("code") or "").strip()
+                    if not _is_cn_mobile(mobile):
+                        self._json({"ok": False, "error": "手机号格式不对（仅支持国内号段）"})
+                        return
+                    if not (len(code) == 6 and code.isdigit()):
+                        self._json({"ok": False, "error": "验证码应为 6 位数字"})
+                        return
+                    data = sdk_login(mobile, code)
+                    token = str(data.get("token") or "").strip()
+                    try:
+                        roles = list_roles(token)
+                        wuwa_roles = [r for r in roles if str(r.get("gameId")) == "3"]
+                        nickname = str((wuwa_roles or roles or [{}])[0].get("roleName") or "")
+                    except Exception:  # noqa: BLE001 - 拉角色失败不挡绑定
+                        nickname = str(data.get("userName") or "")
+                    saved_name = write_kuro(token, nickname)
+                    self._json({"ok": True, "nickname": saved_name,
+                                "message": f"已绑定库街区账号：{saved_name}"
+                                           "（注意：手机上的库街区 App 已被顶下线）"})
+                except KuroSmsError as exc:
+                    self._json({"ok": False, "error": str(exc)})
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("库街区短信登录失败")
+                    self._json({"ok": False, "error": f"登录失败：{exc}"}, 500)
             return
 
         if path == "/api/apk/restart":

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote as _quote
 
 logger = logging.getLogger("dailycheck.kuro")
 
@@ -193,6 +194,102 @@ def get_widget_data(token: str, use_refresh: bool = True) -> Dict[str, Any]:
         # code 200 但没有角色：与 6001 同语义（未绑定/未设置展示角色）
         raise GameNotBoundError("该库街区账号还没有设置鸣潮角色，进游戏后建号即可自动生效")
     return data
+
+
+# --------------------------------------------------------------------------- #
+# 登录：短信验证码（绑定页用；查询层不碰这些）
+# --------------------------------------------------------------------------- #
+
+#: 库街区 H5 登录的极验 v4 captcha_id（Arietta 实证同款；前端 gt4.js 用）
+GEETEST_CAPTCHA_ID = "ec4aa4174277d822d73f2442a165a2cd"
+
+_ADDR_SMS_H5 = "https://api.kurobbs.com/user/getSmsCodeForH5"
+_ADDR_SDK_LOGIN = "https://api.kurobbs.com/user/sdkLogin"
+
+#: H5 发码的 UA/版本（Arietta 同款：iPhone + KuroGameBox/3.1.3）
+_H5_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) "
+          "AppleWebKit/605.1.15 (KHTML, like Gecko) KuroGameBox/3.1.3")
+
+
+class KuroSmsError(KuroQueryError):
+    """短信发送/登录失败（验证码错误、需要人机验证、参数问题等）。"""
+
+
+def send_sms_code(mobile: str, gee_test_data: str) -> None:
+    """发短信验证码：POST /user/getSmsCodeForH5（source:h5，带极验 validate 结果）。
+
+    gee_test_data 是前端极验弹窗成功后的 validate 结果 JSON 串
+    （{lot_number, captcha_output, pass_token, gen_time}）。
+    服务端通过后 data.geeTest=False 表示短信已发出；否则视为需要/未过验证。
+    """
+    requests = _import_requests()
+    import uuid as _uuid
+
+    headers = {
+        "User-Agent": _H5_UA,
+        "source": "h5",
+        "devcode": _uuid.uuid4().hex,
+        "version": "3.1.3",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    try:
+        resp = requests.post(
+            _ADDR_SMS_H5,
+            data={"mobile": str(mobile), "geeTestData": str(gee_test_data or "")},
+            headers=headers, timeout=REQUEST_TIMEOUT,
+        )
+        payload = resp.json()
+    except Exception as exc:
+        raise KuroSmsError(f"发送验证码时网络异常：{exc}") from exc
+
+    code = payload.get("code")
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    if code == CODE_OK and data.get("geeTest") is False:
+        logger.info("[kuro] 短信验证码已发送（%s****%s）", str(mobile)[:3], str(mobile)[-4:])
+        return
+    msg = str(payload.get("msg") or "")
+    if "验证" in msg or "geetest" in msg.lower():
+        raise KuroSmsError(f"人机验证未通过，请重试（{msg or '需要完成滑块验证'}）")
+    raise KuroSmsError(f"发送验证码失败：{msg or f'code={code}'}")
+
+
+def sdk_login(mobile: str, sms_code: str) -> Dict[str, Any]:
+    """短信验证码登录：POST /user/sdkLogin（source:android）。
+
+    ⚠️ 这是 APP 端登录——按官方单设备策略会顶掉用户手机库街区 App 的
+    登录态（社区全部工具同款代价，绑定页需明示）。
+    返回 data 字典（token/userId/userName/headPhotoUrl…）。
+    """
+    requests = _import_requests()
+    import uuid as _uuid
+
+    did = _uuid.uuid4().hex
+    headers = {
+        "User-Agent": USER_AGENT,
+        "source": "android",
+        "devcode": did,
+        "did": did,
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    url = (f"{_ADDR_SDK_LOGIN}?code={_quote(str(sms_code))}"
+           f"&mobile={_quote(str(mobile))}&devCode={did}")
+    try:
+        resp = requests.post(url, data="", headers=headers, timeout=REQUEST_TIMEOUT)
+        payload = resp.json()
+    except Exception as exc:
+        raise KuroSmsError(f"登录时网络异常：{exc}") from exc
+
+    code = payload.get("code")
+    if code == CODE_OK and isinstance(payload.get("data"), dict):
+        data = payload["data"]
+        if not str(data.get("token") or "").strip():
+            raise KuroSmsError("登录成功但返回缺少 token 字段")
+        logger.info("[kuro] sdkLogin 成功（userId=%s）", data.get("userId"))
+        return data
+    msg = str(payload.get("msg") or "")
+    if code == -130 or "验证码" in msg:
+        raise KuroSmsError(f"验证码错误或已过期，请重试（{msg}）")
+    raise KuroSmsError(f"登录失败：{msg or f'code={code}'}")
 
 
 # --------------------------------------------------------------------------- #
