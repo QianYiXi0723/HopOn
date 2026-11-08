@@ -252,6 +252,12 @@ class MiyousheQuerier(BaseQuerier):
     #: 本查询器覆盖的游戏
     SUPPORTED_GAMES = ("genshin", "starrail", "zzz", "bh3")
 
+    #: 崩3体力开关（2026-11-09 攻坚记录）：正确端点
+    #: act-api-takumi.mihoyo.com/game_record/honkai3rd/api/note（H5 分包实证）
+    #: 已达业务层，剩 DS 配方逆向（-10001）——见 mihoyo_api.ENDPOINTS 注释。
+    #: 攻破后置 True。
+    BH3_STAMINA_ENABLED = False
+
     def fetch(self, account: AccountConfig) -> GameStatus:
         if account.game not in self.SUPPORTED_GAMES:
             return GameStatus(
