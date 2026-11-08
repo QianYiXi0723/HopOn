@@ -915,16 +915,24 @@
   .act-time.t-end{color:var(--text-tertiary)}
   /* 合并组卡（2026-11-05）：成员小字清单 + 「N 项同止」角标 */
   .act-merged{font-size:12px;line-height:1.55;color:var(--text-secondary);
-    margin-top:6px;display:none;gap:2px;min-width:0;
-    /* 成员清单默认隐藏（点「N 项同止」展开），限高滚动保留全部信息 */
-    max-height:63px;overflow-y:auto;scrollbar-width:thin}
-  .acard.mopen .act-merged{display:grid}
+    margin-top:6px;display:none;gap:4px;min-width:0;
+    /* 成员清单默认隐藏（点「N 项同止」展开），展开态给足可读高度滚动 */
+    max-height:150px;overflow-y:auto;scrollbar-width:thin}
+  /* 展开的成员清单 = 卡片下方浮层（绝对定位，不推挤网格行）——
+     统一 180 行高与可读展开两全 */
+  .acard.mopen{z-index:5}
+  .acard.mopen .act-merged{display:grid;position:absolute;top:100%;left:0;right:0;
+    z-index:10;max-height:180px;overflow-y:auto;scrollbar-width:thin;
+    background:var(--bg-raise);border:1px solid var(--line);border-radius:8px;
+    box-shadow:var(--card-shadow);padding:8px 10px;margin-top:2px}
   .act-merged-toggle{cursor:pointer}
-  .act-mrow{display:flex;align-items:center;gap:6px;min-width:0}
-  .act-mrow .mt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .act-del-m{flex:none;border:none;background:transparent;color:var(--muted);
-    font-size:12px;cursor:pointer;padding:0 2px}
-  .act-del-m:hover{color:var(--err)}
+  .act-mrow{display:flex;align-items:center;gap:8px;min-width:0;min-height:19px}
+  .act-mrow .mt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    font-size:12px}
+  .act-del-m{flex:none;width:18px;height:18px;border:none;border-radius:4px;
+    background:transparent;color:var(--muted);font-size:12px;line-height:1;
+    cursor:pointer;display:grid;place-items:center}
+  .act-del-m:hover{color:var(--err);background:var(--err-bg)}
   .act-merged > div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .act-merged-tag{font-size:11px;color:var(--text-tertiary);white-space:nowrap}
   /* 倒计时徽章（2026-11-01 方案 A 升格）：≤24h 红 / ≤3 天琥珀 / 其余灰，
