@@ -3405,7 +3405,8 @@ function renderMonthModal(d){
     const wdMap = { '周一': 0, '周二': 1, '周三': 2, '周四': 3, '周五': 4, '周六': 5, '周日': 6 };
     const lead = wdMap[d.days[0].weekday] || 0;
     const total = d.games.length || 1;
-    const usedLevels = {};
+    /* 段数随监控数量伸缩（上限 8 档色梯）：监控 8 款 = 8 段、关到 3 款 = 3 段 */
+    const levels = Math.min(8, Math.max(1, total));
     let html = '<div class="mc-grid">';
     ['一', '二', '三', '四', '五', '六', '日'].forEach(function(w){
       html += '<div class="mc-wd">' + w + '</div>';
@@ -3422,20 +3423,19 @@ function renderMonthModal(d){
         if (c.known && c.finished) done += 1;
         return g.game_name + ' ' + monthGameMark(c, row);
       });
-      /* 色阶 8 档固定梯，桶位按监控数铺满浅→深：监控 3 款用到 l3/l6/l8、
-         8 款全梯细粒度——随监控数量自适应（2026-11-09 用户需求） */
-      const lv = done === 0 ? 0 : Math.max(1, Math.min(8, Math.ceil(done / total * 8)));
-      usedLevels[lv] = true;
+      /* 档位 = 完成数本身（段数 = 监控数量，上限 8 档色梯）：
+         2026-11-09 用户裁决——图例要能直接看到 8 段 */
+      const lv = Math.min(done, levels);
       const tip = '完成 ' + done + '/' + total + '｜' + parts.join(' · ');
       html += '<div class="mc-day mc-l' + lv + (row.is_today ? ' today' : '') +
         '" data-tip="' + escHtml(row.label + '｜' + tip) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
     });
     for (let i = lead + d.days.length; i % 7 !== 0; i++) html += '<div class="mc-day blank"></div>';
     html += '</div>';
-    const used = Object.keys(usedLevels).map(Number).sort(function(a, b){ return a - b; });
-    const legendCells = used.map(function(l){
-      return '<span class="mc-legend-cell mc-l' + l + '"></span>';
-    }).join('');
+    let legendCells = '';
+    for (let i = 0; i <= levels; i++) {
+      legendCells += '<span class="mc-legend-cell mc-l' + i + '"></span>';
+    }
     body = '<div class="month-scroll">' + html + '</div>' +
       '<div class="mc-legend">少' + legendCells + '多</div>';
   }
