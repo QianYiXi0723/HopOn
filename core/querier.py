@@ -260,6 +260,17 @@ class MiyousheQuerier(BaseQuerier):
                 source=self.source,
                 error=f"MiyousheQuerier 不支持游戏 {account.game}（应回退 mock，若看到本条说明注册表配置有误）",
             )
+        if account.game == "bh3" and not self.BH3_STAMINA_ENABLED:
+            # 端点被 api-takumi WAF 503 拦（2026-11-09 实测）——如实中性提示，
+            # 不走真实查询（否则每轮红字「查询失败」刷屏）
+            return GameStatus(
+                game_id=account.game,
+                game_name=account.game_name,
+                nickname=account.nickname,
+                source=self.source,
+                stale="崩坏3体力查询暂不可用：米游社接口风控拦截中"
+                      "（登录态已保存有效，等后续版本恢复）",
+            )
         return self._fetch_game(account)
 
     # ---------------- 主流程 ---------------- #

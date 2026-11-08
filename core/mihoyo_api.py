@@ -1686,7 +1686,14 @@ def fetch_game_roles(
         （拉不到列表就跳过回填，保持旧行为），绝不能因为这一步失败让登录报错。
     """
     base_url = (base_url or RECORD_BASE).rstrip("/")
-    params: Dict[str, Any] = {"uid": ltuid}
+    # uid 参数必须是米游社账号 id：cookie 里的 account_id 优先——2026-11-09
+    # 实测部分账号的 ltuid 已被 getGameRecordCard 判「Invalid uid」（同 cookie
+    # 的 account_id 正常），崩3扫码回填因此全灭成「未创建角色」
+    uid_param = str(ltuid or "").strip()
+    m = re.search(r"account_id=(\d+)", cookie or "")
+    if m:
+        uid_param = m.group(1)
+    params: Dict[str, Any] = {"uid": uid_param}
     headers = build_headers(
         ltuid, ltoken, query=params, cookie=cookie, with_device=False,
     )
