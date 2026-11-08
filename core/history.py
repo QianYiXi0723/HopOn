@@ -60,7 +60,7 @@ DEFAULT_DAYS = 7
 GAME_DAY_OFFSET = timedelta(hours=4)
 
 #: 列的固定顺序（没见过的游戏排在后面）
-GAME_ORDER = ("genshin", "starrail", "zzz", "arknights", "endfield")
+GAME_ORDER = ("genshin", "starrail", "zzz", "arknights", "endfield", "wuwa")
 
 _WEEKDAYS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 

@@ -479,6 +479,7 @@ def _query_account(account, provider: str) -> GameStatus:
         MiyousheQueryError,
     )
     from core.skland_api import SklandQueryError
+    from core.kuro_api import KuroQueryError
 
     logger = logging.getLogger("dailycheck.main")
     try:
@@ -515,7 +516,7 @@ def _query_account(account, provider: str) -> GameStatus:
             error=str(exc),
             cred_kind="auth",
         )
-    except (MiyousheQueryError, SklandQueryError, StaleSnapshotError) as exc:
+    except (MiyousheQueryError, SklandQueryError, KuroQueryError, StaleSnapshotError) as exc:
         # 预期态运维失败（风控拒绝 1034/10041、凭证问题、接口改版提示、快照
         # 过期）：单行 WARNING 不带堆栈——pythonw 下 traceback 无处可看，
         # 留在日志里只是噪音（2026-11-05 P6-6）；未知异常仍走全堆栈兜底。

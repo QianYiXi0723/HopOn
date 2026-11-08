@@ -48,6 +48,7 @@ KNOWN_GAMES: Dict[str, str] = {
     "zzz": "绝区零",
     "arknights": "明日方舟",
     "endfield": "终末地",
+    "wuwa": "鸣潮",
 }
 
 #: 米游社数据源覆盖的游戏（query.mihoyo_enabled=False 时跳过它们）
@@ -76,6 +77,7 @@ RESOURCE_THRESHOLD_DEFAULT: Dict[str, int] = {
     "zzz": 200,        # 电量，上限 240
     "arknights": 135,  # 理智，上限随账号等级（常见 135~205）
     "endfield": 300,   # 理智（curStamina），上限实测 350
+    "wuwa": 200,       # 结晶波片，上限 240（溢出转存结晶单质，另算）
 }
 
 #: 各游戏"体力/树脂/电量/理智"在任务列表里的显示名，用于从查询结果里认出那一项。
@@ -87,6 +89,7 @@ RESOURCE_TASK_NAMES: Dict[str, str] = {
     "zzz": "电量",
     "arknights": "理智",
     "endfield": "理智",
+    "wuwa": "结晶波片",
 }
 
 #: 阈值允许的最大值（体力上限普遍在 200~240 之间，留点余量）
@@ -119,6 +122,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "zzz_energy_threshold": RESOURCE_THRESHOLD_DEFAULT["zzz"],
         "arknights_ap_threshold": RESOURCE_THRESHOLD_DEFAULT["arknights"],
         "endfield_sanity_threshold": RESOURCE_THRESHOLD_DEFAULT["endfield"],
+        "wuwa_energy_threshold": RESOURCE_THRESHOLD_DEFAULT["wuwa"],
     },
     "accounts": [
         {
@@ -166,6 +170,15 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "enabled": True,
             "credential": {
                 "token": "请填写鹰角通行证Token",
+            },
+        },
+        {
+            "game": "wuwa",
+            "nickname": "漂泊者",
+            "enabled": True,
+            "credential": {
+                # 库街区 Token：网页版登录后从 Cookie 的 user_token 取
+                "token": "请填写库街区Token",
             },
         },
     ],
@@ -660,6 +673,7 @@ class AppConfig:
     zzz_energy_threshold: int = RESOURCE_THRESHOLD_DEFAULT["zzz"]
     arknights_ap_threshold: int = RESOURCE_THRESHOLD_DEFAULT["arknights"]
     endfield_sanity_threshold: int = RESOURCE_THRESHOLD_DEFAULT["endfield"]
+    wuwa_energy_threshold: int = RESOURCE_THRESHOLD_DEFAULT["wuwa"]
     accounts: List[AccountConfig] = field(default_factory=list)
     push: PushConfig = field(default_factory=PushConfig)
     query: QueryConfig = field(default_factory=QueryConfig)
@@ -702,6 +716,7 @@ class AppConfig:
             "zzz": self.zzz_energy_threshold,
             "arknights": self.arknights_ap_threshold,
             "endfield": self.endfield_sanity_threshold,
+            "wuwa": self.wuwa_energy_threshold,
         }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -719,6 +734,7 @@ class AppConfig:
                 "zzz_energy_threshold": int(self.zzz_energy_threshold),
                 "arknights_ap_threshold": int(self.arknights_ap_threshold),
                 "endfield_sanity_threshold": int(self.endfield_sanity_threshold),
+                "wuwa_energy_threshold": int(self.wuwa_energy_threshold),
             },
             "accounts": [account.to_dict() for account in self.accounts],
             "push": self.push.to_dict(),
@@ -871,6 +887,8 @@ def parse_config(data: Dict[str, Any], source: Optional[Path] = None) -> AppConf
             app_section.get("arknights_ap_threshold"), "arknights_ap_threshold", "arknights"),
         endfield_sanity_threshold=_parse_threshold(
             app_section.get("endfield_sanity_threshold"), "endfield_sanity_threshold", "endfield"),
+        wuwa_energy_threshold=_parse_threshold(
+            app_section.get("wuwa_energy_threshold"), "wuwa_energy_threshold", "wuwa"),
         accounts=accounts,
         push=PushConfig.from_dict(merged.get("push")),
         query=QueryConfig.from_dict(merged.get("query")),
