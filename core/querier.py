@@ -905,6 +905,24 @@ class KuroQuerier(BaseQuerier):
         except Exception as exc:
             raise KuroQueryError(f"解析返回数据时出现未预期错误：{exc}") from exc
 
+        # 每日活跃「未解锁」（库街区数据终端没有该角色的活跃数据——新角色/
+        # 未开数据授权时常见，实测 livenessData/activeData status=1 cur=0 total=0）：
+        # 如实标注「待解锁」而不是永远「未完成」；体力节点不受影响照常展示。
+        nodes = self._WIDGET_NODES[account.game]
+        daily = data.get(nodes["daily"])
+        if isinstance(daily, dict) and _optional_int(daily, "status") == 1:
+            tasks = (self.parse_wuwa(data) if account.game == "wuwa"
+                     else self.parse_pgr(data))
+            return GameStatus(
+                game_id=account.game,
+                game_name=account.game_name,
+                nickname=account.nickname,
+                source=self.source,
+                stale="每日活跃数据未解锁：请在库街区 App「数据终端」绑定角色并"
+                      "开启数据授权，解锁后自动恢复日常判定",
+                tasks=tasks,
+            )
+
         tasks = (self.parse_wuwa(data) if account.game == "wuwa"
                  else self.parse_pgr(data))
         nickname = str(data.get("roleName") or "") or account.nickname

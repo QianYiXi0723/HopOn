@@ -170,6 +170,21 @@ def run():
     live = next(t for t in pgr_tasks if t.name == "每日活跃")
     check("B9d 活跃锚点 counted", live.done and live.counted)
 
+    # ---- B10 每日活跃未解锁 → stale 中性展示（体力照常） ----
+    unlocked_sample = {
+        "roleId": "105915946", "roleName": "千一夕", "serverTime": 1719475203,
+        "livenessData": {"cur": 0, "total": 0, "status": 1},
+        "energyData": {"cur": 240, "total": 240, "refreshTimeStamp": 0, "status": 0},
+    }
+    Q.get_widget_data = lambda tok, use_refresh=True, **kw: unlocked_sample
+    try:
+        st = Q.KuroQuerier().fetch(_acc())
+        check("B10a 未解锁 → stale", st.stale is not None and "数据终端" in st.stale)
+        check("B10b 体力照常在场", any(t.name == "结晶波片" for t in st.tasks))
+        check("B10c 不算失败不冒充完成", st.error is None and st.finished is False)
+    finally:
+        Q.get_widget_data = lambda tok, use_refresh=True, **kw: DOC_SAMPLE
+
     failed = [n for n, ok in results if not ok]
     print(f"\n== {len(results) - len(failed)}/{len(results)} 通过 ==")
     return 1 if failed else 0
