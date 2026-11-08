@@ -2989,10 +2989,8 @@ function gameCardHtml(g){
   } else if (raw && raw.no_account) {
     badge = '<span class="dim">未创建角色</span>';
     why = String(raw.no_account);
-  } else if (live && live.finished != null) {
-    const miss = (live.tasks || []).filter(function(t){ return !t.done; }).length;
-    badge = live.finished ? '<span class="dim">✔ 今日已完成</span>'
-                          : '<span class="badge warn">未完成 ' + miss + ' 项</span>';
+  } else if (live && (live.tasks || []).length) {
+    badge = '';   /* 日常进度条本身即表达（2026-11-09 用户裁决） */
   } else if (!today || !today.known) {
     badge = '<span class="dim">今日无数据</span>';
   } else if (today.finished) {
@@ -3001,14 +2999,28 @@ function gameCardHtml(g){
     badge = '<span class="badge warn">未完成 ' + (today.unfinished_tasks || 0) + ' 项</span>';
   }
 
-  /* 日常进度（一眼层，2026-11-09 用户裁决）：体力条与实时体力页功能重合
-     删除，改显日常任务进度（委托 0/4 · 实训 0/500 式）；无日常判定数据的
-     游戏（未解锁/风控）显示原因文案——状态解释从实时页搬到这里承接 */
+  /* 日常进度（一眼层，2026-11-09 用户裁决二轮）：与体力条同形态——
+     每任务一行进度条（名称 + 条 + N/N）；未解锁/风控显示原因文案 */
   let daily;
   if (raw && raw.stale) {
     daily = '<div class="gcard-daily"><span class="dim">' + escHtml(raw.stale) + '</span></div>';
   } else if (live && (live.tasks || []).length) {
-    daily = taskProgressHtml(live.tasks);
+    daily = (live.tasks || []).map(function(t){
+      const hit = /(\d+)\s*\/\s*(\d+)/.exec(t.progress || '');
+      let pct, txt;
+      if (hit) {
+        const cur = parseInt(hit[1], 10), max = parseInt(hit[2], 10);
+        txt = cur + '/' + max;
+        pct = max > 0 ? Math.min(100, Math.round(cur * 100 / max)) : 100;
+      } else {
+        txt = t.done ? '✓' : '✗';
+        pct = t.done ? 100 : 0;
+      }
+      return '<div class="gcard-task"><span class="dim">' + escHtml(t.name) + '</span>' +
+        '<span class="sbar"><i class="' + (pct >= 85 ? 'hot' : '') +
+        '" style="width:' + pct + '%"></i></span>' +
+        '<span class="mono">' + txt + '</span></div>';
+    }).join('');
   } else if (raw && raw.no_account) {
     daily = '<div class="gcard-daily"><span class="dim">' + escHtml(raw.no_account) + '</span></div>';
   } else {
@@ -3040,8 +3052,11 @@ function gameCardHtml(g){
 
   /* 连续天数保护话术：streak > 0 且今天还没做完时，用损失厌恶框架提醒
      「别断」——琥珀不用红（对比是信息不是告警，色彩纪律） */
+  /* 今天别断只在 18 点后出现（2026-11-09 用户裁决）：早上刚刷新一天还长，
+     催了也没意义 */
   const streakAtRisk = Number(g.streak || 0) > 0 &&
-    ((live && live.finished === false) || (today && today.known && !today.finished));
+    ((live && live.finished === false) || (today && today.known && !today.finished)) &&
+    new Date().getHours() >= 18;
 
   return '<div class="card gcard" style="--gc:' + gameDotColor(gid) + '" data-tip="' + escHtml(tip) + '">' +
     '<div class="gcard-head">' + gameIconHtml(gid) +
