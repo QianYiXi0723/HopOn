@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote as _quote
 
@@ -145,7 +146,17 @@ def request_kuro(
 
     code = payload.get("code")
     if code == CODE_TOKEN_EXPIRED:
-        raise KuroAuthError(f"库街区 token 已失效（code=220，msg={payload.get('msg') or ''}）")
+        # 库街区偶发瞬时 220（真机实测：连续查询时单次 220，稍后同 token 恢复），
+        # 与真过期不可区分——等 2 秒重试一次再定论，避免一轮抖动触发凭证告警
+        time.sleep(2)
+        retry = requests.post(url, data=body or {}, headers=headers, timeout=timeout)
+        try:
+            payload = retry.json()
+        except ValueError:
+            pass
+        code = payload.get("code")
+        if code == CODE_TOKEN_EXPIRED:
+            raise KuroAuthError(f"库街区 token 已失效（code=220，msg={payload.get('msg') or ''}）")
     if code == CODE_NO_ROLE:
         raise GameNotBoundError("该库街区账号还没有绑定鸣潮角色，进游戏后建号即可自动生效")
     if code != CODE_OK:
