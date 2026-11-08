@@ -68,6 +68,20 @@ except Exception as _exc:  # noqa: BLE001 - 布局失败也要让守护起得来
 USER_DIR = _user_root()
 CONFIG_PATH = USER_DIR / "config.json"
 LOGS_DIR = USER_DIR / "logs"
+
+# 开机自启自愈（2026-11-09）：Run 键被安全软件「开机加速」类工具清理时，
+# 按配置里的 autostart_desired 意图重写。放启动链最前，键在位越早越好；
+# 任何失败都不挡启动。
+try:
+    import json as _json
+
+    from core.autostart import self_heal as _autostart_heal
+
+    with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
+        _autostart_heal(bool((_json.load(_f).get("app") or {}).get("autostart_desired")))
+except Exception:  # noqa: BLE001 - 自愈失败绝不挡启动
+    pass
+
 PID_FILE = LOGS_DIR / "daemon.pid"
 HEARTBEAT_FILE = LOGS_DIR / "daemon.heartbeat"
 RUN_NOW_FLAG = LOGS_DIR / ".run_now"
