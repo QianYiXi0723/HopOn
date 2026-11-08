@@ -2448,10 +2448,18 @@ function actCardHtml(it, isHero, heroSlim){
   /* 合并组卡（2026-11-09 用户裁决三连）：成员清单不再占卡体——
      光标悬浮经 data-tip 显示全部成员；× 整组删除（逐个写黑名单）。
      卡体与普通卡同构同高 */
-  const mergedList = '';
+  const mergedList = (it.merged && it.merged.length > 1)
+    ? '<div class="act-merged">' + it.merged.map(function(t, i){
+        var mid = (it.merged_ids || [])[i] || '';
+        return '<div class="act-mrow"><span class="mt">· ' + escHtml(t) + '</span>' +
+          '<button type="button" class="act-del-m" data-member-id="' + escHtml(mid) +
+          '" onclick="deleteMemberActivity(this)" title="单独删除这一项">×</button></div>';
+      }).join('') + '</div>'
+    : '';
   const delBtn = it.merged
-    ? '<span class="act-merged-tag">' + it.merged.length + ' 项同止</span>' +
-      '<button type="button" class="act-del" onclick="deleteMergedActivity(this)" data-del-merged="' +
+    ? '<button type="button" class="act-merged-tag act-merged-toggle" onclick="toggleMergedMembers(this)" title="展开成员列表，可分别删除">' +
+      it.merged.length + ' 项同止</button>' +
+      '<button type="button" class="act-del-g" onclick="deleteMergedActivity(this)" data-del-merged="' +
       escHtml((it.merged_ids || []).join(',')) + '" title="整组删除，之后这 ' +
       it.merged.length + ' 项都不再提醒">×</button>'
     : '<button type="button" class="act-del" data-del="' + id +
@@ -2469,6 +2477,7 @@ function actCardHtml(it, isHero, heroSlim){
     '<div class="act-time ' + timeCls + '">始 ' + (st || '时间待定') +
       (en ? ' · 止 ' + en : '') + '</div>' +
     '<div class="act-cd ' + cdCls + '">' + escHtml(it.countdown || '') + '</div>' +
+    mergedList +
     prog +
     '</div>';
 }
@@ -2661,6 +2670,31 @@ function renderActivities(d){
             escHtml(u.game_name) + '</span>';
         }).join('')
       : '';
+  }
+}
+
+/* 合并组卡成员列表展开/收起（8 项同止角标即开关） */
+function toggleMergedMembers(btn){
+  const card = btn.closest('.acard');
+  if (card) card.classList.toggle('mopen');
+}
+
+/* 合并组卡分别删除：只删点名的这一项，整卡重渲保持「等 N 项」计数同步 */
+async function deleteMemberActivity(btn){
+  const id = btn.getAttribute('data-member-id');
+  btn.disabled = true;
+  try {
+    const d = await postJSON('/api/activities/delete', { id: id });
+    if (!d || d.ok === false) {
+      toast((d && d.message) || '删除失败', true);
+      btn.disabled = false;
+      return;
+    }
+    toast('已删除该项');
+    loadActivities();
+  } catch (e) {
+    btn.disabled = false;
+    toast('删除失败：' + e, true);
   }
 }
 
