@@ -48,22 +48,21 @@ ENDPOINTS: Dict[str, str] = {
     "genshin": "/game_record/app/genshin/api/dailyNote",   # 原神实时便笺（GET，未登录返回 -1 param error）
     "starrail": "/game_record/app/hkrpg/api/note",         # 崩铁实时便笺（GET，未登录返回 -10001 invalid request）
     "zzz": "/event/game_record_zzz/api/zzz/note",          # 绝区零实时便笺（GET，未登录返回 -100 请先登录）
-    # 崩坏3（2026-11-09 攻坚记录）：正确路径族是 /game_record/honkai3rd/
-    # （崩3助手 H5 分包实证），域名 act-api-takumi.mihoyo.com（见 GAME_RECORD_BASES）。
-    # 注意不是 /game_record/app/bh3/（-record 404、api-takumi 的 game_record 路由
-    # 对所有非 App 客户端 503——头部/TLS 指纹实验矩阵全穷尽）。
-    # 当前卡 DS 配方（-10001 invalid request），querier.BH3_STAMINA_ENABLED=False。
-    # 崩3：正确路径族是 /game_record/honkai3rd/（崩3助手 H5 分包实证
-    # 2026-11-09），域名 act-api-takumi.mihoyo.com（GAME_RECORD_BASES 已配）。
-    # 注意不是 /game_record/app/bh3/（-record 404、api-takumi 503）。
-    # 当前卡 DS 配方（-10001 invalid request），querier.BH3_STAMINA_ENABLED=False。
-    "bh3": "/game_record/honkai3rd/api/note",
+    # 崩坏3（2026-11-09 攻坚终局）：正确路径族是 **/game_record/app/honkai3rd/**
+    # （社区口径 + 实测 retcode=0），走标准 RECORD_BASE + 星铁同款配方
+    # （DS2+x4 + 整串 ltoken cookie），没有崩3专属头。
+    # 攻坚弯路存档：正确路径挖通前试过两条死路——
+    #   1) /game_record/app/bh3/：全域 404（路径族名错，bh3 不是正确族名）；
+    #   2) /game_record/honkai3rd/（崩3助手 H5 分包 apiBase，act-api-takumi 域）：
+    #      可达但对一切请求恒 retcode=-10001「invalid request」——那是米游社
+    #      「工作台」专用接口族，带网关级身份闸（App webview 桥内才有钥匙，
+    #      无 cookie/坏 cookie/缺参数/无 DS 全是同一个码），别再往那儿打。
+    "bh3": "/game_record/app/honkai3rd/api/note",
 }
 
-#: 部分游戏不走 RECORD_BASE：崩坏3 的 game_record 在老域名上
-GAME_RECORD_BASES: Dict[str, str] = {
-    "bh3": "https://api-takumi.mihoyo.com",
-}
+#: 部分游戏不走 RECORD_BASE。崩3 一度被错配到 api-takumi.mihoyo.com（503 源头），
+#: 路径族修正后与 genshin/starrail 同走 RECORD_BASE，本表当前无特例。
+GAME_RECORD_BASES: Dict[str, str] = {}
 
 #: 默认区服参数。账号 credential 里可写 "server" 覆盖（如原神渠道服 cn_qd01）。
 DEFAULT_SERVERS: Dict[str, str] = {
@@ -1663,7 +1662,10 @@ def request_daily_note(
 
 #: getGameRecordCard 的 game_id -> 本项目 game_id
 #: （实测记录见 RETCODE_HINTS 上方注释：该接口在本项目环境 retcode=0 通过）
-RECORD_CARD_GAME_IDS: Dict[int, str] = {2: "genshin", 6: "starrail", 8: "zzz"}
+#: 崩3 = game_id 1（2026-11-09 实证：getGameRecordCard?uid=<account_id> 返回
+#: 崩3行 game_role_id/region/nickname/level；此前映射漏 1 导致扫码回填
+#: 永远认不出崩3角色，credential.uid 一直空着——查询层误报「未创建角色」）
+RECORD_CARD_GAME_IDS: Dict[int, str] = {1: "bh3", 2: "genshin", 6: "starrail", 8: "zzz"}
 
 #: 米游社「我的角色」列表接口：一次请求返回该账号在**所有游戏**里的角色，
 #: 扫码登录后用它回填各游戏的 uid/server/nickname，并识别"账号没玩过这款游戏"。

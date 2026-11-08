@@ -252,11 +252,10 @@ class MiyousheQuerier(BaseQuerier):
     #: 本查询器覆盖的游戏
     SUPPORTED_GAMES = ("genshin", "starrail", "zzz", "bh3")
 
-    #: 崩3体力开关（2026-11-09 攻坚记录）：正确端点
-    #: act-api-takumi.mihoyo.com/game_record/honkai3rd/api/note（H5 分包实证）
-    #: 已达业务层，剩 DS 配方逆向（-10001）——见 mihoyo_api.ENDPOINTS 注释。
-    #: 攻破后置 True。
-    BH3_STAMINA_ENABLED = False
+    #: 崩3体力开关（2026-11-09 攻坚终局：/game_record/app/honkai3rd/api/note
+    #: 实测 retcode=0，星铁同款配方直通，字段与社区口径一致——正式启用）。
+    #: 完整攻坚弯路存档见 mihoyo_api.ENDPOINTS["bh3"] 注释。
+    BH3_STAMINA_ENABLED = True
 
     def fetch(self, account: AccountConfig) -> GameStatus:
         if account.game not in self.SUPPORTED_GAMES:
@@ -266,17 +265,6 @@ class MiyousheQuerier(BaseQuerier):
                 nickname=account.nickname,
                 source=self.source,
                 error=f"MiyousheQuerier 不支持游戏 {account.game}（应回退 mock，若看到本条说明注册表配置有误）",
-            )
-        if account.game == "bh3" and not self.BH3_STAMINA_ENABLED:
-            # 端点被 api-takumi WAF 503 拦（2026-11-09 实测）——如实中性提示，
-            # 不走真实查询（否则每轮红字「查询失败」刷屏）
-            return GameStatus(
-                game_id=account.game,
-                game_name=account.game_name,
-                nickname=account.nickname,
-                source=self.source,
-                stale="崩坏3体力查询暂不可用：米游社接口风控拦截中"
-                      "（登录态已保存有效，等后续版本恢复）",
             )
         return self._fetch_game(account)
 
@@ -456,10 +444,10 @@ class MiyousheQuerier(BaseQuerier):
 
         端点/字段按社区文档口径实现（note 返回 current_stamina /
         max_stamina / stamina_recover_time，与原神 dailyNote 同名）。
-        2026-11-09 实测 api-takumi.mihoyo.com 被 WAF 503 拦 Python 流量，
-        真机字段确认待联调（用户有 lv80 崩3角色，game_record 角色列表已验）。
-        崩3便签是否携带每日任务进度未知——v1 只出体力（counted=False，
-        不参与完成度判定；finished 对零判定项恒 False，不会假「已完成」）。
+        2026-11-09 真机实证（480/240, recover=0——超上限形态正好走
+        三态裁决的 N/N 渲染）。崩3便签是否携带每日任务进度未知——
+        v1 只出体力（counted=False，不参与完成度判定；finished 对
+        零判定项恒 False，不会假「已完成」）。
         """
         tasks: List[TaskItem] = []
         current = _optional_int(data, "current_stamina")
