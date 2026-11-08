@@ -2368,7 +2368,7 @@ const GAME_ICON = {
   endfield:  '/static/icons/endfield',
   wuwa:      '/static/icons/wuwa',
   miyoushe:  '/static/icons/miyoushe',
-  kuro:      '/static/icons/wuwa',   // 平台胶囊复用鸣潮图标
+  kuro:      '/static/icons/kuro',    // 库街区 App 官方图标（平台与游戏分开）
   skland:    '/static/icons/skland'
 };
 
