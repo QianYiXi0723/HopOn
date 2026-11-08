@@ -180,7 +180,11 @@ class DailyReport:
         else:
             title = f"游戏日常：{len(self.finished)}/{total} 已完成"
         if self.resource_alerts:
-            title += f" · ⚠️ 体力将溢出（{len(self.resource_alerts)}）"
+            # 全部满格（current == max，恢复已停）时不再说「将溢出」——
+            # 2026-11-09 用户裁决：已满的就别说即将溢出
+            any_below_cap = any(a.current < a.maximum for a in self.resource_alerts)
+            word = "体力将溢出" if any_below_cap else "体力已满"
+            title += f" · ⚠️ {word}（{len(self.resource_alerts)}）"
         if self.activity_alerts:
             title += f" · 📅 活动将结束（{len(self.activity_alerts)}）"
         if self.activity_start_alerts:

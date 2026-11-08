@@ -84,6 +84,31 @@ def run():
     check("C3d 过期自愈", "路径过期" in r and state["enabled"] == 1
           and state["value"] == '"C:\\x\\HopOn.exe" --tray')
 
+    # ---- F 措辞裁决：已满就别说「即将溢出」（2026-11-09）----
+    from core.models import ResourceAlert
+    from core import analyzer as AN
+
+    def _alert(cur, mx):
+        return ResourceAlert(game_id="zzz", game_name="绝区零", nickname="绳匠",
+                             resource="电量", current=cur, maximum=mx, threshold=200)
+
+    check("F1 超上限", "已超出上限" in _alert(312, 240).warn_line()
+          and "超出 72 点" in _alert(312, 240).warn_line())
+    fw = _alert(240, 240).warn_line()
+    check("F2 已满不说即将溢出", "已满" in fw and "即将溢出" not in fw
+          and "停止恢复" in fw, fw)
+    fn = _alert(210, 240).warn_line()
+    check("F3 未满阈值内", "即将溢出" in fn and "已满" not in fn, fn)
+
+    # 徽章判定只读 current/maximum；正文行走真 ResourceAlert
+    rep = AN.DailyReport(statuses=[], resource_alerts=[_alert(240, 240)])
+    t_full = rep.to_push_payload()[0]
+    check("F4 全满格标题用「体力已满」", "体力已满（1）" in t_full
+          and "体力将溢出" not in t_full, t_full)
+    rep.resource_alerts = [_alert(210, 240)]
+    t_mixed = rep.to_push_payload()[0]
+    check("F5 未满格标题保留「将溢出」", "体力将溢出（1）" in t_mixed, t_mixed)
+
     failed = [n for n, ok in results if not ok]
     print(f"\n== {len(results) - len(failed)}/{len(results)} 通过 ==")
     return 1 if failed else 0
