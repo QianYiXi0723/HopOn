@@ -2206,7 +2206,7 @@ function renderLive(d){
     }).length;
     let msg;
     if (!enabledIds.length) msg = '没有启用的账号。';
-    else if (!boundN) msg = '启用的账号都还没绑定凭证——去「账号与通知」扫码登录后再来。';
+    else if (!boundN) msg = '启用的账号都还没绑定凭证——去「账号与通知」绑定后再来。';
     else msg = '暂无实时数据（凭证可能失效或角色未创建），稍后重试或查运行日志。';
     box.innerHTML = '<div class="emptybox">' + msg + '</div>';
   } else {

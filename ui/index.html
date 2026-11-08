@@ -74,8 +74,8 @@
 
   <!-- 演示模式欢迎横幅（出厂 provider=mock 时由 refreshNotice 点亮） -->
   <div class="welcome" id="welcome" hidden>
-    <span class="welcome-txt">👋 欢迎使用 HopOn！当前为<b>演示模式</b>，请先在左侧【账号绑定】中扫码登录，开始真实的日常巡查。</span>
-    <button type="button" class="btn sm" data-goto="account">去扫码登录 →</button>
+    <span class="welcome-txt">👋 欢迎使用 HopOn！当前为<b>演示模式</b>，请先在左侧【账号绑定】中登录账号，开始真实的日常巡查。</span>
+    <button type="button" class="btn sm" data-goto="account">去绑定账号 →</button>
     <button type="button" class="welcome-x" id="welcome-x" title="不再显示">×</button>
   </div>
 
@@ -183,8 +183,8 @@
       <!-- 扫码 + 游戏监控：同一任务（定范围 → 扫码），合并一卡避免空旷卡头 -->
       <section class="card">
         <div class="card-head">
-          <h2><svg class="ico"><use href="#i-key"/></svg> 扫码登录</h2>
-          <span class="q" data-tip="点击胶囊开始扫码，一次更新所选游戏的登录状态。胶囊上的黄点表示对应平台还有游戏未登录过，扫码后自动熄灭"></span>
+          <h2><svg class="ico"><use href="#i-key"/></svg> 账号绑定</h2>
+          <span class="q" data-tip="点击胶囊更新登录凭证：米游社 / 森空岛为扫码，库街区为验证码或 Token。胶囊上的黄点表示该平台还有游戏未绑定，绑定后自动熄灭"></span>
         </div>
         <div class="card-body">
           <div class="caps-row">
