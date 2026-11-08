@@ -1995,14 +1995,34 @@ def write_kuro(token: str, nickname: str = "", games: Optional[List[str]] = None
     if not targets:
         targets = ["wuwa", "pgr"]
     wuwa_name = ""
-    for game in targets:
-        name = _upsert(
-            game,
-            "指挥官" if game == "pgr" else (nickname or "漂泊者"),
-            enabled=True,
+    # token 刷新覆盖**所有已存在的库街区行**（wuwa/pgr）：库街区单设备登录，
+    # 每次 sdkLogin 的新 token 会让旧 token 全部失效——只写勾选的游戏会把
+    # 另一款的旧 token 留成死凭证（2026-11-09 用户先绑鸣潮再绑战双实测）。
+    # 勾选（targets）只决定：激活开关 + 不存在的行要不要创建。
+    for game in ("wuwa", "pgr"):
+        existing = any(
+            isinstance(a, dict) and a.get("game") == game
+            for a in raw.get("accounts", [])
         )
+        if existing:
+            _upsert(
+                game,
+                "指挥官" if game == "pgr" else (nickname or "漂泊者"),
+                enabled=game in targets,
+            )
+        elif game in targets:
+            _upsert(
+                game,
+                "指挥官" if game == "pgr" else (nickname or "漂泊者"),
+                enabled=True,
+            )
         if game == "wuwa":
-            wuwa_name = name
+            wuwa_name = next(
+                (str(a.get("nickname") or "漂泊者")
+                 for a in raw.get("accounts", [])
+                 if isinstance(a, dict) and a.get("game") == "wuwa"),
+                "漂泊者",
+            )
 
     query = raw.setdefault("query", {})
     if str(query.get("provider", "")).strip().lower() == "mock":

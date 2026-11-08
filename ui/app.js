@@ -4068,6 +4068,9 @@ function startKuro(){
 
 function startKuroDialog(){
   document.getElementById('kuro-stage').hidden = false;
+  // 每次进入都清空旧输入：短信码是一次性的，残留只会诱导误提交
+  document.getElementById('kuro-phone').value = '';
+  document.getElementById('kuro-code').value = '';
   kuroSwitchMode('sms');
   kuroStatus('');
   kuroTokenStatus('');
