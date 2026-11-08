@@ -1135,9 +1135,11 @@
     #tab-history > .card:last-child > div:not(.card-head){
       flex:0 0 auto;min-height:0;overflow-y:visible;padding-bottom:0}
     /* 小窗保留游戏图标（2026-11-09 用户裁决：纯文字不直观）——
-       缩号塞进标题行（概览 24 / 实时 22），卡片高度不变 */
+       缩号塞进标题行（概览 24 / 实时 22），卡片高度不变。
+       例外：本周汇总 chips 行 8 款连排太挤，小窗不显示图标 */
     .gcard-ico{width:24px;height:24px;border-radius:6px}
     .live-card-head .gcard-ico.gcard-ico{width:22px;height:22px}
+    .week-chip .gcard-ico{display:none}
     .gcard-name b{font-size:13px}
     .gcard-streak b{font-size:18px}
     .gcard{padding:10px 12px}
