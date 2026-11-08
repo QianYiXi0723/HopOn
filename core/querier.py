@@ -1188,6 +1188,7 @@ for _game_id in MOCK_TASKS:
 register_querier("miyoushe", "genshin", MiyousheQuerier)
 register_querier("miyoushe", "starrail", MiyousheQuerier)
 register_querier("miyoushe", "zzz", MiyousheQuerier)
+register_querier("miyoushe", "bh3", MiyousheQuerier)
 
 # skland：明日方舟 / 终末地走真实接口
 register_querier("skland", "arknights", SklandQuerier)

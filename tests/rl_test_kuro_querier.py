@@ -156,6 +156,8 @@ def run():
     # ---- B9 战双（pgr）路由与解析 ----
     qp = Q.get_querier("pgr", "miyoushe")
     check("B9a pgr 自动挂 kuro", type(qp).__name__ == "KuroQuerier")
+    # bh3 必须注册在 miyoushe 桶内（漏注册会静默回退 mock——曾致 bh3 显示假「每日任务 0/1」）
+    check("B9e bh3 注册 miyoushe", type(Q.get_querier("bh3", "miyoushe")).__name__ == "MiyousheQuerier")
     pgr_sample = {
         "roleId": "46218962", "roleName": "指挥官", "serverTime": 1719475203,
         "actionData": {"name": "血清", "cur": 145, "total": 240,
