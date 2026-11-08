@@ -126,11 +126,12 @@ def _render_page() -> str:
 
 logger = logging.getLogger("dailycheck.loginui")
 
-#: 米游社三款游戏：id -> 显示名
+#: 米游社四款游戏：id -> 显示名
 MIHOYO_GAMES: Dict[str, str] = {
     "genshin": "原神",
     "starrail": "崩坏：星穹铁道",
     "zzz": "绝区零",
+    "bh3": "崩坏3",
 }
 
 #: 森空岛两款游戏：id -> 显示名

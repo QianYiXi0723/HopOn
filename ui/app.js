@@ -442,6 +442,11 @@ async function start(provider, targets){
 
 /* ---------- 两步式扫码：第一步先选游戏，第二步才生成二维码 ---------- */
 const PROVIDER_OF = { m: 'mihoyo', s: 'skland' };
+/* 未绑定（后端还没有账号行）时的显示名兜底——选卡弹窗不能露出裸 id */
+const GAME_LABELS = {
+  genshin: '原神', starrail: '崩坏：星穹铁道', zzz: '绝区零', bh3: '崩坏3',
+  arknights: '明日方舟', endfield: '明日方舟：终末地', wuwa: '鸣潮', pgr: '战双帕弥什',
+};
 let kuroBindTargets = ['wuwa', 'pgr'];   // 库街区绑定目标（选卡弹窗决定，默认两款）
 const PROVIDER_LABEL = { m: '米游社', s: '森空岛' };
 let pickGroup = null;
@@ -455,7 +460,7 @@ function openPickModal(group, forced){
   const boxes = [...document.querySelectorAll('input[name="' + group + '"]')];
   document.getElementById('pick-list').innerHTML = boxes.map(function(b){
     const it = accs[b.value] || {};
-    const name = it.name || b.value;
+    const name = it.name || GAME_LABELS[b.value] || b.value;
     const bound = it.has_credential === true;
     const known = it.has_credential === true || it.has_credential === false;
     const stateText = bound ? '已绑定凭证' : (known ? '未绑定' : '凭证状态未知');
