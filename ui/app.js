@@ -2445,19 +2445,22 @@ function actCardHtml(it, isHero, heroSlim){
     ? '<span class="act-reward" title="' + escHtml(it.reward) + ' · 抽卡资源">' + escHtml(it.reward) + '</span>'
     : '';
   const prog = actProgHtml(it);
-  /* 合并组卡：成员小字清单（这才是「有信息的 2x2」）；× 不渲染——
-     data-del 只认单活动 id，成员随窗口结束自然拆回，拆回后单卡再删 */
-  const mergedList = (it.merged && it.merged.length > 1)
-    ? '<div class="act-merged">' + it.merged.map(function(t){
-        return '<div>· ' + escHtml(t) + '</div>';
-      }).join('') + '</div>'
-    : '';
+  /* 合并组卡（2026-11-09 用户裁决三连）：成员清单不再占卡体——
+     光标悬浮经 data-tip 显示全部成员；× 整组删除（逐个写黑名单）。
+     卡体与普通卡同构同高 */
+  const mergedList = '';
   const delBtn = it.merged
-    ? '<span class="act-merged-tag">' + it.merged.length + ' 项同止</span>'
+    ? '<span class="act-merged-tag">' + it.merged.length + ' 项同止</span>' +
+      '<button type="button" class="act-del" onclick="deleteMergedActivity(this)" data-del-merged="' +
+      escHtml((it.merged_ids || []).join(',')) + '" title="整组删除，之后这 ' +
+      it.merged.length + ' 项都不再提醒">×</button>'
     : '<button type="button" class="act-del" data-del="' + id +
       '" title="删除，之后不再提醒">×</button>';
+  const memberTip = (it.merged && it.merged.length > 1)
+    ? ' data-tip="同止成员：' + escHtml(it.merged.join(' · ')) + '"'
+    : '';
   return '<div class="card acard' + (isHero && !heroSlim ? ' hero' : '') + '"' +
-    actUrgencyAttr(it, isHero) + ' data-id="' + id + '"' +
+    actUrgencyAttr(it, isHero) + ' data-id="' + id + '"' + memberTip +
     ' style="--gc:' + gameDotColor(it.game) + '">' +
     '<div class="acard-top"><span class="act-game">' + actIconHtml(it) +
       '<span class="act-name">' + escHtml(it.game_name) + '</span></span>' +
@@ -2466,7 +2469,6 @@ function actCardHtml(it, isHero, heroSlim){
     '<div class="act-time ' + timeCls + '">始 ' + (st || '时间待定') +
       (en ? ' · 止 ' + en : '') + '</div>' +
     '<div class="act-cd ' + cdCls + '">' + escHtml(it.countdown || '') + '</div>' +
-    mergedList +
     prog +
     '</div>';
 }
@@ -2510,6 +2512,7 @@ function buildMergedItem(members){
     reward: rewards.join('、'),
     progress: '',
     merged: members.map(function(x){ return x.title || ''; }),
+    merged_ids: members.map(function(x){ return x.id || ''; }),
   });
 }
 
@@ -2659,6 +2662,29 @@ function renderActivities(d){
         }).join('')
       : '';
   }
+}
+
+/* 合并组卡整组删除：逐个写黑名单（data-del-merged 逗号分隔的成员 id），
+   全部成功后重载活动列表；部分失败如实提示 */
+async function deleteMergedActivity(btn){
+  const ids = (btn.getAttribute('data-del-merged') || '').split(',').filter(Boolean);
+  const row = btn.closest('.acard');
+  btn.disabled = true;
+  let fail = 0;
+  for (const id of ids) {
+    try {
+      const d = await postJSON('/api/activities/delete', { id: id });
+      if (!d || d.ok === false) fail++;
+    } catch (e) { fail++; }
+  }
+  if (fail) {
+    btn.disabled = false;
+    toast('整组删除部分失败（' + fail + '/' + ids.length + ' 项），请重试', true);
+    return;
+  }
+  if (row) row.remove();
+  toast('已删除整组 ' + ids.length + ' 项同止活动');
+  loadActivities();
 }
 
 /* 打开设备信息.apk 所在文件夹（资源管理器选中文件）——
