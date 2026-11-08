@@ -846,11 +846,12 @@
   /* ---------- 活动日历卡片流（auto-fill 等高卡片流，所有卡片一律等大） ---------- */
   .act-grid{display:grid;
             grid-template-columns:repeat(auto-fill, minmax(min(320px, 100%), 1fr));
-            gap:16px;grid-auto-flow:dense;grid-auto-rows:1fr}
+            gap:16px;grid-auto-flow:dense;grid-auto-rows:auto;
+            align-items:start}
   .act-grid > *{min-width:0}
   /* 卡片底色比页面卡面再提亮一档，靠色阶分层，不用描边 */
   .acard{display:flex;flex-direction:column;gap:5px;position:relative;
-         min-height:96px;justify-content:space-between;
+         justify-content:flex-start;
          padding:10px 12px;font-size:12px;
          background:var(--bg-raise)}
   /* 游戏色条（2026-11-01 方案 A）：左缘 3px 签名色（--gc 由 JS 按游戏写入，
