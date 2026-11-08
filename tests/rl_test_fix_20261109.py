@@ -74,14 +74,14 @@ def run():
     check("C3a 意图关不动", A.self_heal(False) == "" and state["enabled"] == 0)
     # 意图开 + 键丢失 → 重写
     r = A.self_heal(True)
-    check("C3b 丢失自愈", r == "healed" and state["enabled"] == 1)
+    check("C3b 丢失自愈", "自愈重写" in r and state["enabled"] == 1, r)
     # 意图开 + 已对齐 → 不动
     state["enabled"] = 0
     check("C3c 对齐不动", A.self_heal(True) == "" and state["enabled"] == 0)
     # 意图开 + 路径过期 → 重写
     state["value"] = '"E:\\旧目录\\HopOn.exe" --tray'
     r = A.self_heal(True)
-    check("C3d 过期自愈", r == "healed" and state["enabled"] == 1
+    check("C3d 过期自愈", "路径过期" in r and state["enabled"] == 1
           and state["value"] == '"C:\\x\\HopOn.exe" --tray')
 
     failed = [n for n, ok in results if not ok]
