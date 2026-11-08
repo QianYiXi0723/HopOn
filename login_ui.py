@@ -1863,6 +1863,10 @@ def save_schedule(times: Any) -> Dict[str, Any]:
     return result
 
 
+#: 后加游戏的默认昵称（补行用；与 DEFAULT_CONFIG 模板一致）
+_MISSING_ACCOUNT_NICKNAMES = {"bh3": "舰长", "pgr": "指挥官", "wuwa": "漂泊者"}
+
+
 @_serialized_write
 def write_mihoyo(
     cookie: str,
@@ -1901,10 +1905,19 @@ def write_mihoyo(
             updated.append(str(account.get("nickname") or MIHOYO_GAMES.get(game, game)))
         else:
             absent.append(game)
+    # 存量配置没有的后加游戏（如崩坏3）：按出厂模板补行再写（与 write_kuro
+    # 同款可创建语义——扫码勾选不该被「找不到节点」挡住）
     present = {a.get("game") for a in raw.get("accounts", [])}
     missing = wanted - present
     if missing:
-        raise RuntimeError(f"config.json 里找不到这些游戏节点：{', '.join(sorted(missing))}")
+        for game in sorted(missing):
+            raw.setdefault("accounts", []).append({
+                "game": game,
+                "nickname": _MISSING_ACCOUNT_NICKNAMES.get(game, game),
+                "enabled": True,
+                "credential": {},
+            })
+        logger.info("补建缺失账号节点：%s（存量配置迁移）", ", ".join(sorted(missing)))
     if not updated and not absent:
         raise RuntimeError("没有写入任何游戏，请检查 config.json 的 accounts")
 
