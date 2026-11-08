@@ -1955,13 +1955,13 @@ def write_skland(target: str, token: str) -> str:
 
 
 @_serialized_write
-def write_kuro(token: str, nickname: str = "") -> str:
-    """写入库街区 token（鸣潮+战双，同一张 token 覆盖两款）。
+def write_kuro(token: str, nickname: str = "", games: Optional[List[str]] = None) -> str:
+    """写入库街区 token。games=None 时两款全写（兼容旧调用）；
+    传入白名单（选卡弹窗勾选）则只写勾选的游戏——绑定即开启对应开关。
 
     与 write_skland 的差异：**可创建账号行**——森空岛上线时全量注入过账号
     节点，鸣潮/战双是后加游戏，存量 config.json 里没有，找不到就按出厂
-    模板形态补行。战双默认 enabled=False（只玩鸣潮的用户自行在监控抽屉
-    勾选），鸣潮绑定即开。
+    模板形态补行。
     """
     raw = load_raw_config()
     now_text = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -1990,9 +1990,18 @@ def write_kuro(token: str, nickname: str = "") -> str:
             hit["enabled"] = True   # 绑定了就参与巡检；不想查可以再关开关
         return str(hit.get("nickname") or nickname_default)
 
-    wuwa_name = _upsert("wuwa", nickname or "漂泊者", enabled=True)
-    # 战双同 token 落一份，默认关（只玩鸣潮的用户自行在监控抽屉勾选）
-    _upsert("pgr", "指挥官", enabled=False)
+    targets = [g for g in (games or ["wuwa", "pgr"]) if g in ("wuwa", "pgr")]
+    if not targets:
+        targets = ["wuwa", "pgr"]
+    wuwa_name = ""
+    for game in targets:
+        name = _upsert(
+            game,
+            "指挥官" if game == "pgr" else (nickname or "漂泊者"),
+            enabled=True,
+        )
+        if game == "wuwa":
+            wuwa_name = name
 
     query = raw.setdefault("query", {})
     if str(query.get("provider", "")).strip().lower() == "mock":
@@ -2832,7 +2841,9 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     roles = check.get("wuwa_roles") or []
                     nickname = str(roles[0].get("roleName") or "") if roles else ""
-                    saved_name = write_kuro(token, nickname)
+                    saved_name = write_kuro(
+                        token, nickname,
+                        games=payload.get("games") if isinstance(payload.get("games"), list) else None)
                     self._json({"ok": True, "nickname": saved_name,
                                 "message": f"已绑定库街区账号：{saved_name}"})
                 except Exception as exc:  # noqa: BLE001
@@ -2884,7 +2895,9 @@ class Handler(BaseHTTPRequestHandler):
                         nickname = str((wuwa_roles or roles or [{}])[0].get("roleName") or "")
                     except Exception:  # noqa: BLE001 - 拉角色失败不挡绑定
                         nickname = str(data.get("userName") or "")
-                    saved_name = write_kuro(token, nickname)
+                    saved_name = write_kuro(
+                        token, nickname,
+                        games=payload.get("games") if isinstance(payload.get("games"), list) else None)
                     self._json({"ok": True, "nickname": saved_name,
                                 "message": f"已绑定库街区账号：{saved_name}"
                                            "（注意：手机上的库街区 App 已被顶下线）"})

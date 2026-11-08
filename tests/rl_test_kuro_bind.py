@@ -132,6 +132,14 @@ def run():
           and str(pgr[0]["credential"]["token"]).startswith("dpapi:v1:")
           and pgr[0]["enabled"] is True)
 
+    # games 白名单：只写勾选的游戏（未勾选的行不动——pgr 保持上一次的 token）
+    login_ui.write_kuro("eyJtok-sel", "漂泊者丙", games=["wuwa"])
+    raw_s = json.loads(cfg.read_text(encoding="utf-8"))
+    wuwa_s = next(a for a in raw_s["accounts"] if a.get("game") == "wuwa")
+    pgr_s = next(a for a in raw_s["accounts"] if a.get("game") == "pgr")
+    check("D3i 白名单只动勾选", decrypt_value(wuwa_s["credential"]["token"]) == "eyJtok-sel"
+          and decrypt_value(pgr_s["credential"]["token"]) == "eyJtok123")
+
     # 有行更新：只动 token/昵称，enabled=false 被拉起
     raw2 = json.loads(cfg.read_text(encoding="utf-8"))
     for a in raw2["accounts"]:

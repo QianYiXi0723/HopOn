@@ -442,12 +442,15 @@ async function start(provider, targets){
 
 /* ---------- 两步式扫码：第一步先选游戏，第二步才生成二维码 ---------- */
 const PROVIDER_OF = { m: 'mihoyo', s: 'skland' };
+let kuroBindTargets = ['wuwa', 'pgr'];   // 库街区绑定目标（选卡弹窗决定，默认两款）
 const PROVIDER_LABEL = { m: '米游社', s: '森空岛' };
 let pickGroup = null;
 
 /* 点胶囊 → 打开选择弹窗（默认勾选已绑定凭证的游戏，未绑定不勾） */
 function openPickModal(group, forced){
   pickGroup = group;
+  const pickBtn = document.getElementById('btn-pick-next');
+  if (pickBtn) pickBtn.textContent = group === 'k' ? '下一步：绑定账号' : '下一步：生成二维码';
   const accs = window.__accounts || {};
   const boxes = [...document.querySelectorAll('input[name="' + group + '"]')];
   document.getElementById('pick-list').innerHTML = boxes.map(function(b){
@@ -522,6 +525,13 @@ function confirmPick(){
   if (!targets.length || !pickGroup) return;
   const group = pickGroup;
   closePick();
+  if (group === 'k') {
+    /* 库街区没有扫码——选完游戏进「验证码/Token」绑定弹窗，
+       绑定结果只写进勾选的游戏 */
+    kuroBindTargets = targets.slice();
+    startKuroDialog();
+    return;
+  }
   start(PROVIDER_OF[group], targets);
 }
 
@@ -4052,6 +4062,11 @@ let kuroSmsTimer = null;
 let kuroSmsLeft = 0;
 
 function startKuro(){
+  /* 库街区绑定与米游社/森空岛同流程：先选游戏，再进绑定弹窗 */
+  openPickModal('k');
+}
+
+function startKuroDialog(){
   document.getElementById('kuro-stage').hidden = false;
   kuroSwitchMode('sms');
   kuroStatus('');
@@ -4203,7 +4218,7 @@ function kuroLogin(){
   const btn = document.getElementById('btn-kuro-login');
   btn.disabled = true;
   kuroStatus('正在登录…');
-  postJSON('/api/kuro/sms/login', { mobile: kuroPhone(), code: code })
+  postJSON('/api/kuro/sms/login', { mobile: kuroPhone(), code: code, games: kuroBindTargets })
     .then(function(d){
       btn.disabled = false;
       if (!d || !d.ok) { kuroStatus((d && d.error) || '登录失败', 'err'); return; }
@@ -4220,7 +4235,7 @@ function kuroSaveToken(){
   const btn = document.getElementById('btn-kuro-save');
   btn.disabled = true;
   kuroTokenStatus('正在校验…');
-  postJSON('/api/kuro/save', { token: token })
+  postJSON('/api/kuro/save', { token: token, games: kuroBindTargets })
     .then(function(d){
       btn.disabled = false;
       if (!d || !d.ok) { kuroTokenStatus((d && d.error) || '校验未通过', 'err'); return; }
