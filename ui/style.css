@@ -1220,13 +1220,17 @@
      「宽度由列数吸收」的正确机制；420px 下限保证卡内进度条不失真 */
   #live-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
   #live-grid .emptybox{grid-column:1/-1}
-  .live-card{background:var(--bg-elevated);border-radius:8px;padding:14px 16px;min-width:0;
+  .live-card{background:var(--bg-raise);border-radius:8px;padding:14px 16px;min-width:0;
              position:relative}
   /* 游戏身份色条（与 .acard 同机制同色源）：概览卡/实时卡左缘 3px 签名色 */
   .gcard,.live-card{position:relative}
   .gcard::before,.live-card::before{content:"";position:absolute;left:0;top:0;bottom:0;
     width:3px;border-radius:8px 0 0 8px;background:var(--gc,transparent)}
-  .live-card-head{display:flex;align-items:center;gap:8px}
+  .live-card-head{display:flex;align-items:center;gap:8px;
+    background:var(--bg-head);
+    background:color-mix(in srgb, var(--gc,transparent) 7%, var(--bg-head));
+    margin:-14px -16px 0;padding:10px 16px 8px;
+    border-radius:8px 8px 0 0}
   .live-card-head .gcard-ico{width:28px;height:28px;border-radius:8px;margin-right:0}
   .live-name{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .live-msg{margin-top:10px;font-size:12px;line-height:1.6;word-break:break-all}
