@@ -2264,9 +2264,16 @@ function renderLive(d){
           '<div class="live-msg err-t">' + escHtml(g.error || '未知错误') + '</div></div>';
       }
       if (g.stale) {
-        /* 日常 04:00 已归零 ≠ 失败：等玩家上线，数据自然更新 */
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st">待上线更新</span></div>' +
-          '<div class="live-msg dim">' + escHtml(g.stale) + '</div></div>';
+        /* 日常 04:00 已归零 ≠ 失败：等玩家上线，数据自然更新。
+           待上线 ≠ 没数据：体力节点照常渲染（风控冷却分支同款形态）——
+           鸣潮「每日活跃未解锁」场景下波片是真实可用的（2026-11-09 用户实测） */
+        let body = '<div class="live-msg dim">' + escHtml(g.stale) + '</div>';
+        if (g.resource && g.resource.current != null) {
+          body = '<div class="live-res"><b class="mono">' + g.resource.current +
+            ' <span class="dim">/ ' + (g.resource.maximum == null ? '?' : g.resource.maximum) +
+            '</span></b><span class="dim">' + escHtml(g.resource.name || '') + '</span></div>' + body;
+        }
+        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st">待上线更新</span></div>' + body + '</div>';
       }
       if (g.no_account) {
         /* 未创建角色 ≠ 失败：凭证有效，建号后自动生效 */
