@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
@@ -937,6 +938,11 @@ class KuroQuerier(BaseQuerier):
         tasks = (self.parse_wuwa(data) if account.game == "wuwa"
                  else self.parse_pgr(data))
         nickname = str(data.get("roleName") or "") or account.nickname
+        # 库洛服务器偶发把 roleName 返回成内部 ID 样式的脏值（实测
+        # "c404d040"），无条件回填会污染 config 昵称——纯十六进制长串不回填
+        if re.fullmatch(r"[0-9a-fA-F]{8,}", nickname or ""):
+            logger.warning("%s roleName 疑似脏值（%r），跳过昵称回填", account.game, nickname)
+            nickname = account.nickname
         if nickname:
             account.nickname = nickname
         return self.build_status(
