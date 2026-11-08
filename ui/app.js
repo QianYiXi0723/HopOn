@@ -4063,7 +4063,10 @@ function kuroPhone(){
   return document.getElementById('kuro-phone').value.trim();
 }
 
-/* 极验 v4 懒初始化：gt4.js 在 head 里 defer 加载；失败置 broken 引导 token 模式 */
+/* 极验 v4 懒初始化：gt4.js 在 head 里 defer 加载；失败置 broken 引导 token 模式。
+   关键参数对齐 Arietta（WebView2 实测可弹的参考实现）：product='bind' +
+   showBox() 弹窗、protocol 强制 https——http 页面下 geetest 自动探测出
+   http:// 端点，showCaptcha() 全程静默不弹（2026-11-09 真机取证）。 */
 function kuroEnsureCaptcha(){
   return new Promise(function(resolve, reject){
     if (kuroCaptcha) { resolve(kuroCaptcha); return; }
@@ -4072,22 +4075,63 @@ function kuroEnsureCaptcha(){
       reject(new Error('人机验证组件未加载（需要联网访问极验）'));
       return;
     }
-    window.initGeetest4({
-      captchaId: 'ec4aa4174277d822d73f2442a165a2cd',
-      product: 'popup',
-      language: 'zho',
-    }, function(captchaObj){
-      kuroCaptcha = captchaObj;
-      captchaObj.onSuccess(function(){
-        const v = captchaObj.getValidate();
-        if (!v) return;
-        kuroDoSendSms(JSON.stringify(v));
-        captchaObj.reset();
+    let settled = false;
+    const done = function(fn, arg){ if (!settled) { settled = true; fn(arg); } };
+    const fallback = setTimeout(function(){
+      done(reject, new Error('人机验证初始化超时（极验接口连不上），可改用「Token 粘贴」模式'));
+    }, 10000);
+    try {
+      window.initGeetest4({
+        captchaId: 'ec4aa4174277d822d73f2442a165a2cd',
+        product: 'bind',
+        language: 'zho',
+        protocol: 'https://',
+      }, function(captchaObj){
+        kuroCaptcha = captchaObj;
+        // bind 模式必须先 appendTo 挂载再 showCaptcha，否则弹窗静默不出现
+        //（真机取证：缺这步时 onBoxShow 永不触发、display 恒 none）
+        try { captchaObj.appendTo(document.getElementById('kuro-captcha')); } catch (e) {}
+        captchaObj.onSuccess(function(){
+          const v = captchaObj.getValidate();
+          if (!v) return;
+          kuroDoSendSms(JSON.stringify(v));
+          captchaObj.reset();
+        });
+        captchaObj.onError(function(){
+          kuroStatus('人机验证出错，请重试', 'err');
+          try { captchaObj.reset(); } catch (e) {}
+        });
+        captchaObj.onClose(function(){
+          kuroStatus('人机验证已关闭，点「发送验证码」重新开始');
+        });
+        captchaObj.onReady(function(){
+          clearTimeout(fallback);
+          done(resolve, captchaObj);
+        });
       });
-      captchaObj.onReady(function(){ resolve(captchaObj); });
-      setTimeout(function(){ resolve(captchaObj); }, 4000);  // onReady 兜底
-    });
+    } catch (e) {
+      clearTimeout(fallback);
+      done(reject, new Error('人机验证初始化异常：' + e.message));
+    }
   });
+}
+
+/* bind 模式弹窗：showBox 与 showCaptcha 双保险（v4 版本间 API 命名有漂移），
+   并给「弹不出来」一个明确的失败反馈，绝不无限卡在「正在唤起」 */
+function kuroShowCaptcha(captcha){
+  try { if (typeof captcha.showBox === 'function') captcha.showBox(); } catch (e) {}
+  try { if (typeof captcha.showCaptcha === 'function') captcha.showCaptcha(); } catch (e) {}
+  setTimeout(function(){
+    // 可见性看 .geetest_box（真身 340x386）；box_wrap 是定位壳，恒 0 高
+    const box = document.querySelector('[class*="geetest_box_wrap"] .geetest_box');
+    const visible = box && getComputedStyle(box).display !== 'none'
+      && box.getBoundingClientRect().height > 0;
+    if (!visible) {
+      kuroStatus('验证窗口未能弹出（网络或组件异常），请重试或改用「Token 粘贴」模式', 'err');
+    } else {
+      kuroStatus('请完成滑块验证，通过后自动发送短信');
+    }
+  }, 1500);
 }
 
 function kuroSendSms(){
@@ -4101,7 +4145,7 @@ function kuroSendSms(){
   kuroStatus('正在唤起人机验证…');
   kuroEnsureCaptcha().then(function(captcha){
     btn.disabled = false;
-    captcha.showCaptcha();          // 用户手动过验证，成功回调里真正发码
+    kuroShowCaptcha(captcha);       // 用户手动过验证，成功回调里真正发码
   }).catch(function(err){
     btn.disabled = false;
     kuroStatus(err.message + '。可改用「Token 粘贴」模式绑定', 'err');
