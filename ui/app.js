@@ -2265,8 +2265,15 @@ function renderLive(d){
       }
       const pct = (r.percent == null) ? 0 : r.percent;
       const max = (r.maximum == null) ? '?' : r.maximum;
+      /* 绝区零边界标注（2026-11-09 实测）：米游社接口对电量满时把道具溢出
+         截断在 max——游戏内 300 接口只报 240，且无备用字段可推算。
+         满格时悬浮说明，防止「游戏内明明更多」的困惑。 */
+      const capTip = (g.game === 'zzz' && r.current != null && max != '?' &&
+                      r.current >= r.maximum)
+        ? ' title="已满。米游社接口不含溢出部分：游戏内用道具超出 240 的体力无法显示（接口无对应字段）"'
+        : '';
       return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + st + '</div>' +
-        '<div class="live-res"><b class="mono">' + r.current +
+        '<div class="live-res"' + capTip + '><b class="mono">' + r.current +
         ' <span class="dim">/ ' + max + '</span></b><span class="dim">' +
         escHtml(r.name) + '</span></div>' +
         '<div class="bar"><i class="' + (pct >= 85 ? 'hot' : '') +
