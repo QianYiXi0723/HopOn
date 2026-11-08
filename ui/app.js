@@ -2258,41 +2258,14 @@ function renderLive(d){
            .live-card-head；body 之后必须再补一个 </div> 才闭合 .live-card。
            2026-11-05 修复：原写法漏了末尾这个（只有 1 个 </div>），导致整张卡
            不闭合、后续游戏卡全被吞进第一张里，网格塌成一列、卡高变 0。 */
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st warn">风控冷却中</span></div>' + body + '</div>';
+        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '</div>' + body + '</div>';
       }
-      /* 占位卡：新勾选的游戏缓存里还没查询结果 —— 诚实占位，不伪造数据 */
-      if (g.placeholder) {
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st">尚未查询</span></div>' +
-          '<div class="live-msg dim">点「刷新」查询实时体力，或等下一轮定时巡检。</div></div>';
-      }
-      if (!g.ok) {
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st err">失败</span></div>' +
-          '<div class="live-msg err-t">' + escHtml(g.error || '未知错误') + '</div></div>';
-      }
-      if (g.stale) {
-        /* 日常 04:00 已归零 ≠ 失败：等玩家上线，数据自然更新。
-           待上线 ≠ 没数据：体力节点照常渲染（风控冷却分支同款形态）——
-           鸣潮「每日活跃未解锁」场景下波片是真实可用的（2026-11-09 用户实测） */
-        let body = '<div class="live-msg dim">' + escHtml(g.stale) + '</div>';
-        if (g.resource && g.resource.current != null) {
-          body = '<div class="live-res"><b class="mono">' + g.resource.current +
-            ' <span class="dim">/ ' + (g.resource.maximum == null ? '?' : g.resource.maximum) +
-            '</span></b><span class="dim">' + escHtml(g.resource.name || '') + '</span></div>' + body;
-        }
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st">待上线更新</span></div>' + body + '</div>';
-      }
-      if (g.no_account) {
-        /* 未创建角色 ≠ 失败：凭证有效，建号后自动生效 */
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st">未创建角色</span></div>' +
-          '<div class="live-msg dim">' + escHtml(g.no_account) + '</div></div>';
-      }
-      const st = g.finished ? '<span class="st ok">已完成</span>'
-                            : '<span class="st warn">未完成</span>';
-      const r = g.resource;
-      if (!r || r.current == null) {
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + st + '</div>' +
-          '<div class="live-msg dim">暂不支持体力查询</div></div>';
-      }
+      /* 2026-11-09 用户裁决：实时体力 = 纯体力视图，与日常进度无关——
+         无体力数据的游戏（失败/待上线/未建号/未解锁）不在这里出现，
+         其状态由游戏概览的日常进度行承接。冷却卡保留（缓存体力仍可用） */
+      if (g.placeholder || !g.ok || g.no_account) return '';
+      let r = g.resource;
+      if (!r || r.current == null) return '';   /* 含未解锁/风控：概览承接 */
       const pct = (r.percent == null) ? 0 : r.percent;
       const max = (r.maximum == null) ? '?' : r.maximum;
       /* 绝区零边界标注（2026-11-09 实测）：米游社接口对电量满时把道具溢出
@@ -2302,7 +2275,7 @@ function renderLive(d){
                       r.current >= r.maximum)
         ? ' title="已满。米游社接口不含溢出部分：游戏内用道具超出 240 的体力无法显示（接口无对应字段）"'
         : '';
-      return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + st + '</div>' +
+      return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '</div>' +
         '<div class="live-res"' + capTip + '><b class="mono">' + r.current +
         ' <span class="dim">/ ' + max + '</span></b><span class="dim">' +
         escHtml(r.name) + '</span></div>' +
@@ -3028,27 +3001,18 @@ function gameCardHtml(g){
     badge = '<span class="badge warn">未完成 ' + (today.unfinished_tasks || 0) + ' 项</span>';
   }
 
-  /* 体力（一眼层）：数值/进度条/预计回满，实时化成果原样保留。
-     三态全用真实值（2026-11-07 用户终裁）：未满 N/N、满 N/N、
-     道具突破上限后 N/N（current 原样透传，服务器给多少显示多少）——
-     「已满」只出现在进度条悬浮提示里，不替代数字 */
-  let stamina;
-  if (live && live.percent != null) {
-    const full = live.current >= live.maximum;
-    const over = live.current > live.maximum;
-    const hot = live.percent >= 85;
-    const tip = over ? '超出上限 ' + (live.current - live.maximum) + '（道具/效果临时提升）'
-      : full ? '体力已满' : '';
-    stamina = '<div class="gcard-stam"><span class="dim">' + escHtml(live.name || '体力') +
-      '</span><span class="sbar"><i class="' + (hot ? 'hot' : '') +
-      '" style="width:' + live.percent + '%"></i><i class="progress-glow' +
-      (hot ? ' hot' : '') + '" style="left:' + live.percent + '%"></i></span>' +
-      '<span class="mono"' + (tip ? ' title="' + escHtml(tip) + '"' : '') + '>' +
-      live.current + '/' + live.maximum + '</span>' +
-      staminaEtaHtml(gid, live) + '</div>';
+  /* 日常进度（一眼层，2026-11-09 用户裁决）：体力条与实时体力页功能重合
+     删除，改显日常任务进度（委托 0/4 · 实训 0/500 式）；无日常判定数据的
+     游戏（未解锁/风控）显示原因文案——状态解释从实时页搬到这里承接 */
+  let daily;
+  if (raw && raw.stale) {
+    daily = '<div class="gcard-daily"><span class="dim">' + escHtml(raw.stale) + '</span></div>';
+  } else if (live && (live.tasks || []).length) {
+    daily = taskProgressHtml(live.tasks);
+  } else if (raw && raw.no_account) {
+    daily = '<div class="gcard-daily"><span class="dim">' + escHtml(raw.no_account) + '</span></div>';
   } else {
-    stamina = '<div class="gcard-stam"><span class="dim">体力</span>' +
-      '<span class="dim">到「信息查询」查询后显示</span></div>';
+    daily = '<div class="gcard-daily"><span class="dim">今日无日常判定数据</span></div>';
   }
 
   /* 回顾信息（悬浮层）：上次检查｜每日任务明细｜本月统计。
@@ -3086,7 +3050,7 @@ function gameCardHtml(g){
       '<div class="gcard-streak"><b class="value">' + Number(g.streak || 0) + '</b><small>连续天数' +
         (streakAtRisk ? ' · <span style="color:var(--warn)">今天别断</span>' : '') + '</small></div>' +
     '</div>' +
-    stamina +
+    daily +
     '</div>';
 }
 

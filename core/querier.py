@@ -459,6 +459,13 @@ class MiyousheQuerier(BaseQuerier):
                 recover_seconds=normalize_recover_seconds(
                     _optional_int(data, "stamina_recover_time")),
             ))
+        # 每日训练 = 崩3的日常判定锚点（真机便签实测 0/600，与星铁
+        # current_train_score 同名字段同语义；total=0 护栏同族）
+        train_now = _optional_int(data, "current_train_score")
+        train_max = _optional_int(data, "max_train_score")
+        if train_now is not None and train_max and train_max > 0:
+            tasks.append(TaskItem(
+                "每日训练", train_now >= train_max, f"{train_now}/{train_max}"))
         return tasks
 
     _PARSERS = {
