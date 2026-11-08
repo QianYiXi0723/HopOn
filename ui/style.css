@@ -849,9 +849,9 @@
             gap:16px;grid-auto-flow:dense;grid-auto-rows:1fr}
   .act-grid > *{min-width:0}
   /* 卡片底色比页面卡面再提亮一档，靠色阶分层，不用描边 */
-  .acard{display:flex;flex-direction:column;gap:8px;position:relative;
-         min-height:120px;justify-content:space-between;
-         padding:16px 16px;font-size:12px;
+  .acard{display:flex;flex-direction:column;gap:5px;position:relative;
+         min-height:96px;justify-content:space-between;
+         padding:10px 12px;font-size:12px;
          background:var(--bg-raise)}
   /* 游戏色条（2026-11-01 方案 A）：左缘 3px 签名色（--gc 由 JS 按游戏写入，
      与热力图圆点同色）；::before 内绘制零布局位移 */
@@ -863,10 +863,9 @@
   .act-group-head{display:flex;align-items:center;gap:8px;
     font-size:12px;font-weight:600;color:var(--text-secondary)}
   .act-group-head .act-group-count{color:var(--text-tertiary);font-weight:400}
-  /* 最紧急 1 张：英雄卡只跨 2 列、行高正常（2026-11-09 用户实测 2x2
-     被合并组卡的高行高撑成 780px 空壳/邻居被拉伸）——双列宽度已足够
-     突出，不再跨行 */
-  .acard.hero{grid-column:span 2;padding:20px 20px}
+  /* 最紧急 1 张：2x2 英雄卡（2026-11-09 用户裁决恢复——之前嫌大的是
+     普通卡太高，英雄 2x2 配合普通卡压缩一起落地） */
+  .acard.hero{grid-column:span 2;grid-row:span 2;padding:14px 16px}
   /* 标题字号/钳制移至 .acard-title-txt（标题行改弹性两栏后钳制随文本走） */
   .acard.hero .act-time{font-size:1.1em}
   .acard.hero .act-cd{font-size:2em;font-weight:800}
@@ -879,7 +878,7 @@
   .acard-top{display:flex;align-items:center;gap:8px;min-width:0;
     background:var(--bg-head);
     background:color-mix(in srgb, var(--gc,transparent) 7%, var(--bg-head));
-    margin:-14px -16px 0;padding:10px 16px 8px;
+    margin:-10px -12px 0;padding:8px 12px 6px;
     border-radius:8px 8px 0 0}
   .acard-top .act-icon{flex:none;border-radius:8px;object-fit:cover}
   /* 无图标时的文字占位：与真实图标同尺寸同圆角，避免两种形态形状不一致 */
@@ -897,7 +896,7 @@
   /* 标题行 = 弹性两栏：标题文本左（截断省略），奖励徽章钉最右（2026-11-06
      用户点名：菲林/星琼不许再和标题融为一体） */
   .acard-title{display:flex;align-items:center;gap:10px;margin:0;min-width:0}
-  .acard-title-txt{flex:1 1 auto;min-width:0;font-size:1.15em;font-weight:600;line-height:1.5;
+  .acard-title-txt{flex:1 1 auto;min-width:0;font-size:1.05em;font-weight:600;line-height:1.35;
     overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;
     -webkit-box-orient:vertical;white-space:normal;text-wrap:balance}
   .acard.hero .acard-title-txt{font-size:1.5em;-webkit-line-clamp:3}
@@ -1147,9 +1146,7 @@
     .gcard-ico{width:24px;height:24px;border-radius:6px}
     .live-card-head .gcard-ico.gcard-ico{width:22px;height:22px}
     .week-chip .gcard-ico{display:none}
-    /* 小窗网格只有 2 列：英雄卡跨 2 列 = 占满整行（用户实测）——
-       回归普通单列，紧迫感由描边表达 */
-    .acard.hero{grid-column:auto}
+
     .gcard-name b{font-size:13px}
     .gcard-streak b{font-size:18px}
     .gcard{padding:10px 12px}
