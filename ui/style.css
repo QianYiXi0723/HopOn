@@ -1224,7 +1224,8 @@
   #live-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
   #live-grid .emptybox{grid-column:1/-1}
   .live-card{background:var(--bg-raise);border-radius:8px;padding:14px 16px;min-width:0;
-             position:relative}
+             position:relative;box-shadow:var(--card-shadow);
+             transition:box-shadow .2s ease, background-color .2s ease}
   /* 游戏身份色条（与 .acard 同机制同色源）：概览卡/实时卡左缘 3px 签名色 */
   .gcard,.live-card{position:relative}
   .gcard::before,.live-card::before{content:"";position:absolute;left:0;top:0;bottom:0;
