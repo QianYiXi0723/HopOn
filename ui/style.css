@@ -1140,6 +1140,9 @@
     .gcard-ico{width:24px;height:24px;border-radius:6px}
     .live-card-head .gcard-ico.gcard-ico{width:22px;height:22px}
     .week-chip .gcard-ico{display:none}
+    /* 小窗网格只有 2 列：英雄卡跨 2 列 = 占满整行（用户实测）——
+       回归普通单列，紧迫感由描边表达 */
+    .acard.hero{grid-column:auto}
     .gcard-name b{font-size:13px}
     .gcard-streak b{font-size:18px}
     .gcard{padding:10px 12px}
