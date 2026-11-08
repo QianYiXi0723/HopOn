@@ -2520,7 +2520,11 @@ function buildMergedItem(members){
     title: (first.title || '') + ' 等 ' + members.length + ' 项',
     reward: rewards.join('、'),
     progress: '',
-    merged: members.map(function(x){ return x.title || ''; }),
+    merged: members.map(function(x){
+      /* 跨游戏合并时成员带游戏名前缀（同游戏的重复前缀无意义不加） */
+      var t = x.title || '';
+      return (x.game_name && x.game_name !== first.game_name ? x.game_name + ' ' : '') + t;
+    }),
     merged_ids: members.map(function(x){ return x.id || ''; }),
   });
 }
@@ -2590,8 +2594,10 @@ function renderActivities(d){
     const mergeBuckets = {};
     const mergedOngoing = [];
     ongoing.forEach(function(x){
+      /* 合并桶不带游戏维度（2026-11-09 用户需求）：不同游戏同截止也并成
+         一张特殊合并卡；成员行带游戏名前缀防混 */
       const bucket = (x.ending_soon && (+x.hours_left || 0) <= winH)
-        ? 'm:' + x.game + '|' + String(x.end || '') : null;
+        ? 'm:' + String(x.end || '') : null;
       if (!bucket) { mergedOngoing.push(x); return; }
       (mergeBuckets[bucket] = mergeBuckets[bucket] || []).push(x);
     });
@@ -2616,6 +2622,7 @@ function renderActivities(d){
          组内按剩余时间升序；组间按「最近将有活动结束」升序 */
       const groups = [], byGid = {};
       mergedOngoing.concat(upcoming).forEach(function(x){
+        if (x === heroIt) return;   /* 英雄已通栏置顶，不进分组 */
         const gid = x.game || '';
         if (!byGid[gid]) {
           byGid[gid] = { gid: gid, name: x.game_name || '未知游戏', items: [] };
@@ -2630,7 +2637,7 @@ function renderActivities(d){
       groups.sort(function(a, b){ return a.mins - b.mins; });
 
       if (groups.length) {
-        html = groups.map(function(g){
+        html = (heroIt ? actCardHtml(heroIt, true, heroSlim) : '') + groups.map(function(g){
           return '<div class="act-group">' +
             '<div class="act-group-head">' +
               '<span class="gdot" style="background:' + gameDotColor(g.gid) + '"></span>' +
@@ -2645,9 +2652,12 @@ function renderActivities(d){
     } else {
       /* 模式 B · 按剩余时间升序，同时间按标题首字母（localeCompare zh）；
          平坦网格无组头，最紧急一张仍是英雄卡 */
-      const pool = mergedOngoing.concat(upcoming).sort(byUrgency);
-      html = '<div class="act-grid">' +
-        pool.map(function(x){ return actCardHtml(x, x === heroIt, heroSlim); }).join('') +
+      /* 英雄强制第一位（2026-11-09 用户需求）：dense 自动流会被更紧急的
+         无内容卡挤到第二行——英雄出池通栏置顶，其余照紧迫序跟后排 */
+      const pool = mergedOngoing.concat(upcoming).filter(function(x){ return x !== heroIt; }).sort(byUrgency);
+      html = (heroIt ? actCardHtml(heroIt, true, heroSlim) : '') +
+        '<div class="act-grid">' +
+        pool.map(function(x){ return actCardHtml(x, false); }).join('') +
         '</div>';
     }
 
