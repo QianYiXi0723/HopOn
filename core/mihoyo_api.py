@@ -48,11 +48,16 @@ ENDPOINTS: Dict[str, str] = {
     "genshin": "/game_record/app/genshin/api/dailyNote",   # 原神实时便笺（GET，未登录返回 -1 param error）
     "starrail": "/game_record/app/hkrpg/api/note",         # 崩铁实时便笺（GET，未登录返回 -10001 invalid request）
     "zzz": "/event/game_record_zzz/api/zzz/note",          # 绝区零实时便笺（GET，未登录返回 -100 请先登录）
-    # 崩坏3：game_record 在 api-takumi.mihoyo.com（无 -record 子域，2026-11-09
-    # 实测 -record 404、api-takumi 被 WAF 503 拦 Python 流量）——端点按社区
-    # 文档口径实现（note 返回 current_stamina/max_stamina/stamina_recover_time），
-    # 真机字段确认待联调（用户有 lv80 崩3角色）。域名适配点在下方 base_url 分支。
-    "bh3": "/game_record/app/bh3/api/note",
+    # 崩坏3（2026-11-09 攻坚记录）：正确路径族是 /game_record/honkai3rd/
+    # （崩3助手 H5 分包实证），域名 act-api-takumi.mihoyo.com（见 GAME_RECORD_BASES）。
+    # 注意不是 /game_record/app/bh3/（-record 404、api-takumi 的 game_record 路由
+    # 对所有非 App 客户端 503——头部/TLS 指纹实验矩阵全穷尽）。
+    # 当前卡 DS 配方（-10001 invalid request），querier.BH3_STAMINA_ENABLED=False。
+    # 崩3：正确路径族是 /game_record/honkai3rd/（崩3助手 H5 分包实证
+    # 2026-11-09），域名 act-api-takumi.mihoyo.com（GAME_RECORD_BASES 已配）。
+    # 注意不是 /game_record/app/bh3/（-record 404、api-takumi 503）。
+    # 当前卡 DS 配方（-10001 invalid request），querier.BH3_STAMINA_ENABLED=False。
+    "bh3": "/game_record/honkai3rd/api/note",
 }
 
 #: 部分游戏不走 RECORD_BASE：崩坏3 的 game_record 在老域名上
