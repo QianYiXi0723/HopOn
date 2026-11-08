@@ -1146,6 +1146,9 @@
     .gcard-ico{width:24px;height:24px;border-radius:6px}
     .live-card-head .gcard-ico.gcard-ico{width:22px;height:22px}
     .week-chip .gcard-ico{display:none}
+    /* 小窗实时体力两列（与概览同口径）：minmax 420→300；
+       双 id 特异性压过 L1217 的后序基准规则 */
+    #live-grid#live-grid{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
 
     .gcard-name b{font-size:13px}
     .gcard-streak b{font-size:18px}
