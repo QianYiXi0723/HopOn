@@ -712,7 +712,7 @@ function renderThresholds(d){
   if (!d || !d.ok) { return; }
   const values = d.values || {};
   const defs = d.defaults || {};
-  ['genshin','starrail','zzz','arknights','endfield','wuwa'].forEach(function(gid){
+  ['genshin','starrail','zzz','arknights','endfield','wuwa','pgr','bh3'].forEach(function(gid){
     const box = document.getElementById('resin-' + gid);
     if (!box) return;
     box.value = (values[gid] != null) ? values[gid] : '';
@@ -749,6 +749,8 @@ function resinPayload(){
     arknights: document.getElementById('resin-arknights').value,
     endfield:  document.getElementById('resin-endfield').value,
     wuwa:      document.getElementById('resin-wuwa').value,
+    pgr:       document.getElementById('resin-pgr').value,
+    bh3:       document.getElementById('resin-bh3').value,
     enabled:   box ? box.checked : true
   };
 }
@@ -1545,7 +1547,7 @@ function refreshSetSummaries(){
   }
 
   const rsBox = document.getElementById('resin-toggle');
-  const rsInputs = ['genshin', 'starrail', 'zzz', 'arknights', 'endfield', 'wuwa']
+  const rsInputs = ['genshin', 'starrail', 'zzz', 'arknights', 'endfield', 'wuwa', 'pgr', 'bh3']
     .map(function(g){ return document.getElementById('resin-' + g); });
   const rsLoaded = rsInputs.some(function(inp){ return inp && String(inp.value).trim() !== ''; });
   if (!rsLoaded) setSum('resin', '读取中…');
@@ -1553,7 +1555,7 @@ function refreshSetSummaries(){
   else {
     const labeled = [];
     [['genshin','原神'],['starrail','星铁'],['zzz','绝区零'],
-     ['arknights','方舟'],['endfield','终末地'],['wuwa','鸣潮']].forEach(function(r){
+     ['arknights','方舟'],['endfield','终末地'],['wuwa','鸣潮'],['pgr','战双'],['bh3','崩3']].forEach(function(r){
       const inp = document.getElementById('resin-' + r[0]);
       const v = inp ? parseInt(inp.value, 10) : NaN;
       labeled.push(r[1] + ' ' + (isNaN(v) ? '–' : (v === 0 ? '关' : v)));
@@ -1580,7 +1582,7 @@ function refreshSetSummaries(){
    dataset 闸门再兜底，重复调用不会叠加监听器 */
 (function bindSetSummaries(){
   ['catch-up-minutes', 'activity-days', 'resin-genshin', 'resin-starrail',
-   'resin-zzz', 'resin-arknights', 'resin-endfield', 'resin-wuwa'].forEach(function(id){
+   'resin-zzz', 'resin-arknights', 'resin-endfield', 'resin-wuwa', 'resin-pgr', 'resin-bh3'].forEach(function(id){
     const el = document.getElementById(id);
     if (!el || el.dataset.sumBound) return;
     el.dataset.sumBound = '1';
@@ -2148,7 +2150,7 @@ function taskProgressHtml(tasks){
    不写 localStorage；页面常驻时以「信息查询」最新一次结果为准。
    已满 → 「已满」；剩余不足 1 小时 → .eta-soon 橙色；数据缺失 → 空串。 */
 const RECOVERY_RATE_PER_MIN = {
-  genshin: 8, starrail: 6, zzz: 6, arknights: 6, endfield: 6, wuwa: 10
+  genshin: 8, starrail: 6, zzz: 6, arknights: 6, endfield: 6, wuwa: 10, pgr: 10, bh3: 10
 };
 function staminaEtaHtml(gid, resource){
   if (!resource || resource.current == null || resource.maximum == null) return '';
@@ -2374,6 +2376,8 @@ const GAME_ICON = {
   arknights: '/static/icons/arknights',
   endfield:  '/static/icons/endfield',
   wuwa:      '/static/icons/wuwa',
+  pgr:       '/static/icons/pgr',
+  bh3:       '/static/icons/bh3',
   miyoushe:  '/static/icons/miyoushe',
   kuro:      '/static/icons/kuro',    // 库街区 App 官方图标（平台与游戏分开）
   skland:    '/static/icons/skland'
@@ -2744,7 +2748,9 @@ const GAME_DOT = {
   zzz:       '#f0854b',
   arknights: '#4aa3e8',
   endfield:  '#dcc23c',
-  wuwa:      '#c8a96a'
+  wuwa:      '#c8a96a',
+  pgr:       '#d9534f',
+  bh3:       '#8f6fe8'
 };
 function gameDotColor(gid){
   return GAME_DOT[gid] || 'var(--brand)';

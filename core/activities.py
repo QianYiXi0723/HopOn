@@ -1191,6 +1191,84 @@ def fetch_wuwa_activities() -> List[Dict[str, Any]]:
     return result
 
 
+# --------------------------------------------------------------------------- #
+# 战双：库街区 wiki 首页「热门活动」侧栏（Wiki_type=2，免鉴权）。
+# countDown.dateRange 直出 [开始, 结束] 字符串——与鸣潮 notice.json 同级的
+# 结构化源。jacket-sikaha/game-schedule 的 getPunishingEvent 同款端点。
+# --------------------------------------------------------------------------- #
+PGR_WIKI_API = "https://api.kurobbs.com/wiki/core/homepage/getPage"
+PGR_WIKI_TYPE = "2"          # 战双=2、鸣潮=9
+PGR_TARGET_TITLE = "热门活动"
+
+
+def fetch_pgr_activities() -> List[Dict[str, Any]]:
+    """战双：wiki 首页侧栏 → 活动列表（已结束的跳过）。"""
+    if not _pgr_enabled():
+        return []
+    session = _new_session()
+    response = session.post(
+        PGR_WIKI_API,
+        headers={"Wiki_type": PGR_WIKI_TYPE},
+        timeout=REQUEST_TIMEOUT,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    mods = (((payload.get("data") or {}).get("contentJson")) or {}).get("sideModules") or []
+    target = next((m for m in mods if m.get("title") == PGR_TARGET_TITLE), None)
+    if not target:
+        return []
+
+    now = datetime.now()
+    result: List[Dict[str, Any]] = []
+    for it in target.get("content") or []:
+        if not isinstance(it, dict):
+            continue
+        cd = it.get("countDown") or {}
+        rng = cd.get("dateRange") or []
+        if len(rng) != 2:
+            continue  # 无倒计时的常驻入口
+        start = _parse_kuro_time(rng[0])
+        end = _parse_kuro_time(rng[1])
+        if start is None or end is None or end <= now:
+            continue
+        title = _clean_text(it.get("title"))
+        if not title:
+            continue
+        entry_id = str((it.get("linkConfig") or {}).get("entryId") or "")
+        result.append({
+            "game": "pgr", "game_name": "战双帕弥什", "kind": "act", "title": title,
+            "start": start.strftime("%Y-%m-%d %H:%M:%S"),
+            "end": end.strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "", "progress": "", "icon": "",
+            "remote_id": entry_id or title,
+            "reward": "", "reward_ok": True,   # wiki 侧栏无奖励字段（未公开口径）
+        })
+    result.sort(key=lambda item: item["end"])
+    return result
+
+
+def _pgr_enabled() -> bool:
+    """绑定了战双（库街区）账号且巡检开关开着才抓。"""
+    from core.config import load_config
+
+    try:
+        config = load_config(USER_DIR / "config.json", auto_create=False)
+    except Exception:  # noqa: BLE001
+        return False
+    return any(a.game == "pgr" and a.enabled for a in config.accounts)
+
+
+def _parse_kuro_time(text: Any) -> Optional[datetime]:
+    """库洛 wiki 时刻格式："2026-09-30 11:00"（分钟精度）。"""
+    raw = str(text or "").strip()
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
 #: 每个抓取器对应的来源说明，写进缓存的 source 字段方便排查
 SOURCES: Dict[str, str] = {
     "genshin": "miyoushe act_calendar",
@@ -1199,6 +1277,7 @@ SOURCES: Dict[str, str] = {
     "arknights": "ak.hypergryph.com news(tab=1)+正文",
     "endfield": "fz.wiki 活动（wikiCardActivityIndex 结构化日程）",
     "wuwa": "库洛官方公告 CDN notice.json（毫秒时间戳+详情正文挖奖励）",
+    "pgr": "库街区 wiki 首页热门活动侧栏（countDown.dateRange）",
 }
 
 #: 新增游戏时在这里挂一个 fetch 函数即可。
@@ -1209,6 +1288,7 @@ FETCHERS = {
     "arknights": fetch_arknights_activities,
     "endfield": fetch_endfield_activities,
     "wuwa": fetch_wuwa_activities,
+    "pgr": fetch_pgr_activities,
 }
 
 

@@ -124,6 +124,14 @@ def run():
     check("D3d DPAPI 密文落盘", str(row["credential"]["token"]).startswith("dpapi:v1:"))
     check("D3e 其他游戏不动", [a for a in raw["accounts"] if a.get("game") == "genshin"])
 
+    # 战双同 token 落一份：开关不被绑定触碰（模板出厂即开，与全家族一致；
+    # 只玩鸣潮的用户自行在监控抽屉关掉）
+    raw_p = json.loads(cfg.read_text(encoding="utf-8"))
+    pgr = [a for a in raw_p["accounts"] if a.get("game") == "pgr"]
+    check("D3h pgr 行同 token 开关不动", len(pgr) == 1
+          and str(pgr[0]["credential"]["token"]).startswith("dpapi:v1:")
+          and pgr[0]["enabled"] is True)
+
     # 有行更新：只动 token/昵称，enabled=false 被拉起
     raw2 = json.loads(cfg.read_text(encoding="utf-8"))
     for a in raw2["accounts"]:

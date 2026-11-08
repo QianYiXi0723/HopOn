@@ -48,6 +48,16 @@ ENDPOINTS: Dict[str, str] = {
     "genshin": "/game_record/app/genshin/api/dailyNote",   # 原神实时便笺（GET，未登录返回 -1 param error）
     "starrail": "/game_record/app/hkrpg/api/note",         # 崩铁实时便笺（GET，未登录返回 -10001 invalid request）
     "zzz": "/event/game_record_zzz/api/zzz/note",          # 绝区零实时便笺（GET，未登录返回 -100 请先登录）
+    # 崩坏3：game_record 在 api-takumi.mihoyo.com（无 -record 子域，2026-11-09
+    # 实测 -record 404、api-takumi 被 WAF 503 拦 Python 流量）——端点按社区
+    # 文档口径实现（note 返回 current_stamina/max_stamina/stamina_recover_time），
+    # 真机字段确认待联调（用户有 lv80 崩3角色）。域名适配点在下方 base_url 分支。
+    "bh3": "/game_record/app/bh3/api/note",
+}
+
+#: 部分游戏不走 RECORD_BASE：崩坏3 的 game_record 在老域名上
+GAME_RECORD_BASES: Dict[str, str] = {
+    "bh3": "https://api-takumi.mihoyo.com",
 }
 
 #: 默认区服参数。账号 credential 里可写 "server" 覆盖（如原神渠道服 cn_qd01）。
@@ -55,6 +65,7 @@ DEFAULT_SERVERS: Dict[str, str] = {
     "genshin": "cn_gf01",
     "starrail": "prod_gf_cn",
     "zzz": "prod_gf_cn",   # TODO(字段确认)：绝区零 server 值待带凭证实测确认
+    "bh3": "android01",    # 崩3 官服区服（角色列表实测返回 android01）
 }
 
 #: 米游社凭证字段名（需求 4：字段名集中配置，不散落）。
@@ -1594,7 +1605,7 @@ def request_daily_note(
     Raises:
         MiyousheQueryError: 网络异常 / HTTP 非 200 / 响应非 JSON / retcode != 0 / 端点未配置。
     """
-    base_url = (base_url or RECORD_BASE).rstrip("/")
+    base_url = (base_url or GAME_RECORD_BASES.get(game_id) or RECORD_BASE).rstrip("/")
     endpoint = ENDPOINTS.get(game_id)
     if endpoint is None:
         raise MiyousheQueryError(f"游戏 {game_id} 未配置米游社便笺接口端点")

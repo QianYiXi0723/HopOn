@@ -28,8 +28,9 @@ logger = logging.getLogger("dailycheck.kuro")
 
 ADDR_KURO = "https://api.kurobbs.com"
 
-#: gameId：鸣潮 = 3（战双 = 2，留作后续扩展）
+#: gameId：鸣潮 = 3、战双帕弥什 = 2（同一张库街区 token 覆盖两款）
 GAME_ID_WUWA = 3
+GAME_ID_PGR = 2
 
 #: 鸣潮国服 serverId（库街区只覆盖国服；接口不传 serverId 时返回默认角色，故仅作参考）
 WUWA_SERVER_CN = "76402e5b20be2c39f095a152090afddc"
@@ -177,22 +178,22 @@ def list_roles(token: str, game_id: int = GAME_ID_WUWA) -> List[Dict[str, Any]]:
     return data
 
 
-def get_widget_data(token: str, use_refresh: bool = True) -> Dict[str, Any]:
-    """鸣潮小组件数据：POST /gamer/widget/game3/refresh（getData 同构，refresh 更准）。
+def get_widget_data(token: str, use_refresh: bool = True, game_id: int = GAME_ID_WUWA) -> Dict[str, Any]:
+    """库洛小组件数据：POST /gamer/widget/game{n}/refresh（getData 同构，refresh 更准）。
 
-    一次拿全：energyData（结晶波片 cur/total/refreshTimeStamp）、
-    storeEnergyData（结晶单质，溢出存储）、livenessData（每日活跃）、
-    weeklyData（战歌重奏）、hasSignIn（月签状态，只读展示）、roleId/roleName。
+    game_id=3 鸣潮（energyData/livenessData/weeklyData…）、
+    game_id=2 战双（actionData 血清/dormData 委托/activeData 每日活跃…）——
+    两组响应节点结构一致（cur/total/refreshTimeStamp）。
 
     注意：库洛服务器时间偶发不准——调用方做相对时间推算时以 data.serverTime 为准。
     """
-    path = "/gamer/widget/game3/refresh" if use_refresh else "/gamer/widget/game3/getData"
-    data = request_kuro(path, token, body={"gameId": GAME_ID_WUWA, "type": 2, "sizeType": 1})
+    path = f"/gamer/widget/game{game_id}/" + ("refresh" if use_refresh else "getData")
+    data = request_kuro(path, token, body={"gameId": game_id, "type": 2, "sizeType": 1})
     if not isinstance(data, dict):
-        raise KuroQueryError("鸣潮小组件接口返回的不是字典")
+        raise KuroQueryError("库洛小组件接口返回的不是字典")
     if not data.get("roleId"):
         # code 200 但没有角色：与 6001 同语义（未绑定/未设置展示角色）
-        raise GameNotBoundError("该库街区账号还没有设置鸣潮角色，进游戏后建号即可自动生效")
+        raise GameNotBoundError("该库街区账号还没有设置角色，进游戏后建号即可自动生效")
     return data
 
 

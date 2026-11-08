@@ -503,6 +503,8 @@ _THRESHOLD_FIELDS: Tuple[Tuple[str, str, int], ...] = (
     ("arknights", "arknights_ap_threshold",     135),
     ("endfield",  "endfield_sanity_threshold",  300),
     ("wuwa",      "wuwa_energy_threshold",      200),
+    ("pgr",       "pgr_serum_threshold",        200),
+    ("bh3",       "bh3_stamina_threshold",       90),
 )
 
 
@@ -1941,38 +1943,49 @@ def write_skland(target: str, token: str) -> str:
 
 @_serialized_write
 def write_kuro(token: str, nickname: str = "") -> str:
-    """写入库街区 token（鸣潮）。与 write_skland 的差异：**可创建账号行**——
-    森空岛上线时全量注入过账号节点，鸣潮是后加游戏，存量 config.json 里没有，
-    找不到就按出厂模板形态补一行（enabled=true，查询层按未绑定提示）。
+    """写入库街区 token（鸣潮+战双，同一张 token 覆盖两款）。
+
+    与 write_skland 的差异：**可创建账号行**——森空岛上线时全量注入过账号
+    节点，鸣潮/战双是后加游戏，存量 config.json 里没有，找不到就按出厂
+    模板形态补行。战双默认 enabled=False（只玩鸣潮的用户自行在监控抽屉
+    勾选），鸣潮绑定即开。
     """
     raw = load_raw_config()
-    hit = None
-    for account in raw.get("accounts", []):
-        if isinstance(account, dict) and account.get("game") == "wuwa":
-            hit = account
-            break
-    if hit is None:
-        hit = {
-            "game": "wuwa",
-            "nickname": nickname or "漂泊者",
-            "enabled": True,
-            "credential": {},
-        }
-        raw.setdefault("accounts", []).append(hit)
-        logger.info("wuwa 账号节点不存在，已按出厂模板创建（存量配置迁移）")
-    cred = hit.setdefault("credential", {})
-    cred["token"] = token
-    cred["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-    if nickname:
-        hit["nickname"] = nickname
-    if not hit.get("enabled", True):
-        hit["enabled"] = True   # 绑定了就参与巡检；不想查可以再关开关
+    now_text = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    def _upsert(game: str, nickname_default: str, enabled: bool) -> str:
+        hit = None
+        for account in raw.get("accounts", []):
+            if isinstance(account, dict) and account.get("game") == game:
+                hit = account
+                break
+        if hit is None:
+            hit = {
+                "game": game,
+                "nickname": nickname_default,
+                "enabled": enabled,
+                "credential": {},
+            }
+            raw.setdefault("accounts", []).append(hit)
+            logger.info("%s 账号节点不存在，已创建（存量配置迁移）", game)
+        cred = hit.setdefault("credential", {})
+        cred["token"] = token
+        cred["updated_at"] = now_text
+        if nickname:
+            hit["nickname"] = nickname
+        if enabled and not hit.get("enabled", True):
+            hit["enabled"] = True   # 绑定了就参与巡检；不想查可以再关开关
+        return str(hit.get("nickname") or nickname_default)
+
+    wuwa_name = _upsert("wuwa", nickname or "漂泊者", enabled=True)
+    # 战双同 token 落一份，默认关（只玩鸣潮的用户自行在监控抽屉勾选）
+    _upsert("pgr", "指挥官", enabled=False)
 
     query = raw.setdefault("query", {})
     if str(query.get("provider", "")).strip().lower() == "mock":
         query["provider"] = "miyoushe"
     save_raw_config(raw)
-    return str(hit.get("nickname") or "漂泊者")
+    return wuwa_name
 
 
 # --------------------------------------------------------------------------- #

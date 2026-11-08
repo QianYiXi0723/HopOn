@@ -117,7 +117,7 @@ def run():
     # 6001 → no_account（fetch 内部转 GameStatus，不抛）
     # 注意：querier 是 from-import 按值引用，补丁必须打在 Q 命名空间
     orig = Q.get_widget_data
-    Q.get_widget_data = lambda tok, use_refresh=True: (_ for _ in ()).throw(
+    Q.get_widget_data = lambda tok, use_refresh=True, **kw: (_ for _ in ()).throw(
         K.GameNotBoundError("还没绑定角色"))
     try:
         st = q.fetch(_acc())
@@ -126,7 +126,7 @@ def run():
         Q.get_widget_data = orig
 
     # 正常链：nickname 回填 + source
-    Q.get_widget_data = lambda tok, use_refresh=True: DOC_SAMPLE
+    Q.get_widget_data = lambda tok, use_refresh=True, **kw: DOC_SAMPLE
     try:
         acc = _acc()
         st = q.fetch(acc)
@@ -148,9 +148,27 @@ def run():
     check("B7g to_dict 持久化", raw["app"]["wuwa_energy_threshold"] == 200)
 
     # ---- B8 序与 mock ----
-    check("B8a GAME_ORDER", GAME_ORDER[-1] == "wuwa" and len(GAME_ORDER) == 6)
+    check("B8a GAME_ORDER", GAME_ORDER[5] == "wuwa" and "pgr" in GAME_ORDER and "bh3" in GAME_ORDER)
     mock_st = Q.MockQuerier().fetch(_acc())
     check("B8b mock 数据在位", any(t.name == "每日活跃" for t in mock_st.tasks))
+
+    # ---- B9 战双（pgr）路由与解析 ----
+    qp = Q.get_querier("pgr", "miyoushe")
+    check("B9a pgr 自动挂 kuro", type(qp).__name__ == "KuroQuerier")
+    pgr_sample = {
+        "roleId": "46218962", "roleName": "指挥官", "serverTime": 1719475203,
+        "actionData": {"name": "血清", "cur": 145, "total": 240,
+                       "refreshTimeStamp": 1719508800, "status": 0},
+        "activeData": {"cur": 100, "total": 100, "status": 0},
+        "dormData": {"cur": 8, "total": 8, "status": 0},
+    }
+    pgr_tasks = Q.KuroQuerier.parse_pgr(pgr_sample)
+    names = [t.name for t in pgr_tasks]
+    check("B9b 三项齐", names == ["每日活跃", "血清", "委托"], names)
+    serum = next(t for t in pgr_tasks if t.name == "血清")
+    check("B9c 血清 ETA", serum.recover_seconds == 1719508800 - 1719475203, serum.recover_seconds)
+    live = next(t for t in pgr_tasks if t.name == "每日活跃")
+    check("B9d 活跃锚点 counted", live.done and live.counted)
 
     failed = [n for n, ok in results if not ok]
     print(f"\n== {len(results) - len(failed)}/{len(results)} 通过 ==")
