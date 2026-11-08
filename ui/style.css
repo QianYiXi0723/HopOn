@@ -864,8 +864,8 @@
   .act-group-head{display:flex;align-items:center;gap:8px;
     font-size:12px;font-weight:600;color:var(--text-secondary)}
   .act-group-head .act-group-count{color:var(--text-tertiary);font-weight:400}
-  /* 最紧急 1 张：2x2 英雄卡（2026-11-09 用户裁决恢复——之前嫌大的是
-     普通卡太高，英雄 2x2 配合普通卡压缩一起落地） */
+  /* 最紧急 1 张：2x2 英雄卡（2026-11-09 用户裁决：之前英雄卡不干扰邻居，
+     根因是八项同止合并卡太大——清单已限高 63px 治本，英雄 2x2 恢复） */
   .acard.hero{grid-column:span 2;grid-row:span 2;padding:14px 16px;
     min-height:300px}
   /* 标题字号/钳制移至 .acard-title-txt（标题行改弹性两栏后钳制随文本走） */
@@ -919,7 +919,7 @@
     margin-top:6px;display:grid;gap:2px;min-width:0;
     /* 成员清单限高滚动（2026-11-09 用户实测：8 项清单把卡撑出可视区）——
        卡内滚动保留全部信息，卡高可控 */
-    max-height:84px;overflow-y:auto;scrollbar-width:thin}
+    max-height:63px;overflow-y:auto;scrollbar-width:thin}
   .act-merged > div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .act-merged-tag{font-size:11px;color:var(--text-tertiary);white-space:nowrap}
   /* 倒计时徽章（2026-11-01 方案 A 升格）：≤24h 红 / ≤3 天琥珀 / 其余灰，
