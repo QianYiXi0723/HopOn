@@ -863,8 +863,10 @@
   .act-group-head{display:flex;align-items:center;gap:8px;
     font-size:12px;font-weight:600;color:var(--text-secondary)}
   .act-group-head .act-group-count{color:var(--text-tertiary);font-weight:400}
-  /* 最紧急 1 张：2x2 英雄卡（占 2 条轨道宽 × 2 行），内部文字放大撑满大卡 */
-  .acard.hero{grid-column:span 2;grid-row:span 2;padding:20px 20px}
+  /* 最紧急 1 张：英雄卡只跨 2 列、行高正常（2026-11-09 用户实测 2x2
+     被合并组卡的高行高撑成 780px 空壳/邻居被拉伸）——双列宽度已足够
+     突出，不再跨行 */
+  .acard.hero{grid-column:span 2;padding:20px 20px}
   /* 标题字号/钳制移至 .acard-title-txt（标题行改弹性两栏后钳制随文本走） */
   .acard.hero .act-time{font-size:1.1em}
   .acard.hero .act-cd{font-size:2em;font-weight:800}
