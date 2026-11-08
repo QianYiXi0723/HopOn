@@ -502,6 +502,7 @@ _THRESHOLD_FIELDS: Tuple[Tuple[str, str, int], ...] = (
     ("zzz",       "zzz_energy_threshold",       200),
     ("arknights", "arknights_ap_threshold",     135),
     ("endfield",  "endfield_sanity_threshold",  300),
+    ("wuwa",      "wuwa_energy_threshold",      200),
 )
 
 

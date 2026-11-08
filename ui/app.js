@@ -175,7 +175,7 @@ function toggleAll(group, checked){
 function toggleAllCards(){
   const boxes = [...document.querySelectorAll('.sel-card input')];
   const target = !boxes.every(function(b){ return b.checked; });
-  ['m', 's'].forEach(function(g){
+  ['m', 's', 'k'].forEach(function(g){
     const gb = [...document.querySelectorAll('input[name="' + g + '"]')];
     if (gb.some(function(b){ return b.checked !== target; })) toggleAll(g, target);
   });
@@ -212,7 +212,7 @@ function loadAccounts(){
     (d.items || []).forEach(function(it){ window.__accounts[it.id] = it; });
     (d.items || []).forEach(function(it){
       const box = document.querySelector(
-        'input[name="m"][value="' + it.id + '"],input[name="s"][value="' + it.id + '"]');
+        'input[name="m"][value="' + it.id + '"],input[name="s"][value="' + it.id + '"],input[name="k"][value="' + it.id + '"]');
       if (!box) return;
       box.checked = !!it.enabled;
       syncSelCard(box);
@@ -232,7 +232,7 @@ function credLoadFailed(){
 
 /* 胶囊黄点：该平台任一游戏未绑定凭证 → 点亮 */
 function renderCapsuleDots(d){
-  ['m', 's'].forEach(function(g){
+  ['m', 's', 'k'].forEach(function(g){
     const dot = document.getElementById('cap-dot-' + g);
     if (!dot) return;
     const missing = (d.items || []).some(function(it){
@@ -706,7 +706,7 @@ function renderThresholds(d){
   if (!d || !d.ok) { return; }
   const values = d.values || {};
   const defs = d.defaults || {};
-  ['genshin','starrail','zzz','arknights','endfield'].forEach(function(gid){
+  ['genshin','starrail','zzz','arknights','endfield','wuwa'].forEach(function(gid){
     const box = document.getElementById('resin-' + gid);
     if (!box) return;
     box.value = (values[gid] != null) ? values[gid] : '';
@@ -742,6 +742,7 @@ function resinPayload(){
     zzz:       document.getElementById('resin-zzz').value,
     arknights: document.getElementById('resin-arknights').value,
     endfield:  document.getElementById('resin-endfield').value,
+    wuwa:      document.getElementById('resin-wuwa').value,
     enabled:   box ? box.checked : true
   };
 }
@@ -1538,7 +1539,7 @@ function refreshSetSummaries(){
   }
 
   const rsBox = document.getElementById('resin-toggle');
-  const rsInputs = ['genshin', 'starrail', 'zzz', 'arknights', 'endfield']
+  const rsInputs = ['genshin', 'starrail', 'zzz', 'arknights', 'endfield', 'wuwa']
     .map(function(g){ return document.getElementById('resin-' + g); });
   const rsLoaded = rsInputs.some(function(inp){ return inp && String(inp.value).trim() !== ''; });
   if (!rsLoaded) setSum('resin', '读取中…');
@@ -1546,7 +1547,7 @@ function refreshSetSummaries(){
   else {
     const labeled = [];
     [['genshin','原神'],['starrail','星铁'],['zzz','绝区零'],
-     ['arknights','方舟'],['endfield','终末地']].forEach(function(r){
+     ['arknights','方舟'],['endfield','终末地'],['wuwa','鸣潮']].forEach(function(r){
       const inp = document.getElementById('resin-' + r[0]);
       const v = inp ? parseInt(inp.value, 10) : NaN;
       labeled.push(r[1] + ' ' + (isNaN(v) ? '–' : (v === 0 ? '关' : v)));
@@ -1573,7 +1574,7 @@ function refreshSetSummaries(){
    dataset 闸门再兜底，重复调用不会叠加监听器 */
 (function bindSetSummaries(){
   ['catch-up-minutes', 'activity-days', 'resin-genshin', 'resin-starrail',
-   'resin-zzz', 'resin-arknights', 'resin-endfield'].forEach(function(id){
+   'resin-zzz', 'resin-arknights', 'resin-endfield', 'resin-wuwa'].forEach(function(id){
     const el = document.getElementById(id);
     if (!el || el.dataset.sumBound) return;
     el.dataset.sumBound = '1';
@@ -2141,7 +2142,7 @@ function taskProgressHtml(tasks){
    不写 localStorage；页面常驻时以「信息查询」最新一次结果为准。
    已满 → 「已满」；剩余不足 1 小时 → .eta-soon 橙色；数据缺失 → 空串。 */
 const RECOVERY_RATE_PER_MIN = {
-  genshin: 8, starrail: 6, zzz: 6, arknights: 6, endfield: 6
+  genshin: 8, starrail: 6, zzz: 6, arknights: 6, endfield: 6, wuwa: 10
 };
 function staminaEtaHtml(gid, resource){
   if (!resource || resource.current == null || resource.maximum == null) return '';
@@ -2359,6 +2360,7 @@ const GAME_ICON = {
   zzz: '/static/icons/zzz',
   arknights: '/static/icons/arknights',
   endfield:  '/static/icons/endfield',
+  wuwa:      '/static/icons/wuwa',
   miyoushe:  '/static/icons/miyoushe',
   skland:    '/static/icons/skland'
 };
@@ -2722,7 +2724,8 @@ const GAME_DOT = {
   starrail:  '#8f7ff0',
   zzz:       '#f0854b',
   arknights: '#4aa3e8',
-  endfield:  '#dcc23c'
+  endfield:  '#dcc23c',
+  wuwa:      '#c8a96a'
 };
 function gameDotColor(gid){
   return GAME_DOT[gid] || 'var(--brand)';
@@ -4007,3 +4010,149 @@ function rlReloadKey(e){
 }
 
 /* 刷新反馈：整页白闪已随 2026-11-01 减法裁决移除（转圈按钮承载反馈） */
+
+/* ===================== 库街区绑定（鸣潮，2026-11-09 D2b）=====================
+   双模：短信登录（主，前端嵌极验 v4 人肉过验证）+ Token 粘贴（兜底）。
+   短信走 /api/kuro/sms/send + /sms/login；token 走 /api/kuro/verify + /save。
+   gt4.js 加载失败只影响短信模式（toast 引导切 token），不挡绑定。 */
+
+let kuroCaptcha = null;          // 极验 captchaObj（懒初始化，弹窗内复用）
+let kuroCaptchaBroken = false;   // gt4.js 加载失败 → 短信模式置灰引导 token
+let kuroSmsTimer = null;
+let kuroSmsLeft = 0;
+
+function startKuro(){
+  document.getElementById('kuro-stage').hidden = false;
+  kuroSwitchMode('sms');
+  kuroStatus('');
+  kuroTokenStatus('');
+}
+
+function closeKuro(){
+  document.getElementById('kuro-stage').hidden = true;
+}
+
+function kuroSwitchMode(mode){
+  const sms = mode !== 'token';
+  document.getElementById('kuro-mode-sms').classList.toggle('on', sms);
+  document.getElementById('kuro-mode-token').classList.toggle('on', !sms);
+  document.getElementById('kuro-sms-pane').hidden = !sms;
+  document.getElementById('kuro-token-pane').hidden = sms;
+}
+
+function kuroStatus(text, cls){
+  const el = document.getElementById('kuro-status');
+  el.textContent = text || '';
+  el.className = 'kuro-status' + (cls ? ' ' + cls : '');
+}
+
+function kuroTokenStatus(text, cls){
+  const el = document.getElementById('kuro-token-status');
+  el.textContent = text || '';
+  el.className = 'kuro-status' + (cls ? ' ' + cls : '');
+}
+
+function kuroPhone(){
+  return document.getElementById('kuro-phone').value.trim();
+}
+
+/* 极验 v4 懒初始化：gt4.js 在 head 里 defer 加载；失败置 broken 引导 token 模式 */
+function kuroEnsureCaptcha(){
+  return new Promise(function(resolve, reject){
+    if (kuroCaptcha) { resolve(kuroCaptcha); return; }
+    if (typeof window.initGeetest4 !== 'function') {
+      kuroCaptchaBroken = true;
+      reject(new Error('人机验证组件未加载（需要联网访问极验）'));
+      return;
+    }
+    window.initGeetest4({
+      captchaId: 'ec4aa4174277d822d73f2442a165a2cd',
+      product: 'popup',
+      language: 'zho',
+    }, function(captchaObj){
+      kuroCaptcha = captchaObj;
+      captchaObj.onSuccess(function(){
+        const v = captchaObj.getValidate();
+        if (!v) return;
+        kuroDoSendSms(JSON.stringify(v));
+        captchaObj.reset();
+      });
+      captchaObj.onReady(function(){ resolve(captchaObj); });
+      setTimeout(function(){ resolve(captchaObj); }, 4000);  // onReady 兜底
+    });
+  });
+}
+
+function kuroSendSms(){
+  if (!/^1[3-9]\d{9}$/.test(kuroPhone())) {
+    kuroStatus('请先填写正确的手机号（11 位国内号段）', 'err');
+    return;
+  }
+  if (kuroSmsLeft > 0) return;
+  const btn = document.getElementById('btn-kuro-send');
+  btn.disabled = true;
+  kuroStatus('正在唤起人机验证…');
+  kuroEnsureCaptcha().then(function(captcha){
+    btn.disabled = false;
+    captcha.showCaptcha();          // 用户手动过验证，成功回调里真正发码
+  }).catch(function(err){
+    btn.disabled = false;
+    kuroStatus(err.message + '。可改用「Token 粘贴」模式绑定', 'err');
+  });
+}
+
+function kuroDoSendSms(geeTestData){
+  const btn = document.getElementById('btn-kuro-send');
+  kuroStatus('正在发送验证码…');
+  postJSON('/api/kuro/sms/send', { mobile: kuroPhone(), gee_test_data: geeTestData })
+    .then(function(d){
+      if (!d || !d.ok) { kuroStatus((d && d.error) || '发送失败', 'err'); return; }
+      kuroStatus(d.message || '验证码已发送', 'ok');
+      kuroSmsLeft = 60;
+      btn.disabled = true;
+      if (kuroSmsTimer) clearInterval(kuroSmsTimer);
+      kuroSmsTimer = setInterval(function(){
+        kuroSmsLeft -= 1;
+        if (kuroSmsLeft <= 0) { clearInterval(kuroSmsTimer); kuroSmsTimer = null; btn.textContent = '发送验证码'; btn.disabled = false; return; }
+        btn.textContent = kuroSmsLeft + 's';
+      }, 1000);
+      btn.textContent = '60s';
+      document.getElementById('kuro-code').focus();
+    })
+    .catch(function(){ kuroStatus('无法连接本地服务', 'err'); });
+}
+
+function kuroLogin(){
+  const code = document.getElementById('kuro-code').value.trim();
+  if (!/^1[3-9]\d{9}$/.test(kuroPhone())) { kuroStatus('手机号格式不对', 'err'); return; }
+  if (!/^\d{6}$/.test(code)) { kuroStatus('请输入 6 位短信验证码', 'err'); return; }
+  const btn = document.getElementById('btn-kuro-login');
+  btn.disabled = true;
+  kuroStatus('正在登录…');
+  postJSON('/api/kuro/sms/login', { mobile: kuroPhone(), code: code })
+    .then(function(d){
+      btn.disabled = false;
+      if (!d || !d.ok) { kuroStatus((d && d.error) || '登录失败', 'err'); return; }
+      toast(d.message || '绑定成功');
+      closeKuro();
+      loadAccounts();
+    })
+    .catch(function(){ btn.disabled = false; kuroStatus('无法连接本地服务', 'err'); });
+}
+
+function kuroSaveToken(){
+  const token = document.getElementById('kuro-token').value.trim();
+  if (!token) { kuroTokenStatus('请先粘贴 Token', 'err'); return; }
+  const btn = document.getElementById('btn-kuro-save');
+  btn.disabled = true;
+  kuroTokenStatus('正在校验…');
+  postJSON('/api/kuro/save', { token: token })
+    .then(function(d){
+      btn.disabled = false;
+      if (!d || !d.ok) { kuroTokenStatus((d && d.error) || '校验未通过', 'err'); return; }
+      toast(d.message || '绑定成功');
+      closeKuro();
+      loadAccounts();
+    })
+    .catch(function(){ btn.disabled = false; kuroTokenStatus('无法连接本地服务', 'err'); });
+}

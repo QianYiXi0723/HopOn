@@ -1309,3 +1309,16 @@
 
   .drawer-menu button.cur{color:var(--fg);font-weight:600}
   .drawer-menu .gdot{width:8px;height:8px;border-radius:50%;flex:none}
+
+  /* ---- 库街区绑定弹窗（鸣潮，2026-11-09 D2b）---- */
+  .kuro-modes{margin-bottom:14px}
+  .kuro-row{display:flex;gap:8px;margin-bottom:10px}
+  .kuro-row input{flex:1;min-width:0;background:var(--subtle);border:1px solid var(--border);
+    border-radius:8px;padding:9px 12px;color:var(--fg);font-family:inherit;font-size:14px}
+  .kuro-row input:focus{outline:none;border-color:var(--accent,#7c5cff)}
+  .kuro-row .btn{flex:none}
+  .kuro-hint{font-size:12px;line-height:1.6;color:var(--muted);margin:6px 0 10px}
+  .kuro-status{min-height:18px;font-size:13px;margin:4px 0 8px;color:var(--muted)}
+  .kuro-status.err{color:var(--err,#e5484d)}
+  .kuro-status.ok{color:var(--ok,#46a758)}
+  #kuro-captcha:empty{display:none}

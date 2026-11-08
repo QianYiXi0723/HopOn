@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HopOn · 控制台</title>
+<!-- 极验 v4（库街区短信登录的人机验证；加载失败只影响短信模式，token 粘贴兜底可用） -->
+<script src="https://static.geetest.com/v4/gt4.js" defer></script>
 <style>__STYLE__</style>
 </head>
 <body>
@@ -196,6 +198,11 @@
               <span class="cap-ico" data-plat="skland"><svg class="ico"><use href="#i-island"/></svg></span>
               <span class="cap-txt"><b>森空岛</b><small>更新凭证</small></span>
             </button>
+            <button type="button" class="scan-cap" id="cap-k" onclick="startKuro()">
+              <span class="cap-dot" id="cap-dot-k"></span>
+              <span class="cap-ico" data-plat="kuro"><svg class="ico"><use href="#i-gamepad"/></svg></span>
+              <span class="cap-txt"><b>库街区</b><small>绑定账号</small></span>
+            </button>
             <div class="btn-note caps-note">扫码只更新登录凭证；是否参与每日巡检由下方监控开关决定。</div>
           </div>
           <details class="card set-item" id="acc-monitor" style="margin-top:10px">
@@ -240,6 +247,12 @@
                   <input type="checkbox" name="s" value="endfield" checked>
                   <span class="sel-ico ph">终</span>
                   <span class="sel-name">明日方舟：终末地</span>
+                  <span class="switch"><i></i></span>
+                </label>
+                <label class="sel-card on">
+                  <input type="checkbox" name="k" value="wuwa" checked>
+                  <span class="sel-ico ph">潮</span>
+                  <span class="sel-name">鸣潮</span>
                   <span class="switch"><i></i></span>
                 </label>
               </div>
@@ -432,6 +445,60 @@
       </div>
     </div>
 
+    <!-- 库街区绑定浮层（鸣潮）：短信登录为主、token 粘贴兜底 -->
+    <div class="modal-mask" id="kuro-stage" hidden>
+      <div class="modal">
+        <div class="modal-head">
+          <b>绑定库街区（鸣潮）</b>
+          <button type="button" class="modal-x" onclick="closeKuro()" title="关闭">✕</button>
+        </div>
+
+        <div class="kuro-modes">
+          <div class="seg-mini">
+            <button type="button" id="kuro-mode-sms" class="on" onclick="kuroSwitchMode('sms')">短信登录</button>
+            <button type="button" id="kuro-mode-token" onclick="kuroSwitchMode('token')">Token 粘贴</button>
+          </div>
+        </div>
+
+        <!-- 短信模式 -->
+        <div id="kuro-sms-pane">
+          <div class="kuro-row">
+            <input type="tel" id="kuro-phone" maxlength="11" placeholder="库街区绑定的手机号" autocomplete="tel">
+            <button type="button" class="btn" id="btn-kuro-send" onclick="kuroSendSms()">发送验证码</button>
+          </div>
+          <div class="kuro-row">
+            <input type="text" id="kuro-code" maxlength="6" inputmode="numeric" placeholder="6 位短信验证码" autocomplete="one-time-code">
+          </div>
+          <div class="kuro-hint" id="kuro-sms-hint">
+            用手机号验证码直接登录库街区，无需抓包。注意：库街区为单设备登录，
+            绑定后手机上的库街区 App 会被顶下线，重新登录 App 即可。
+          </div>
+          <div class="kuro-status" id="kuro-status"></div>
+          <div class="toolbar" style="justify-content:flex-end">
+            <button type="button" class="btn primary" id="btn-kuro-login" onclick="kuroLogin()">登录并绑定</button>
+          </div>
+        </div>
+
+        <!-- Token 粘贴模式（兜底） -->
+        <div id="kuro-token-pane" hidden>
+          <div class="kuro-row">
+            <input type="text" id="kuro-token" placeholder="粘贴库街区 Token（eyJ 开头）" autocomplete="off">
+          </div>
+          <div class="kuro-hint">
+            获取方式：浏览器登录 <b>kurobbs.com</b> → F12 → Application → Cookies →
+            复制 <b>user_token</b> 的值。短信登录不可用时的兜底方案。
+          </div>
+          <div class="kuro-status" id="kuro-token-status"></div>
+          <div class="toolbar" style="justify-content:flex-end">
+            <button type="button" class="btn primary" id="btn-kuro-save" onclick="kuroSaveToken()">校验并绑定</button>
+          </div>
+        </div>
+
+        <!-- 极验 v4 弹出层挂载点（gt4.js 自绘 popup） -->
+        <div id="kuro-captcha"></div>
+      </div>
+    </div>
+
     <!-- 扫码浮层（modal） -->
     <div class="modal-mask" id="stage" hidden>
       <div class="modal">
@@ -579,6 +646,9 @@
                 <label><span>终末地 · 理智</span>
                   <input type="number" id="resin-endfield" min="0" max="1000" step="10"
                          placeholder="300" inputmode="numeric"></label>
+                <label><span>鸣潮 · 波片</span>
+                  <input type="number" id="resin-wuwa" min="0" max="1000" step="10"
+                         placeholder="200" inputmode="numeric"></label>
               </div>
               <button id="btn-resin-save" class="btn">保存阈值</button>
               <div class="hint" id="resin-hint">读取中…</div>
