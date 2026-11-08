@@ -1832,6 +1832,11 @@ def live_status(force: bool = False) -> Dict[str, Any]:
                 entry["cooled"] = True
                 games.append(entry)
 
+        # 排序统一按 GAME_ORDER 平台分组序（与游戏概览/报表同口径）——
+        # config 账号行是历史追加序（崩3/战双在尾部），不排两页会不一致
+        from core.history import GAME_ORDER as _GAME_ORDER
+        _order = {g: i for i, g in enumerate(_GAME_ORDER)}
+        games.sort(key=lambda item: _order.get(str(item.get("game")), len(_order)))
         payload = {
             "ok": True,
             "cached": False,
