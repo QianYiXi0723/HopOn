@@ -1267,10 +1267,15 @@
   .mc-day.future{opacity:.25}
   .mc-day.today{box-shadow:inset 0 0 0 2px var(--brand)}
   .mc-l0{background:var(--subtle)}
-  .mc-l1{background:color-mix(in srgb, var(--ok) 30%, var(--bg-elevated))}
-  .mc-l2{background:color-mix(in srgb, var(--ok) 55%, var(--bg-elevated))}
-  .mc-l3{background:color-mix(in srgb, var(--ok) 78%, var(--bg-elevated))}
-  .mc-l4{background:var(--ok);color:#fff}
+  /* 8 档色梯（2026-11-09：八款游戏随监控数自适应，桶位铺满浅→深） */
+  .mc-l1{background:color-mix(in srgb, var(--ok) 14%, var(--bg-elevated))}
+  .mc-l2{background:color-mix(in srgb, var(--ok) 26%, var(--bg-elevated))}
+  .mc-l3{background:color-mix(in srgb, var(--ok) 38%, var(--bg-elevated))}
+  .mc-l4{background:color-mix(in srgb, var(--ok) 50%, var(--bg-elevated))}
+  .mc-l5{background:color-mix(in srgb, var(--ok) 62%, var(--bg-elevated))}
+  .mc-l6{background:color-mix(in srgb, var(--ok) 74%, var(--bg-elevated))}
+  .mc-l7{background:color-mix(in srgb, var(--ok) 87%, var(--bg-elevated))}
+  .mc-l8{background:var(--ok);color:#fff}
 
   /* 分游戏视图（2026-11-06 用户裁决）：单游戏整月历 + 游戏 chips */
   .month-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
