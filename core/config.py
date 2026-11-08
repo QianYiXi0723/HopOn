@@ -168,6 +168,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             },
         },
         {
+            "game": "bh3",
+            "nickname": "舰长",
+            "enabled": True,
+            "credential": {
+                "cookie": "ltuid=请填写; ltoken=请填写",
+            },
+        },
+        {
             "game": "arknights",
             "nickname": "博士",
             "enabled": True,
@@ -200,14 +208,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "credential": {
                 # 同一张库街区 Token（绑定鸣潮时自动写入）
                 "token": "请填写库街区Token",
-            },
-        },
-        {
-            "game": "bh3",
-            "nickname": "舰长",
-            "enabled": True,
-            "credential": {
-                "cookie": "ltuid=请填写; ltoken=请填写",
             },
         },
     ],

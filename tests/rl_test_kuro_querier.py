@@ -148,7 +148,8 @@ def run():
     check("B7g to_dict 持久化", raw["app"]["wuwa_energy_threshold"] == 200)
 
     # ---- B8 序与 mock ----
-    check("B8a GAME_ORDER", GAME_ORDER[5] == "wuwa" and "pgr" in GAME_ORDER and "bh3" in GAME_ORDER)
+    check("B8a GAME_ORDER", GAME_ORDER.index("bh3") == GAME_ORDER.index("zzz") + 1
+          and GAME_ORDER.index("pgr") == GAME_ORDER.index("wuwa") + 1)
     mock_st = Q.MockQuerier().fetch(_acc())
     check("B8b mock 数据在位", any(t.name == "每日活跃" for t in mock_st.tasks))
 
