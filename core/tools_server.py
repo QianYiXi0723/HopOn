@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import mimetypes
 import shutil
 import socket
@@ -30,6 +31,52 @@ from core.paths import app_root
 
 TOOLS_DIR = app_root() / "tools"
 DEFAULT_PORT = 8790
+
+#: 发行包不含 apk（P4 门禁，verify_release 1b）——本地缺失时从这里按需拉取。
+#: 仓库公开直链（Gitee raw，国内免梯）；main 分支随版本合并自动跟进。
+APK_REMOTE_URL = (
+    "https://gitee.com/qianyixi/HopOn/raw/main/"
+    "engine/tools/%E8%AE%BE%E5%A4%87%E4%BF%A1%E6%81%AF.apk"
+)
+_APK_FETCH_LOCK = threading.Lock()
+
+
+def _fetch_remote_apk(name: str) -> bool:
+    """从仓库公开直链拉取缺失的 apk 到 tools/（成功返回 True）。
+
+    只服务设备信息.apk 这一个文件；失败（断网/直链 404）返回 False，
+    调用方继续走 404——拉取失败绝不能拖垮整个下载服务。
+    """
+    if name != "设备信息.apk":
+        return False
+    with _APK_FETCH_LOCK:
+        target = TOOLS_DIR / name
+        if target.is_file():
+            return True          # 并发下另一请求刚拉完
+        part = TOOLS_DIR / (name + ".part")
+        try:
+            import requests  # noqa: PLC0415 - 故意延迟导入
+
+            resp = requests.get(APK_REMOTE_URL, timeout=(10, 60), stream=True)
+            if resp.status_code != 200:
+                logger.warning("按需拉取 %s 失败：HTTP %s", name, resp.status_code)
+                return False
+            with part.open("wb") as f:
+                for chunk in resp.iter_content(1024 * 256):
+                    f.write(chunk)
+            os.replace(part, target)
+            logger.info(
+                "本地无 %s，已从公开直链拉取（%.1f MB）——局域网扫码下载恢复可用",
+                name, target.stat().st_size / 1048576,
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001 - 拉取失败只影响本次下载
+            logger.warning("按需拉取 %s 失败：%s", name, exc)
+            try:
+                part.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return False
 
 
 def lan_ip() -> str:
@@ -128,8 +175,13 @@ span{{color:#9aa3af;font-size:12px}}
 
         target = TOOLS_DIR / name
         if not target.is_file():
-            self._text(404, "not found")
-            return
+            # 发行包不含 apk（P4 门禁）：fresh 安装上首次访问时从仓库公开直链
+            # 拉一份缓存到 tools/，之后的局域网扫码下载与源码机行为一致
+            if name.lower().endswith(".apk") and _fetch_remote_apk(name):
+                target = TOOLS_DIR / name
+            if not target.is_file():
+                self._text(404, "not found")
+                return
 
         ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
         if name.lower().endswith(".apk"):

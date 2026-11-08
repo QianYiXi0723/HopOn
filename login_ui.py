@@ -2929,6 +2929,21 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"ok": False, "error": f"登录失败：{exc}"}, 500)
             return
 
+        if path == "/api/tools/open-apk-folder":
+            # 资源管理器打开并选中设备信息.apk——扫码不通时的兜底获取途径
+            try:
+                apk = BASE_DIR / "tools" / "设备信息.apk"
+                if not apk.exists():
+                    self._json({"ok": False, "error": "apk 不在安装目录（发行包不内置，已改为按需拉取）"}, 404)
+                    return
+                import subprocess
+
+                subprocess.Popen(["explorer", "/select,", str(apk)])
+                self._json({"ok": True, "message": "已在资源管理器中定位 设备信息.apk，用微信/QQ 发给手机即可"})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"ok": False, "error": f"打开失败：{exc}"}, 500)
+            return
+
         if path == "/api/apk/restart":
             payload = self._read_json_body()
             if payload is not None:

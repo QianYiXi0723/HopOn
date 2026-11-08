@@ -2670,6 +2670,18 @@ function renderActivities(d){
   }
 }
 
+/* 打开设备信息.apk 所在文件夹（资源管理器选中文件）——
+   扫码不通时的兜底：用户把 apk 用微信/QQ 传给手机 */
+function openApkFolder(){
+  fetch('/api/tools/open-apk-folder', { method: 'POST' })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (!d || !d.ok) toast((d && d.error) || '打开失败', true);
+      else toast(d.message || '已打开文件夹');
+    })
+    .catch(function(){ toast('无法连接本地服务', true); });
+}
+
 /* 删除：立刻从界面消失，并写进 data/ignored_activities.json，之后永不提醒 */
 async function deleteActivity(btn){
   const id = btn.getAttribute('data-del');
