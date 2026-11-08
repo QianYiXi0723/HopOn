@@ -2585,7 +2585,12 @@ function renderActivities(d){
       mergedOngoing.push(buildMergedItem(members));
     });
     const heroPool = mergedOngoing.slice().sort(byUrgency);
-    const heroIt = heroPool.length ? heroPool[0] : (upcoming[0] || null);
+    /* 英雄卡选择（2026-11-09 三改）：最紧急优先；但最紧急卡「没有内容可展示」
+       （无进度、奖励空、非组卡——鸣潮活动常这样）时 2x2 只会整卡留白
+       （P6-2 的 241px 教训），此时英雄让给下一张「有内容」的卡，
+       紧急卡保持小卡 + 描边。全都没有内容才回落最紧急卡（slim）。
+       用户实证：只剩两天的鸣潮卡把英雄卡整卡挤没了。 */
+    const heroIt = heroPool.find(actHasContent) || heroPool[0] || (upcoming[0] || null);
     const heroSlim = !!heroIt && !actHasContent(heroIt);
 
     let html = '';
