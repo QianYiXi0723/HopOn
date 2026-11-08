@@ -3125,14 +3125,19 @@ document.getElementById('btn-hist-refresh').addEventListener('click', function()
 });
 
 /* 游戏概览卡的刷新（2026-11-06）：只重拉报表并重绘本卡，不触发游戏查询。
-   与上方「刷新」的区别：那个会先 loadLive(true) 真去查一遍游戏（写历史、
-   可能触发风控冷却），代价高；概览只是展示，用已有数据重绘就够。 */
+   2026-11-09 用户裁决：刷新不查询就是假刷新——概览刷新与信息查询页
+   同款 loadLive(true) 真查一遍（写历史、受风控冷却保护），完成后把
+   报表一起重绘。查询耗时约 5~15 秒，转圈反馈。 */
 document.getElementById('btn-stats-refresh').addEventListener('click', function(){
   const btn = this;
   if (!btn || btn.disabled) return;              // 防连点
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
-  loadHistory()
-    .catch(function(err){ console.error('刷新游戏概览失败', err); })
+  loadLive(true)
+    .then(function(){ return loadHistory(); })
+    .catch(function(err){
+      console.error('刷新游戏概览失败', err);
+      toast('刷新失败：' + ((err && err.message) || '无法连接本地服务'), true);
+    })
     .then(function(){ btn.disabled = false; btn.textContent = '刷新'; });
 });
 
