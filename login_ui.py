@@ -460,6 +460,31 @@ def _serialized_write(func):
     return wrapper
 
 
+#: 出厂占位昵称。这几款游戏的绑定流程早期只写 token，没回填真实昵称，
+#: config 里一直是这些默认值——气泡/提示里直接念出来像是玩家的真名
+#: （「已关闭提醒：博士」），2026-11-09 用户实测指出。读出时一律降级成游戏名。
+PLACEHOLDER_NICKNAMES = frozenset({"博士", "管理员", "舰长", "指挥官", "漂泊者"})
+
+#: 尾部的「#1234」标签（明日方舟昵称格式 Name#0642）。用户裁决：
+#: 界面上只留名字，编号是平台内部的区分后缀，念出来/看起来都像噪音。
+_NICK_TAG_RE = re.compile(r"\s*#\d+\s*$")
+
+
+def clean_nickname(nick: Any) -> str:
+    """去掉昵称尾部的 #数字 标签（KiloDusk#0642 -> KiloDusk）。"""
+    return _NICK_TAG_RE.sub("", str(nick or "")).strip()
+
+
+def _display_nickname(node: Dict[str, Any], game: str,
+                      names: Optional[Dict[str, str]] = None) -> str:
+    """账号行的可读称呼：真实昵称 > 游戏显示名（占位昵称不算真名）。"""
+    nick = clean_nickname((node or {}).get("nickname"))
+    if nick and nick not in PLACEHOLDER_NICKNAMES:
+        return nick
+    table = names if names is not None else {}
+    return table.get(game, game)
+
+
 @_serialized_write
 def set_account_enabled(games: List[str], enabled: bool) -> Dict[str, Any]:
     """把指定游戏写进/移出每日巡检（config accounts[].enabled）。
@@ -481,7 +506,7 @@ def set_account_enabled(games: List[str], enabled: bool) -> Dict[str, Any]:
         if node is None:
             continue
         node["enabled"] = bool(enabled)
-        changed.append(str(node.get("nickname") or names.get(game, game)))
+        changed.append(_display_nickname(node, game, names))
     if not changed:
         raise ValueError("config.json 里找不到这些游戏节点")
     save_raw_config(raw)
@@ -1938,7 +1963,11 @@ def write_mihoyo(
 
 @_serialized_write
 def write_skland(target: str, token: str) -> str:
-    """只更新目标游戏的 token，不动另一款。"""
+    """只更新目标游戏的 token，不动另一款。
+
+    2026-11-09：顺手回填真实昵称与角色 ID——此前只写 token，config 里昵称
+    一直停在出厂占位（博士/管理员），用户看到的气泡就成了「已开启提醒：博士」。
+    """
     raw = load_raw_config()
     hit = False
     for account in raw.get("accounts", []):
@@ -1951,6 +1980,21 @@ def write_skland(target: str, token: str) -> str:
     if not hit:
         raise RuntimeError(f"config.json 里没有 {target} 账号节点")
 
+    # 真实身份（尽力而为：拉不到不影响绑定成功，只是昵称停回退到游戏名）
+    identity = _skland_identity(target, token)
+    if identity:
+        for account in raw.get("accounts", []):
+            if account.get("game") != target:
+                continue
+            cred = account.setdefault("credential", {})
+            if identity.get("uid"):
+                cred["uid"] = identity["uid"]
+            if identity.get("server"):
+                cred["server"] = identity["server"]
+            if identity.get("nickname"):
+                account["nickname"] = identity["nickname"]
+            break
+
     query = raw.setdefault("query", {})
     if str(query.get("provider", "")).strip().lower() == "mock":
         query["provider"] = "miyoushe"
@@ -1959,6 +2003,78 @@ def write_skland(target: str, token: str) -> str:
     # 清掉旧 cred 缓存，强制下次用新 token 重新换取
     (USER_DIR / "logs" / f"skland_cred_{target}.json").unlink(missing_ok=True)
     return SKLAND_TARGETS.get(target, target)
+
+
+def _skland_identity(target: str, token: str) -> Dict[str, str]:
+    """从森空岛绑定列表里取该游戏的真实昵称 + 角色 ID。
+
+    返回 {} 表示拿不到（接口异常 / 没绑角色）——调用方按"没读到"处理。
+    明日方舟的 ID 是绑定里的 uid；终末地是角色 roleId（serverId 一并存，
+    查询层要用 roleId+serverId 拼 sk-game-role 头）。
+    """
+    try:
+        from core.skland_api import get_skland_credentials, list_players
+
+        cred = get_skland_credentials({"token": token}, game=target)
+        payload = list_players(cred["cred"], cred["token"])
+    except Exception as exc:  # noqa: BLE001 - 回填失败绝不能挡住绑定
+        logger.info("森空岛 %s 昵称回填失败（不影响绑定）：%s", target, exc)
+        return {}
+
+    game_code = {"arknights": "arknights", "endfield": "endfield"}.get(target, target)
+    for item in (payload.get("list") or []):
+        if not isinstance(item, dict) or item.get("appCode") != game_code:
+            continue
+        bindings = [b for b in (item.get("bindingList") or []) if isinstance(b, dict)]
+        if not bindings:
+            return {}
+        binding = bindings[0]
+        role = binding.get("defaultRole")
+        role = role if isinstance(role, dict) else {}
+        if target == "endfield":
+            # 终末地昵称在角色上（binding.nickName 常为空串），ID 用 roleId
+            nick = clean_nickname(role.get("nickname") or binding.get("nickName"))
+            return {
+                "nickname": nick,
+                "uid": str(role.get("roleId") or "").strip(),
+                "server": str(role.get("serverId") or "").strip(),
+            }
+        return {
+            "nickname": clean_nickname(binding.get("nickName")),
+            "uid": str(binding.get("uid") or "").strip(),
+        }
+    return {}
+
+
+def _kuro_identities(token: str) -> Dict[str, Dict[str, str]]:
+    """库街区 token -> {game: {uid: roleId, nickname: roleName}}。
+
+    一个 token 覆盖鸣潮(gameId=3)与战双(gameId=2)，两款角色各自独立。
+    任何一款拉不到就跳过那款，绝不影响绑定（绑定的核心是写 token）。
+    """
+    out: Dict[str, Dict[str, str]] = {}
+    try:
+        from core.kuro_api import list_roles
+    except Exception:  # noqa: BLE001
+        return out
+    for game, game_id in (("wuwa", 3), ("pgr", 2)):
+        try:
+            roles = list_roles(token, game_id)
+        except Exception as exc:  # noqa: BLE001 - 单款失败不挡绑定
+            logger.info("库街区 %s 角色信息拉取失败（不影响绑定）：%s", game, exc)
+            continue
+        for role in roles or []:
+            if not isinstance(role, dict):
+                continue
+            role_id = str(role.get("roleId") or "").strip()
+            if not role_id:
+                continue
+            out[game] = {
+                "uid": role_id,
+                "nickname": clean_nickname(role.get("roleName")),
+            }
+            break
+    return out
 
 
 @_serialized_write
@@ -1972,6 +2088,9 @@ def write_kuro(token: str, nickname: str = "", games: Optional[List[str]] = None
     """
     raw = load_raw_config()
     now_text = datetime.now().strftime("%Y-%m-%d %H:%M")
+    # 库街区角色身份（game -> {uid, nickname}）：一个 token 两款游戏各有角色，
+    # 此前只写 token，config 里昵称停在占位（指挥官/漂泊者）。
+    identities = _kuro_identities(token)
 
     def _upsert(game: str, nickname_default: str, enabled: bool) -> str:
         hit = None
@@ -1991,7 +2110,13 @@ def write_kuro(token: str, nickname: str = "", games: Optional[List[str]] = None
         cred = hit.setdefault("credential", {})
         cred["token"] = token
         cred["updated_at"] = now_text
-        if nickname:
+        identity = identities.get(game) or {}
+        if identity.get("uid"):
+            cred["uid"] = identity["uid"]          # 库街区角色 ID（roleId）
+        real_name = str(identity.get("nickname") or "").strip()
+        if real_name:
+            hit["nickname"] = real_name            # 真实角色名优先于传入/占位
+        elif nickname:
             hit["nickname"] = nickname
         if enabled and not hit.get("enabled", True):
             hit["enabled"] = True   # 绑定了就参与巡检；不想查可以再关开关
