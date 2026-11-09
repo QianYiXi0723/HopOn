@@ -3077,17 +3077,25 @@ function gameCardHtml(g){
   } else if (live && (live.tasks || []).length) {
     daily = (live.tasks || []).map(function(t){
       const hit = /(\d+)\s*\/\s*(\d+)/.exec(t.progress || '');
+      const nCur = hit ? parseInt(hit[1], 10) : (t.done ? 1 : 0);
+      const nMax = hit ? parseInt(hit[2], 10) : (t.done ? 1 : 0);
       let pct, txt;
       if (hit) {
-        const cur = parseInt(hit[1], 10), max = parseInt(hit[2], 10);
-        txt = cur + '/' + max;
-        pct = max > 0 ? Math.min(100, Math.round(cur * 100 / max)) : 100;
+        txt = nCur + '/' + nMax;
+        pct = nMax > 0 ? Math.min(100, Math.round(nCur * 100 / nMax)) : 100;
       } else {
         txt = t.done ? '✓' : '✗';
         pct = t.done ? 100 : 0;
       }
+      /* 做完了 = 绿色（用户 2026-11-09 要求）；没做完但进度高 = 橙色催一下。
+         两者语义相反，不能共用 .hot——体力条上的 hot 是「要溢出了，快处理」，
+         日常做完是「今天不用再管了」的达成状态。
+         0/0 表示没有可判定的任务，既不算完成也不该告警，保持中性。 */
+      const hasTarget = nMax > 0;
+      const isDone = hasTarget && nCur >= nMax;
+      const cls = isDone ? 'ok' : (hasTarget && pct >= 85 ? 'hot' : '');
       return '<div class="gcard-task"><span class="dim">' + escHtml(t.name) + '</span>' +
-        '<span class="sbar"><i class="' + (pct >= 85 ? 'hot' : '') +
+        '<span class="sbar"><i class="' + cls +
         '" style="width:' + pct + '%"></i></span>' +
         '<span class="mono">' + txt + '</span></div>';
     }).join('');

@@ -1044,6 +1044,10 @@
   .sbar{flex:1;position:relative;height:6px;background:var(--line);border-radius:999px;min-width:0}
   .sbar i{display:block;height:100%;background:var(--brand);border-radius:999px}
   .sbar i.hot{background:var(--warn)}
+  /* 已完成（2026-11-09 用户要求「日常做完了进度条就变成绿色」）：
+     与 .hot 语义相反——hot 是「满了要溢出来，快处理」的告警色，
+     ok 是「做完了，安心」的达成色。日常进度条用 ok，体力条仍用 hot。 */
+  .sbar i.ok{background:var(--ok)}
   .gcard-foot{font-size:12px;color:var(--muted);
               padding-top:8px;margin-top:auto}
   .gcard-foot b{color:var(--fg)}
