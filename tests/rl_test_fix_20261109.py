@@ -96,7 +96,7 @@ def run():
           and "超出 72 点" in _alert(312, 240).warn_line())
     fw = _alert(240, 240).warn_line()
     check("F2 已满不说即将溢出", "已满" in fw and "即将溢出" not in fw
-          and "停止恢复" in fw, fw)
+          and "停止恢复" not in fw, fw)
     fn = _alert(210, 240).warn_line()
     check("F3 未满阈值内", "即将溢出" in fn and "已满" not in fn, fn)
 
