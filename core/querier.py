@@ -15,12 +15,19 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from .config import KNOWN_GAMES, AccountConfig
 from .history import GAME_DAY_OFFSET
+from .kuro_api import (
+    GameNotBoundError as KuroGameNotBoundError,
+    KuroAuthError,
+    KuroQueryError,
+    get_widget_data,
+)
 from .mihoyo_api import (
     MiyousheAuthError,
     MiyousheNotBoundError,
@@ -167,6 +174,16 @@ MOCK_TASKS: Dict[str, List[Dict[str, object]]] = {
         {"name": "每日活跃度", "done": False, "progress": "60/100"},
         {"name": "据点物资收取", "done": True, "progress": ""},
     ],
+    # 鸣潮：活跃度打满、波片没满 => 资源未满但日常完成
+    "wuwa": [
+        {"name": "每日活跃", "done": True, "progress": "100/100"},
+        {"name": "结晶波片", "done": False, "progress": "146/240"},
+    ],
+    # 战双：活跃度差一点、血清没满
+    "pgr": [
+        {"name": "每日活跃", "done": False, "progress": "80/100"},
+        {"name": "血清", "done": False, "progress": "145/240"},
+    ],
 }
 
 #: mock 模式下未登记的游戏返回这套兜底数据，避免脚本因为新增游戏直接报错
@@ -233,7 +250,12 @@ class MiyousheQuerier(BaseQuerier):
     source = "miyoushe"
 
     #: 本查询器覆盖的游戏
-    SUPPORTED_GAMES = ("genshin", "starrail", "zzz")
+    SUPPORTED_GAMES = ("genshin", "starrail", "zzz", "bh3")
+
+    #: 崩3体力开关（2026-11-09 攻坚终局：/game_record/app/honkai3rd/api/note
+    #: 实测 retcode=0，星铁同款配方直通，字段与社区口径一致——正式启用）。
+    #: 完整攻坚弯路存档见 mihoyo_api.ENDPOINTS["bh3"] 注释。
+    BH3_STAMINA_ENABLED = True
 
     def fetch(self, account: AccountConfig) -> GameStatus:
         if account.game not in self.SUPPORTED_GAMES:
@@ -416,10 +438,41 @@ class MiyousheQuerier(BaseQuerier):
 
         return tasks
 
+    # ---------------- 解析：崩坏3 ---------------- #
+    def parse_bh3(self, data: Any) -> List[TaskItem]:
+        """崩坏3便签 -> 任务列表：体力。
+
+        端点/字段按社区文档口径实现（note 返回 current_stamina /
+        max_stamina / stamina_recover_time，与原神 dailyNote 同名）。
+        2026-11-09 真机实证（480/240, recover=0——超上限形态正好走
+        三态裁决的 N/N 渲染）。崩3便签是否携带每日任务进度未知——
+        v1 只出体力（counted=False，不参与完成度判定；finished 对
+        零判定项恒 False，不会假「已完成」）。
+        """
+        tasks: List[TaskItem] = []
+        current = _optional_int(data, "current_stamina")
+        maximum = _optional_int(data, "max_stamina")
+        if current is not None and maximum:
+            tasks.append(TaskItem(
+                "体力", current >= maximum, f"{current}/{maximum}",
+                counted=_resource_counted(),
+                recover_seconds=normalize_recover_seconds(
+                    _optional_int(data, "stamina_recover_time")),
+            ))
+        # 每日训练 = 崩3的日常判定锚点（真机便签实测 0/600，与星铁
+        # current_train_score 同名字段同语义；total=0 护栏同族）
+        train_now = _optional_int(data, "current_train_score")
+        train_max = _optional_int(data, "max_train_score")
+        if train_now is not None and train_max and train_max > 0:
+            tasks.append(TaskItem(
+                "每日训练", train_now >= train_max, f"{train_now}/{train_max}"))
+        return tasks
+
     _PARSERS = {
         "genshin": parse_genshin,
         "starrail": parse_starrail,
         "zzz": parse_zzz,
+        "bh3": parse_bh3,
     }
 
 
@@ -805,6 +858,211 @@ class SklandQuerier(BaseQuerier):
         raise GameNotBoundError("账号下没有这款游戏的角色，建号后自动生效")
 
 
+class KuroQuerier(BaseQuerier):
+    """库街区查询器（provider="kuro"）。
+
+    一张库街区 token 覆盖两款游戏（widget/game{n}/refresh 各一次调用）：
+      鸣潮 wuwa（gameId=3）
+        每日活跃   livenessData —— 鸣潮没有委托清单，活跃度就是官方每日度量（判定锚点）
+        结晶波片   energyData   —— 体力，refreshTimeStamp 按服务器时间推回满 ETA
+        结晶单质   storeEnergyData —— 溢出转存槽，作为波片后缀展示（星铁"备用"同款）
+        战歌重奏   weeklyData   —— 周常，仅展示口径
+      战双帕弥什 pgr（gameId=2）
+        每日活跃   activeData   —— 判定锚点（PGR 日常的官方度量）
+        血清       actionData   —— 体力，refreshTimeStamp 推 ETA
+        委托情况   dormData     —— 展示口径
+
+    token 即凭证（库街区无签名、无指纹校验），失效抛 KuroAuthError（cred_kind="auth"）。
+    库街区月签状态（hasSignIn）是 App 侧月历，与游戏内日常无关，不进任务列表。
+    """
+
+    source = "kuro"
+
+    SUPPORTED_GAMES = ("wuwa", "pgr")
+
+    #: 游戏 -> widget 节点名
+    _WIDGET_NODES = {
+        "wuwa": {"daily": "livenessData", "stamina": "energyData", "extra": "storeEnergyData",
+                 "extra_label": "结晶单质"},
+        "pgr": {"daily": "activeData", "stamina": "actionData", "extra": "dormData",
+                "extra_label": "委托"},
+    }
+
+    def fetch(self, account: AccountConfig) -> GameStatus:
+        if account.game not in self.SUPPORTED_GAMES:
+            return GameStatus(
+                game_id=account.game,
+                game_name=account.game_name,
+                nickname=account.nickname,
+                source=self.source,
+                error=f"KuroQuerier 不支持游戏 {account.game}",
+            )
+        token = str((account.credential or {}).get("token") or "").strip()
+        if not token or "请填写" in token:
+            raise KuroAuthError("库街区 token 还没绑定，请在「账号绑定」页粘贴")
+        try:
+            data = get_widget_data(
+                token, game_id=3 if account.game == "wuwa" else 2)
+        except KuroGameNotBoundError as exc:
+            # token 有效但没绑角色：与森空岛同款——不是查询失败、
+            # 不触发凭证告警，等玩家建号后自动生效（no_account 中性展示）
+            return GameStatus(
+                game_id=account.game,
+                game_name=account.game_name,
+                nickname=account.nickname,
+                source=self.source,
+                no_account=str(exc),
+            )
+        except (KuroAuthError, KuroQueryError):
+            raise
+        except Exception as exc:
+            raise KuroQueryError(f"解析返回数据时出现未预期错误：{exc}") from exc
+
+        # 每日活跃「未解锁」（库街区数据终端没有该角色的活跃数据——新角色/
+        # 未开数据授权时常见，实测 livenessData/activeData status=1 cur=0 total=0）：
+        # 如实标注「待解锁」而不是永远「未完成」；体力节点不受影响照常展示。
+        nodes = self._WIDGET_NODES[account.game]
+        daily = data.get(nodes["daily"])
+        if isinstance(daily, dict) and _optional_int(daily, "status") == 1:
+            tasks = (self.parse_wuwa(data) if account.game == "wuwa"
+                     else self.parse_pgr(data))
+            return GameStatus(
+                game_id=account.game,
+                game_name=account.game_name,
+                nickname=account.nickname,
+                source=self.source,
+                stale="每日活跃数据未解锁：请在库街区 App「数据终端」绑定角色并"
+                      "开启数据授权，解锁后自动恢复日常判定",
+                tasks=tasks,
+            )
+
+        tasks = (self.parse_wuwa(data) if account.game == "wuwa"
+                 else self.parse_pgr(data))
+        nickname = str(data.get("roleName") or "") or account.nickname
+        # 库洛服务器偶发把 roleName 返回成内部 ID 样式的脏值（实测
+        # "c404d040"），无条件回填会污染 config 昵称——纯十六进制长串不回填
+        if re.fullmatch(r"[0-9a-fA-F]{8,}", nickname or ""):
+            logger.warning("%s roleName 疑似脏值（%r），跳过昵称回填", account.game, nickname)
+            nickname = account.nickname
+        if nickname:
+            account.nickname = nickname
+        return self.build_status(
+            game_id=account.game,
+            tasks=tasks,
+            nickname=nickname,
+            source=self.source,
+        )
+
+    @staticmethod
+    def _widget_progress(node: Any) -> Optional[Tuple[int, int, int]]:
+        """从小组件数据节点取 (cur, total, status)。结构不对返回 None（跳过该项）。"""
+        if not isinstance(node, dict):
+            return None
+        cur = _optional_int(node, "cur")
+        total = _optional_int(node, "total")
+        status = _optional_int(node, "status")
+        if cur is None or total is None:
+            return None
+        return cur, total, status or 0
+
+    @classmethod
+    def _recover_from_node(cls, data: Dict[str, Any], node_key: str) -> Optional[int]:
+        """距满秒数 = 节点 refreshTimeStamp - serverTime。
+
+        库洛服务器时间偶发不准（API 文档明确警告），相对差值比拿本机时钟
+        去减绝对时间戳稳。任一端缺时间戳就放弃 ETA（前端走常数速率估算）。
+        """
+        node = data.get(node_key) or {}
+        refresh = _optional_int(node, "refreshTimeStamp")
+        server = _optional_int(data, "serverTime")
+        if not refresh or refresh <= 0:
+            return None
+        reference = server if server and server > 0 else int(time.time())
+        return max(0, refresh - reference)
+
+    @classmethod
+    def parse_wuwa(cls, data: Dict[str, Any]) -> List[TaskItem]:
+        """鸣潮小组件数据 -> 任务列表。
+
+        判定锚点是每日活跃：拿不到就整款报字段异常（绝不退化成"零任务=全完成"，
+        与原神委托缺失同款护栏）。status=1（未解锁）与 total<=0 同语义跳过。
+        """
+        tasks: List[TaskItem] = []
+
+        liveness = cls._widget_progress(data.get("livenessData"))
+        if liveness is None:
+            raise KuroQueryError("库街区返回的数据不完整（缺每日活跃），当前版本可能无法识别，请关注软件更新")
+        live_cur, live_total, live_status = liveness
+        if live_status == 1 or live_total <= 0:
+            # 未解锁/没给数据：不参与判定（0/0 护栏族——0>=0 会退化成「已完成」）
+            pass
+        else:
+            tasks.append(TaskItem("每日活跃", live_cur >= live_total, f"{live_cur}/{live_total}"))
+
+        energy = cls._widget_progress(data.get("energyData"))
+        if energy is not None:
+            e_cur, e_total, e_status = energy
+            if e_status == 1 or e_total <= 0:
+                pass
+            else:
+                # 结晶单质（溢出转存）：与星铁「备用开拓力」同款后缀
+                store = cls._widget_progress(data.get("storeEnergyData"))
+                progress = f"{e_cur}/{e_total}"
+                if store is not None and store[0] > 0:
+                    progress += f" + 结晶单质 {store[0]}"
+                tasks.append(TaskItem(
+                    "结晶波片", e_cur >= e_total, progress,
+                    counted=_resource_counted(),
+                    recover_seconds=cls._recover_from_node(data, "energyData"),
+                ))
+
+        weekly = cls._widget_progress(data.get("weeklyData"))
+        if weekly is not None:
+            w_cur, w_total, w_status = weekly
+            if w_status != 1 and w_total > 0:
+                tasks.append(TaskItem(
+                    "战歌重奏", w_cur >= w_total, f"{w_cur}/{w_total}",
+                    counted=_resource_counted(),
+                ))
+        return tasks
+
+    @classmethod
+    def parse_pgr(cls, data: Dict[str, Any]) -> List[TaskItem]:
+        """战双小组件数据 -> 任务列表（结构与鸣潮同族，节点名不同）。"""
+        tasks: List[TaskItem] = []
+
+        active = cls._widget_progress(data.get("activeData"))
+        if active is None:
+            raise KuroQueryError("库街区返回的数据不完整（缺每日活跃），当前版本可能无法识别，请关注软件更新")
+        a_cur, a_total, a_status = active
+        if a_status == 1 or a_total <= 0:
+            pass
+        else:
+            tasks.append(TaskItem("每日活跃", a_cur >= a_total, f"{a_cur}/{a_total}"))
+
+        serum = cls._widget_progress(data.get("actionData"))
+        if serum is not None:
+            s_cur, s_total, s_status = serum
+            if s_status == 1 or s_total <= 0:
+                pass
+            else:
+                tasks.append(TaskItem(
+                    "血清", s_cur >= s_total, f"{s_cur}/{s_total}",
+                    counted=_resource_counted(),
+                    recover_seconds=cls._recover_from_node(data, "actionData"),
+                ))
+
+        dorm = cls._widget_progress(data.get("dormData"))
+        if dorm is not None:
+            d_cur, d_total, d_status = dorm
+            if d_status != 1 and d_total > 0:
+                tasks.append(TaskItem(
+                    "委托", d_cur >= d_total, f"{d_cur}/{d_total}",
+                    counted=_resource_counted(),
+                ))
+        return tasks
+
+
 def _require_int_field(data: Dict[str, Any], key: str, label: str) -> int:
     """取整数字段，缺失/非数字一律按字段异常报错（不编造默认值）。"""
     value = data.get(key)
@@ -840,8 +1098,14 @@ class UnknownProviderError(Exception):
 
 
 #: 主 provider 未覆盖某游戏时的自动回退链：
-#: miyoushe 不覆盖森空岛系 -> 这两款游戏自动挂到 skland 查询器。
-_PROVIDER_FALLBACK: Dict[str, str] = {"arknights": "skland", "endfield": "skland"}
+#: miyoushe 不覆盖森空岛系 -> 这两款游戏自动挂到 skland 查询器；
+#: 鸣潮不在米游社/森空岛任何一方 -> 自动挂到 kuro（库街区）。
+_PROVIDER_FALLBACK: Dict[str, str] = {
+    "arknights": "skland",
+    "endfield": "skland",
+    "wuwa": "kuro",
+    "pgr": "kuro",
+}
 
 
 def get_querier(game_id: str, provider: str = "mock") -> BaseQuerier:
@@ -897,6 +1161,7 @@ __all__ = [
     "MockQuerier",
     "MiyousheQuerier",
     "SklandQuerier",
+    "KuroQuerier",
     "UnknownProviderError",
     "get_querier",
     "register_querier",
@@ -918,7 +1183,12 @@ for _game_id in MOCK_TASKS:
 register_querier("miyoushe", "genshin", MiyousheQuerier)
 register_querier("miyoushe", "starrail", MiyousheQuerier)
 register_querier("miyoushe", "zzz", MiyousheQuerier)
+register_querier("miyoushe", "bh3", MiyousheQuerier)
 
 # skland：明日方舟 / 终末地走真实接口
 register_querier("skland", "arknights", SklandQuerier)
 register_querier("skland", "endfield", SklandQuerier)
+
+# kuro：鸣潮/战双走真实接口（同一张库街区 token；主 provider=miyoushe 时经 _PROVIDER_FALLBACK 自动挂载）
+register_querier("kuro", "wuwa", KuroQuerier)
+register_querier("kuro", "pgr", KuroQuerier)

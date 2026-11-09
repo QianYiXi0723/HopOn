@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HopOn · 控制台</title>
+<!-- 极验 v4（库街区短信登录的人机验证；加载失败只影响短信模式，token 粘贴兜底可用） -->
+<script src="https://static.geetest.com/v4/gt4.js" defer></script>
 <style>__STYLE__</style>
 </head>
 <body>
@@ -44,7 +46,7 @@
   <div class="app-body">
   <aside class="side">
     <div class="brand">
-      <div class="logo">R</div>
+      <div class="logo">H</div>
       <div><b>HopOn</b><span>日常巡查</span></div>
     </div>
     <nav class="nav">
@@ -72,8 +74,8 @@
 
   <!-- 演示模式欢迎横幅（出厂 provider=mock 时由 refreshNotice 点亮） -->
   <div class="welcome" id="welcome" hidden>
-    <span class="welcome-txt">👋 欢迎使用 HopOn！当前为<b>演示模式</b>，请先在左侧【账号绑定】中扫码登录，开始真实的日常巡查。</span>
-    <button type="button" class="btn sm" data-goto="account">去扫码登录 →</button>
+    <span class="welcome-txt">👋 欢迎使用 HopOn！当前为<b>演示模式</b>，请先在左侧【账号绑定】中登录账号，开始真实的日常巡查。</span>
+    <button type="button" class="btn sm" data-goto="account">去绑定账号 →</button>
     <button type="button" class="welcome-x" id="welcome-x" title="不再显示">×</button>
   </div>
 
@@ -125,18 +127,19 @@
           <span class="q" data-tip="每款游戏一张卡：今日完成状态、当前体力与连续完成天数"></span>
         </h2>
         <span class="spacer"></span>
-        <button type="button" class="btn sm" id="btn-stats-refresh" style="height:24px" data-tip="重新拉取并渲染下方的游戏概览（只刷新本卡，不重新查询游戏）">刷新</button>
+        <button type="button" class="btn sm" id="btn-stats-refresh" style="height:24px" data-tip="重新查询全部游戏并渲染概览（同时更新报表；受风控冷却保护，约需 5~15 秒）">刷新</button>
       </div>
       <div id="h-stats"></div>
     </section>
 
     <section class="card s12">
       <div class="card-head">
-        <h2><svg class="ico"><use href="#i-list"/></svg> 最近 7 天</h2>
+        <h2><svg class="ico"><use href="#i-list"/></svg> 七日报表
+          <button type="button" class="btn sm" id="h-month-entry" style="height:24px"
+                  title="打开整月月历（热力 / 分游戏）">每月报表</button>
+        </h2>
         <span class="q" data-tip="绿色 = 当天完成，红色 = 查过但未完成，灰 = 当天未运行或未查到"></span>
         <span class="spacer"></span>
-        <button type="button" class="btn sm" id="h-month-entry" style="height:24px"
-                title="打开整月月历（热力 / 分游戏）">每月报表</button>
       </div>
       <div id="h-table"></div>
     </section>
@@ -181,8 +184,8 @@
       <!-- 扫码 + 游戏监控：同一任务（定范围 → 扫码），合并一卡避免空旷卡头 -->
       <section class="card">
         <div class="card-head">
-          <h2><svg class="ico"><use href="#i-key"/></svg> 扫码登录</h2>
-          <span class="q" data-tip="点击胶囊开始扫码，一次更新所选游戏的登录状态。胶囊上的黄点表示对应平台还有游戏未登录过，扫码后自动熄灭"></span>
+          <h2><svg class="ico"><use href="#i-key"/></svg> 账号绑定</h2>
+          <span class="q" data-tip="点击胶囊更新登录凭证：米游社 / 森空岛为扫码，库街区为验证码或 Token。胶囊上的黄点表示该平台还有游戏未绑定，绑定后自动熄灭"></span>
         </div>
         <div class="card-body">
           <div class="caps-row">
@@ -196,7 +199,12 @@
               <span class="cap-ico" data-plat="skland"><svg class="ico"><use href="#i-island"/></svg></span>
               <span class="cap-txt"><b>森空岛</b><small>更新凭证</small></span>
             </button>
-            <div class="btn-note caps-note">扫码只更新登录凭证；是否参与每日巡检由下方监控开关决定。</div>
+            <button type="button" class="scan-cap" id="cap-k" onclick="startKuro()">
+              <span class="cap-dot" id="cap-dot-k"></span>
+              <span class="cap-ico" data-plat="kuro"><svg class="ico"><use href="#i-gamepad"/></svg></span>
+              <span class="cap-txt"><b>库街区</b><small>绑定账号</small></span>
+            </button>
+            <div class="btn-note caps-note">绑定只更新登录凭证；是否参与每日巡检由下方监控开关决定。</div>
           </div>
           <details class="card set-item" id="acc-monitor" style="margin-top:10px">
             <summary class="card-head set-head">
@@ -231,6 +239,12 @@
                   <span class="switch"><i></i></span>
                 </label>
                 <label class="sel-card on">
+                  <input type="checkbox" name="m" value="bh3" checked>
+                  <span class="sel-ico ph">崩</span>
+                  <span class="sel-name">崩坏3</span>
+                  <span class="switch"><i></i></span>
+                </label>
+                <label class="sel-card on">
                   <input type="checkbox" name="s" value="arknights" checked>
                   <span class="sel-ico ph">舟</span>
                   <span class="sel-name">明日方舟</span>
@@ -240,6 +254,18 @@
                   <input type="checkbox" name="s" value="endfield" checked>
                   <span class="sel-ico ph">终</span>
                   <span class="sel-name">明日方舟：终末地</span>
+                  <span class="switch"><i></i></span>
+                </label>
+                <label class="sel-card on">
+                  <input type="checkbox" name="k" value="wuwa" checked>
+                  <span class="sel-ico ph">潮</span>
+                  <span class="sel-name">鸣潮</span>
+                  <span class="switch"><i></i></span>
+                </label>
+                <label class="sel-card on">
+                  <input type="checkbox" name="k" value="pgr" checked>
+                  <span class="sel-ico ph">双</span>
+                  <span class="sel-name">战双帕弥什</span>
                   <span class="switch"><i></i></span>
                 </label>
               </div>
@@ -302,6 +328,12 @@
                 <div class="apk" id="apk-box">
                   <div class="apk-qr" id="apk-qr"><span class="ph" style="font-size:12px">二维码生成中…</span></div>
                   <div class="apk-meta" id="apk-meta"></div>
+                </div>
+                <div class="hint" style="margin-top:10px">
+                  手机扫不出？（校园网隔离 / 手机在流量）改用任一方式：
+                  <a href="https://gitee.com/qianyixi/HopOn/releases" target="_blank" rel="noopener">Gitee Releases 下载「设备信息.apk」</a>（国内免梯，选最新版本）；
+                  或电脑端 <a href="#" onclick="openApkFolder(); return false">打开 apk 所在文件夹</a> 传给手机。
+                  本机缺失时下载服务会自动从最新版本补一份。
                 </div>
               </div>
               <div class="dev-right">
@@ -429,6 +461,60 @@
           <button class="btn" onclick="closePick()">取消</button>
           <button class="btn primary" id="btn-pick-next" onclick="confirmPick()">下一步：生成二维码</button>
         </div>
+      </div>
+    </div>
+
+    <!-- 库街区绑定浮层（鸣潮）：短信登录为主、token 粘贴兜底 -->
+    <div class="modal-mask" id="kuro-stage" hidden>
+      <div class="modal">
+        <div class="modal-head">
+          <b>绑定库街区</b>
+          <button type="button" class="modal-x" onclick="closeKuro()" title="关闭">✕</button>
+        </div>
+
+        <div class="kuro-modes">
+          <div class="seg-mini">
+            <button type="button" id="kuro-mode-sms" class="on" onclick="kuroSwitchMode('sms')">短信登录</button>
+            <button type="button" id="kuro-mode-token" onclick="kuroSwitchMode('token')">Token 粘贴</button>
+          </div>
+        </div>
+
+        <!-- 短信模式 -->
+        <div id="kuro-sms-pane">
+          <div class="kuro-row">
+            <input type="tel" id="kuro-phone" maxlength="11" placeholder="库街区绑定的手机号" autocomplete="tel">
+            <button type="button" class="btn" id="btn-kuro-send" onclick="kuroSendSms()">发送验证码</button>
+          </div>
+          <div class="kuro-row">
+            <input type="text" id="kuro-code" maxlength="6" inputmode="numeric" placeholder="6 位短信验证码" autocomplete="one-time-code">
+          </div>
+          <div class="kuro-hint" id="kuro-sms-hint">
+            用手机号验证码直接登录库街区，无需抓包。注意：库街区为单设备登录，
+            绑定后手机上的库街区 App 会被顶下线，重新登录 App 即可。
+          </div>
+          <div class="kuro-status" id="kuro-status"></div>
+          <div class="toolbar" style="justify-content:flex-end">
+            <button type="button" class="btn primary" id="btn-kuro-login" onclick="kuroLogin()">登录并绑定</button>
+          </div>
+        </div>
+
+        <!-- Token 粘贴模式（兜底） -->
+        <div id="kuro-token-pane" hidden>
+          <div class="kuro-row">
+            <input type="text" id="kuro-token" placeholder="粘贴库街区 Token（eyJ 开头）" autocomplete="off">
+          </div>
+          <div class="kuro-hint">
+            获取方式：浏览器登录 <b>kurobbs.com</b> → F12 → Application → Cookies →
+            复制 <b>user_token</b> 的值。短信登录不可用时的兜底方案。
+          </div>
+          <div class="kuro-status" id="kuro-token-status"></div>
+          <div class="toolbar" style="justify-content:flex-end">
+            <button type="button" class="btn primary" id="btn-kuro-save" onclick="kuroSaveToken()">校验并绑定</button>
+          </div>
+        </div>
+
+        <!-- 极验 v4 弹出层挂载点（gt4.js 自绘 popup） -->
+        <div id="kuro-captcha"></div>
       </div>
     </div>
 
@@ -579,6 +665,15 @@
                 <label><span>终末地 · 理智</span>
                   <input type="number" id="resin-endfield" min="0" max="1000" step="10"
                          placeholder="300" inputmode="numeric"></label>
+                <label><span>鸣潮 · 波片</span>
+                  <input type="number" id="resin-wuwa" min="0" max="1000" step="10"
+                         placeholder="200" inputmode="numeric"></label>
+                <label><span>战双 · 血清</span>
+                  <input type="number" id="resin-pgr" min="0" max="1000" step="10"
+                         placeholder="200" inputmode="numeric"></label>
+                <label><span>崩坏3 · 体力</span>
+                  <input type="number" id="resin-bh3" min="0" max="1000" step="10"
+                         placeholder="90" inputmode="numeric"></label>
               </div>
               <button id="btn-resin-save" class="btn">保存阈值</button>
               <div class="hint" id="resin-hint">读取中…</div>

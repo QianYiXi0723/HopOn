@@ -126,11 +126,12 @@ def _render_page() -> str:
 
 logger = logging.getLogger("dailycheck.loginui")
 
-#: 米游社三款游戏：id -> 显示名
+#: 米游社四款游戏：id -> 显示名
 MIHOYO_GAMES: Dict[str, str] = {
     "genshin": "原神",
     "starrail": "崩坏：星穹铁道",
     "zzz": "绝区零",
+    "bh3": "崩坏3",
 }
 
 #: 森空岛两款游戏：id -> 显示名
@@ -360,6 +361,13 @@ def push_status() -> Dict[str, Any]:
     }
 
 
+def _is_cn_mobile(mobile: str) -> bool:
+    """国内手机号格式：1[3-9] 开头 11 位数字。"""
+    import re as _re
+
+    return bool(_re.fullmatch(r"1[3-9]\d{9}", mobile or ""))
+
+
 def _game_display_map() -> Dict[str, str]:
     """游戏 id -> 中文名，唯一来源是 core.config.KNOWN_GAMES。"""
     try:
@@ -495,6 +503,9 @@ _THRESHOLD_FIELDS: Tuple[Tuple[str, str, int], ...] = (
     ("zzz",       "zzz_energy_threshold",       200),
     ("arknights", "arknights_ap_threshold",     135),
     ("endfield",  "endfield_sanity_threshold",  300),
+    ("wuwa",      "wuwa_energy_threshold",      200),
+    ("pgr",       "pgr_serum_threshold",        200),
+    ("bh3",       "bh3_stamina_threshold",       90),
 )
 
 
@@ -1821,6 +1832,11 @@ def live_status(force: bool = False) -> Dict[str, Any]:
                 entry["cooled"] = True
                 games.append(entry)
 
+        # 排序统一按 GAME_ORDER 平台分组序（与游戏概览/报表同口径）——
+        # config 账号行是历史追加序（崩3/战双在尾部），不排两页会不一致
+        from core.history import GAME_ORDER as _GAME_ORDER
+        _order = {g: i for i, g in enumerate(_GAME_ORDER)}
+        games.sort(key=lambda item: _order.get(str(item.get("game")), len(_order)))
         payload = {
             "ok": True,
             "cached": False,
@@ -1853,6 +1869,10 @@ def save_schedule(times: Any) -> Dict[str, Any]:
     return result
 
 
+#: 后加游戏的默认昵称（补行用；与 DEFAULT_CONFIG 模板一致）
+_MISSING_ACCOUNT_NICKNAMES = {"bh3": "舰长", "pgr": "指挥官", "wuwa": "漂泊者"}
+
+
 @_serialized_write
 def write_mihoyo(
     cookie: str,
@@ -1871,6 +1891,20 @@ def write_mihoyo(
     roles = roles or {}
     updated: List[str] = []
     absent: List[str] = []
+    # 存量配置没有的后加游戏（如崩坏3）：**先按出厂模板补行、再进写循环**——
+    # 补行若发生在写循环之后，勾选的游戏永远拿不到 Cookie（只勾崩3时更会
+    # 触发「没有写入任何游戏」误报；2026-11-09 用户实测无法绑定崩3的根因）
+    present = {a.get("game") for a in raw.get("accounts", []) if isinstance(a, dict)}
+    missing = wanted - present
+    if missing:
+        for game in sorted(missing):
+            raw.setdefault("accounts", []).append({
+                "game": game,
+                "nickname": _MISSING_ACCOUNT_NICKNAMES.get(game, game),
+                "enabled": True,
+                "credential": {},
+            })
+        logger.info("补建缺失账号节点：%s（存量配置迁移）", ", ".join(sorted(missing)))
     for account in raw.get("accounts", []):
         game = account.get("game")
         if game not in wanted:
@@ -1891,10 +1925,6 @@ def write_mihoyo(
             updated.append(str(account.get("nickname") or MIHOYO_GAMES.get(game, game)))
         else:
             absent.append(game)
-    present = {a.get("game") for a in raw.get("accounts", [])}
-    missing = wanted - present
-    if missing:
-        raise RuntimeError(f"config.json 里找不到这些游戏节点：{', '.join(sorted(missing))}")
     if not updated and not absent:
         raise RuntimeError("没有写入任何游戏，请检查 config.json 的 accounts")
 
@@ -1929,6 +1959,82 @@ def write_skland(target: str, token: str) -> str:
     # 清掉旧 cred 缓存，强制下次用新 token 重新换取
     (USER_DIR / "logs" / f"skland_cred_{target}.json").unlink(missing_ok=True)
     return SKLAND_TARGETS.get(target, target)
+
+
+@_serialized_write
+def write_kuro(token: str, nickname: str = "", games: Optional[List[str]] = None) -> str:
+    """写入库街区 token。games=None 时两款全写（兼容旧调用）；
+    传入白名单（选卡弹窗勾选）则只写勾选的游戏——绑定即开启对应开关。
+
+    与 write_skland 的差异：**可创建账号行**——森空岛上线时全量注入过账号
+    节点，鸣潮/战双是后加游戏，存量 config.json 里没有，找不到就按出厂
+    模板形态补行。
+    """
+    raw = load_raw_config()
+    now_text = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    def _upsert(game: str, nickname_default: str, enabled: bool) -> str:
+        hit = None
+        for account in raw.get("accounts", []):
+            if isinstance(account, dict) and account.get("game") == game:
+                hit = account
+                break
+        if hit is None:
+            hit = {
+                "game": game,
+                "nickname": nickname_default,
+                "enabled": enabled,
+                "credential": {},
+            }
+            raw.setdefault("accounts", []).append(hit)
+            logger.info("%s 账号节点不存在，已创建（存量配置迁移）", game)
+        cred = hit.setdefault("credential", {})
+        cred["token"] = token
+        cred["updated_at"] = now_text
+        if nickname:
+            hit["nickname"] = nickname
+        if enabled and not hit.get("enabled", True):
+            hit["enabled"] = True   # 绑定了就参与巡检；不想查可以再关开关
+        return str(hit.get("nickname") or nickname_default)
+
+    targets = [g for g in (games or ["wuwa", "pgr"]) if g in ("wuwa", "pgr")]
+    if not targets:
+        targets = ["wuwa", "pgr"]
+    wuwa_name = ""
+    # token 刷新覆盖**所有已存在的库街区行**（wuwa/pgr）：库街区单设备登录，
+    # 每次 sdkLogin 的新 token 会让旧 token 全部失效——只写勾选的游戏会把
+    # 另一款的旧 token 留成死凭证（2026-11-09 用户先绑鸣潮再绑战双实测）。
+    # 勾选（targets）只决定：激活开关 + 不存在的行要不要创建。
+    for game in ("wuwa", "pgr"):
+        existing = any(
+            isinstance(a, dict) and a.get("game") == game
+            for a in raw.get("accounts", [])
+        )
+        if existing:
+            _upsert(
+                game,
+                "指挥官" if game == "pgr" else (nickname or "漂泊者"),
+                enabled=game in targets,
+            )
+        elif game in targets:
+            _upsert(
+                game,
+                "指挥官" if game == "pgr" else (nickname or "漂泊者"),
+                enabled=True,
+            )
+        if game == "wuwa":
+            wuwa_name = next(
+                (str(a.get("nickname") or "漂泊者")
+                 for a in raw.get("accounts", [])
+                 if isinstance(a, dict) and a.get("game") == "wuwa"),
+                "漂泊者",
+            )
+
+    query = raw.setdefault("query", {})
+    if str(query.get("provider", "")).strip().lower() == "mock":
+        query["provider"] = "miyoushe"
+    save_raw_config(raw)
+    return wuwa_name
 
 
 # --------------------------------------------------------------------------- #
@@ -2733,6 +2839,115 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("切换开机自启失败")
                     self._json({"ok": False, "message": f"操作失败：{exc}"}, 500)
+            return
+
+        if path == "/api/kuro/verify":
+            # token 粘贴模式预检：只读校验，不落盘
+            payload = self._read_json_body()
+            if payload is not None:
+                try:
+                    from core.kuro_api import verify_kuro_token
+
+                    self._json(verify_kuro_token(str(payload.get("token") or "")))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("库街区 token 校验失败")
+                    self._json({"ok": False, "error": f"校验失败：{exc}"}, 500)
+            return
+
+        if path == "/api/kuro/save":
+            # token 粘贴模式保存：校验通过才落盘（DPAPI 由 save_raw_config 透明处理）
+            payload = self._read_json_body()
+            if payload is not None:
+                try:
+                    from core.kuro_api import verify_kuro_token
+
+                    token = str(payload.get("token") or "").strip()
+                    check = verify_kuro_token(token)
+                    if not check.get("ok"):
+                        self._json({"ok": False, "error": check.get("error") or "token 校验未通过"})
+                        return
+                    roles = check.get("wuwa_roles") or []
+                    nickname = str(roles[0].get("roleName") or "") if roles else ""
+                    saved_name = write_kuro(
+                        token, nickname,
+                        games=payload.get("games") if isinstance(payload.get("games"), list) else None)
+                    self._json({"ok": True, "nickname": saved_name,
+                                "message": f"已绑定库街区账号：{saved_name}"})
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("库街区 token 保存失败")
+                    self._json({"ok": False, "error": f"保存失败：{exc}"}, 500)
+            return
+
+        if path == "/api/kuro/sms/send":
+            # 短信模式第一步：前端极验弹窗通过后，带 validate 结果发码
+            payload = self._read_json_body()
+            if payload is not None:
+                try:
+                    from core.kuro_api import KuroSmsError, send_sms_code
+
+                    mobile = str(payload.get("mobile") or "").strip()
+                    if not _is_cn_mobile(mobile):
+                        self._json({"ok": False, "error": "手机号格式不对（仅支持国内号段）"})
+                        return
+                    send_sms_code(mobile, str(payload.get("gee_test_data") or ""))
+                    self._json({"ok": True, "message": "验证码已发送，注意查收短信"})
+                except KuroSmsError as exc:
+                    self._json({"ok": False, "error": str(exc)})
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("库街区发送验证码失败")
+                    self._json({"ok": False, "error": f"发送失败：{exc}"}, 500)
+            return
+
+        if path == "/api/kuro/sms/login":
+            # 短信模式第二步：验证码登录 → 落盘。
+            # 注意 sdkLogin 是 APP 端登录，会顶掉手机库街区 App 的登录态（单设备策略）
+            payload = self._read_json_body()
+            if payload is not None:
+                try:
+                    from core.kuro_api import KuroSmsError, list_roles, sdk_login
+
+                    mobile = str(payload.get("mobile") or "").strip()
+                    code = str(payload.get("code") or "").strip()
+                    if not _is_cn_mobile(mobile):
+                        self._json({"ok": False, "error": "手机号格式不对（仅支持国内号段）"})
+                        return
+                    if not (len(code) == 6 and code.isdigit()):
+                        self._json({"ok": False, "error": "验证码应为 6 位数字"})
+                        return
+                    data = sdk_login(mobile, code)
+                    token = str(data.get("token") or "").strip()
+                    try:
+                        roles = list_roles(token)
+                        wuwa_roles = [r for r in roles if str(r.get("gameId")) == "3"]
+                        nickname = str((wuwa_roles or roles or [{}])[0].get("roleName") or "")
+                    except Exception:  # noqa: BLE001 - 拉角色失败不挡绑定
+                        nickname = str(data.get("userName") or "")
+                    saved_name = write_kuro(
+                        token, nickname,
+                        games=payload.get("games") if isinstance(payload.get("games"), list) else None)
+                    self._json({"ok": True, "nickname": saved_name,
+                                "message": f"已绑定库街区账号：{saved_name}"
+                                           "（注意：手机上的库街区 App 已被顶下线）"})
+                except KuroSmsError as exc:
+                    self._json({"ok": False, "error": str(exc)})
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("库街区短信登录失败")
+                    self._json({"ok": False, "error": f"登录失败：{exc}"}, 500)
+            return
+
+        if path == "/api/tools/open-apk-folder":
+            # 资源管理器打开并选中设备信息.apk——扫码不通时的兜底获取途径
+            try:
+                apk = BASE_DIR / "tools" / "设备信息.apk"
+                if not apk.exists():
+                    self._json({"ok": False, "error": "apk 不在安装目录（发行包不内置，已改为按需拉取）"}, 404)
+                    return
+                import subprocess
+
+                subprocess.Popen(["explorer", "/select,", str(apk)])
+                self._json({"ok": True, "message": "已在资源管理器中定位 设备信息.apk，用微信/QQ 发给手机即可"})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"ok": False, "error": f"打开失败：{exc}"}, 500)
             return
 
         if path == "/api/apk/restart":

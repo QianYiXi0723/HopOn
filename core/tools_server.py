@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import mimetypes
 import shutil
 import socket
@@ -30,6 +31,68 @@ from core.paths import app_root
 
 TOOLS_DIR = app_root() / "tools"
 DEFAULT_PORT = 8790
+
+#: 发行包不含 apk（P4 门禁，verify_release 1b）——本地缺失时按需拉取。
+#: 主路：Gitee releases/latest 无鉴权 API 动态找最新版的 apk 资产（国内免梯、
+#: 版本无关）；备路：GitHub latest 永久直链（ASCII 资产名）。
+GITEE_LATEST_API = "https://gitee.com/api/v5/repos/qianyixi/HopOn/releases/latest"
+GITHUB_LATEST_APK = (
+    "https://github.com/QianYiXi0723/HopOn/releases/latest/download/device-info.apk"
+)
+_APK_FETCH_LOCK = threading.Lock()
+
+
+def _fetch_remote_apk(name: str) -> bool:
+    """从仓库公开直链拉取缺失的 apk 到 tools/（成功返回 True）。
+
+    只服务设备信息.apk 这一个文件；失败（断网/直链 404）返回 False，
+    调用方继续走 404——拉取失败绝不能拖垮整个下载服务。
+    """
+    if name != "设备信息.apk":
+        return False
+    with _APK_FETCH_LOCK:
+        target = TOOLS_DIR / name
+        if target.is_file():
+            return True          # 并发下另一请求刚拉完
+        import requests  # noqa: PLC0415 - 故意延迟导入
+
+        # 主路：Gitee latest 无鉴权 API 动态定位 apk 资产（版本无关）
+        urls: List[str] = []
+        try:
+            rel = requests.get(GITEE_LATEST_API, timeout=15).json()
+            urls += [
+                a["browser_download_url"]
+                for a in (rel.get("assets") or [])
+                if str(a.get("name", "")).lower().endswith(".apk")
+            ]
+        except Exception as exc:  # noqa: BLE001 - API 挂了走备路
+            logger.warning("Gitee latest 查询失败，走 GitHub 备路：%s", exc)
+        urls.append(GITHUB_LATEST_APK)
+
+        part = TOOLS_DIR / (name + ".part")
+        for url in urls:
+            try:
+                resp = requests.get(url, timeout=(10, 120), stream=True)
+                if resp.status_code != 200:
+                    logger.warning("按需拉取 %s 失败（%s）：HTTP %s", name, url[:60], resp.status_code)
+                    continue
+                with part.open("wb") as f:
+                    for chunk in resp.iter_content(1024 * 256):
+                        f.write(chunk)
+                os.replace(part, target)
+                logger.info(
+                    "本地无 %s，已从 %s 拉取（%.1f MB）——局域网扫码下载恢复可用",
+                    name, "Gitee" if "gitee" in url else "GitHub",
+                    target.stat().st_size / 1048576,
+                )
+                return True
+            except Exception as exc:  # noqa: BLE001 - 单路失败试下一路
+                logger.warning("按需拉取 %s（%s）失败：%s", name, url[:60], exc)
+        try:
+            part.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
 
 
 def lan_ip() -> str:
@@ -128,8 +191,13 @@ span{{color:#9aa3af;font-size:12px}}
 
         target = TOOLS_DIR / name
         if not target.is_file():
-            self._text(404, "not found")
-            return
+            # 发行包不含 apk（P4 门禁）：fresh 安装上首次访问时从仓库公开直链
+            # 拉一份缓存到 tools/，之后的局域网扫码下载与源码机行为一致
+            if name.lower().endswith(".apk") and _fetch_remote_apk(name):
+                target = TOOLS_DIR / name
+            if not target.is_file():
+                self._text(404, "not found")
+                return
 
         ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
         if name.lower().endswith(".apk"):

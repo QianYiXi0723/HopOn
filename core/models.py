@@ -188,13 +188,20 @@ class ResourceAlert:
     def warn_line(self) -> str:
         """推送正文里那一行醒目警告。
 
-        道具可把体力顶破上限（current > maximum）：措辞从「即将溢出」
-        改为「已超出 N 点」，数字如实（2026-11-07 用户裁决：三态真实值）。
+        三段措辞（2026-11-09 用户裁决：已满就别说即将溢出）：
+          * current > maximum：道具顶破上限——「已超出 N 点」（2026-11-07 裁决）
+          * current == maximum：已满格，体力停止恢复——「已满」
+          * 达到阈值但未满：还在恢复，每分钟都在浪费——「即将溢出」才成立
         """
         if self.current > self.maximum:
             return (
                 f"⚠️ 警告：{self.game_name}{self.resource}已超出上限 "
                 f"{self.current}/{self.maximum}（超出 {self.current - self.maximum} 点）！"
+            )
+        if self.current == self.maximum:
+            return (
+                f"⚠️ 警告：{self.game_name}{self.resource}已满 "
+                f"{self.current}/{self.maximum}，体力已停止恢复，赶紧消耗！"
             )
         return (
             f"⚠️ 警告：{self.game_name}{self.resource}已达到 "

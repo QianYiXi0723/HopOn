@@ -70,6 +70,7 @@ GACHA_REWARDS: Dict[str, Tuple[str, ...]] = {
     "starrail": ("星琼",),
     "zzz": ("菲林",),
     "arknights": ("合成玉", "源石"),
+    "wuwa": ("星声",),
 }
 
 #: 拿不到奖励数据时怎么办。
@@ -585,6 +586,24 @@ def _gacha_reward(game_id: str, raw: Dict[str, Any], text: str = "") -> Tuple[Op
             return unknown, ""
         return _arknights_signin_reward(text, keywords)
 
+    if game_id == "wuwa":
+        # 鸣潮没有结构化奖励字段，详情正文（HTML）里找「星声」。
+        # 同方舟教训：正文数字不能乱加——「最高可得530星声」这类取单值，
+        # 多处提及取最大（每处都是"可获得"口径），绝不求和。
+        if not text:
+            return unknown, ""
+        # 鸣潮两种口径并存：「530星声」（数字在前）与「星声*480」（币种在前）
+        counts = [int(m.group(1)) for m in re.finditer(r"(\d{2,6})\s*星声", text)]
+        counts += [
+            int(m.group(1))
+            for m in re.finditer(r"星声\s*[×x*]\s*(\d{2,6})", text)
+        ]
+        if counts:
+            return True, f"星声 {max(counts)}"
+        if "星声" in text:
+            return True, "星声"
+        return unknown, ""
+
     items = _reward_items(raw)
     if not items:
         return unknown, ""  # 奖励字段缺失或为空
@@ -1048,6 +1067,208 @@ def fetch_endfield_activities() -> List[Dict[str, Any]]:
     return result
 
 
+# --------------------------------------------------------------------------- #
+# 鸣潮：库洛官方游戏内公告 CDN（免鉴权、结构化毫秒时间戳）。
+# notice.json 含 game（游戏内公告全量）与 activity（精选）两组，每条带
+# startTimeMs/endTimeMs；详情正文在 ``{contentPrefix}zh-Hans.json`` 的
+# textContent（HTML 富文本，奖励写在文字里）。奖励信息全社区无结构化源
+# （2026-11-09 普查：game-schedule/game-cal 都只有标题+时间）——与方舟
+# 「正文挖取」同路径。库洛 wiki 首页接口（版本活动侧栏）作交叉验证源，
+# v1 不接：与 notice.json 高度重叠，双源去重复杂度不值。
+# --------------------------------------------------------------------------- #
+WUWA_NOTICE_URL = (
+    "https://aki-gm-resources-back.aki-game.com/gamenotice/"
+    "G152/76402e5b20be2c39f095a152090afddc/notice.json"
+)
+#: 详情正文最多抓多少条（20h 一次，控请求数；过滤后通常 ≤10）
+WUWA_DETAIL_LIMIT = 12
+#: 纯说明类标题（版本预告/已知问题这类没有"活动可参与"语义的）。
+#: 注意别把「XX活动说明」误伤——那是真活动的说明页（带真实截止时间）。
+WUWA_TITLE_BLOCKLIST = (
+    "已知问题", "更新说明", "更新维护预告", "防沉迷", "反馈途径",
+    "公平运营", "资源分级", "先行体验", "玩家社区资讯", "签到工具",
+    "版本内容说明", "正式上线说明", "客户端资源",
+)
+
+
+def _wuwa_enabled() -> bool:
+    """绑定了鸣潮账号且巡检开关开着才抓——没玩鸣潮的用户不该收到其活动提醒。
+
+    活动数据本身免鉴权，但「接不接」跟账号绑定走（与其它游戏的活动
+    出现节奏一致：绑定即有，关开关即消失）。
+    """
+    from core.config import load_config
+
+    try:
+        config = load_config(USER_DIR / "config.json", auto_create=False)
+    except Exception:  # noqa: BLE001 - 配置读不到就别抓
+        return False
+    return any(a.game == "wuwa" and a.enabled for a in config.accounts)
+
+
+def _wuwa_detail_text(session: Any, prefixes: Any) -> str:
+    """取公告详情正文（contentPrefix 是多 CDN 候选列表，取第一个成功的）。"""
+    if not isinstance(prefixes, list):
+        return ""
+    for prefix in prefixes:
+        if not isinstance(prefix, str) or not prefix:
+            continue
+        try:
+            resp = session.get(
+                prefix.rstrip("/") + "/zh-Hans.json", timeout=REQUEST_TIMEOUT
+            )
+            if resp.status_code != 200:
+                continue
+            payload = resp.json()
+            text = payload.get("textContent")
+            if isinstance(text, str) and text:
+                return text
+        except Exception:  # noqa: BLE001 - 单条详情失败不影响整体
+            continue
+    return ""
+
+
+def fetch_wuwa_activities() -> List[Dict[str, Any]]:
+    """鸣潮：官方公告 CDN → 活动列表（已结束/常驻/说明类跳过）。"""
+    if not _wuwa_enabled():
+        return []
+    session = _new_session()
+    response = session.get(WUWA_NOTICE_URL, timeout=REQUEST_TIMEOUT)
+    response.raise_for_status()
+    payload = response.json()
+
+    now = datetime.now()
+    seen_ids: set = set()
+    detail_checked = 0
+    result: List[Dict[str, Any]] = []
+    for group in ("activity", "game"):
+        for it in payload.get(group) or []:
+            if not isinstance(it, dict):
+                continue
+            rid = str(it.get("id") or "")
+            if not rid or rid in seen_ids:
+                continue
+            seen_ids.add(rid)
+            if it.get("permanent") == 1:
+                continue  # 常驻说明（防沉迷/公平运营这类，一年期时间戳）
+            try:
+                start = datetime.fromtimestamp(int(it.get("startTimeMs")) / 1000)
+                end = datetime.fromtimestamp(int(it.get("endTimeMs")) / 1000)
+            except (TypeError, ValueError, OSError, OverflowError):
+                continue
+            if end <= now:
+                continue  # 已结束：不展示、也不提醒
+            if start == end:
+                continue  # 假时间占位（社区资讯/签到工具那批）
+            tt = it.get("tabTitle") or {}
+            title = _clean_text(tt.get("zh-Hans") if isinstance(tt, dict) else tt)
+            if not title:
+                continue
+            if it.get("tag") == 11 or it.get("tag") == 10:
+                continue  # 周边预售 / 版本活动日历（meta 条目，非活动）
+            if any(bad in title for bad in WUWA_TITLE_BLOCKLIST):
+                continue
+            # 奖励挖取：详情正文找「星声 N」；拿不到就按兜底保留
+            reward, reward_ok = "奖励未公开", True
+            if detail_checked < WUWA_DETAIL_LIMIT:
+                detail_checked += 1
+                body = _wuwa_detail_text(session, it.get("contentPrefix"))
+                if body:
+                    # 正文是 HTML：「530</span>星声」这种数字与币种被标签隔断，
+                    # 剥标签后再挖，否则数字全丢、只剩纯提及
+                    keep, reward = _gacha_reward(
+                        "wuwa", {}, re.sub(r"<[^>]+>", " ", body))
+                    reward_ok = keep is not False
+            result.append({
+                "game": "wuwa", "game_name": "鸣潮", "kind": "act", "title": title,
+                "start": start.strftime("%Y-%m-%d %H:%M:%S"),
+                "end": end.strftime("%Y-%m-%d %H:%M:%S"),
+                "status": "", "progress": "", "icon": "",
+                "remote_id": rid,
+                "reward": reward, "reward_ok": reward_ok,
+            })
+    result.sort(key=lambda item: item["end"])
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# 战双：库街区 wiki 首页「热门活动」侧栏（Wiki_type=2，免鉴权）。
+# countDown.dateRange 直出 [开始, 结束] 字符串——与鸣潮 notice.json 同级的
+# 结构化源。jacket-sikaha/game-schedule 的 getPunishingEvent 同款端点。
+# --------------------------------------------------------------------------- #
+PGR_WIKI_API = "https://api.kurobbs.com/wiki/core/homepage/getPage"
+PGR_WIKI_TYPE = "2"          # 战双=2、鸣潮=9
+PGR_TARGET_TITLE = "热门活动"
+
+
+def fetch_pgr_activities() -> List[Dict[str, Any]]:
+    """战双：wiki 首页侧栏 → 活动列表（已结束的跳过）。"""
+    if not _pgr_enabled():
+        return []
+    session = _new_session()
+    response = session.post(
+        PGR_WIKI_API,
+        headers={"Wiki_type": PGR_WIKI_TYPE},
+        timeout=REQUEST_TIMEOUT,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    mods = (((payload.get("data") or {}).get("contentJson")) or {}).get("sideModules") or []
+    target = next((m for m in mods if m.get("title") == PGR_TARGET_TITLE), None)
+    if not target:
+        return []
+
+    now = datetime.now()
+    result: List[Dict[str, Any]] = []
+    for it in target.get("content") or []:
+        if not isinstance(it, dict):
+            continue
+        cd = it.get("countDown") or {}
+        rng = cd.get("dateRange") or []
+        if len(rng) != 2:
+            continue  # 无倒计时的常驻入口
+        start = _parse_kuro_time(rng[0])
+        end = _parse_kuro_time(rng[1])
+        if start is None or end is None or end <= now:
+            continue
+        title = _clean_text(it.get("title"))
+        if not title:
+            continue
+        entry_id = str((it.get("linkConfig") or {}).get("entryId") or "")
+        result.append({
+            "game": "pgr", "game_name": "战双帕弥什", "kind": "act", "title": title,
+            "start": start.strftime("%Y-%m-%d %H:%M:%S"),
+            "end": end.strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "", "progress": "", "icon": "",
+            "remote_id": entry_id or title,
+            "reward": "", "reward_ok": True,   # wiki 侧栏无奖励字段（未公开口径）
+        })
+    result.sort(key=lambda item: item["end"])
+    return result
+
+
+def _pgr_enabled() -> bool:
+    """绑定了战双（库街区）账号且巡检开关开着才抓。"""
+    from core.config import load_config
+
+    try:
+        config = load_config(USER_DIR / "config.json", auto_create=False)
+    except Exception:  # noqa: BLE001
+        return False
+    return any(a.game == "pgr" and a.enabled for a in config.accounts)
+
+
+def _parse_kuro_time(text: Any) -> Optional[datetime]:
+    """库洛 wiki 时刻格式："2026-09-30 11:00"（分钟精度）。"""
+    raw = str(text or "").strip()
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
 #: 每个抓取器对应的来源说明，写进缓存的 source 字段方便排查
 SOURCES: Dict[str, str] = {
     "genshin": "miyoushe act_calendar",
@@ -1055,6 +1276,8 @@ SOURCES: Dict[str, str] = {
     "zzz": "miyoushe activity_calendar",
     "arknights": "ak.hypergryph.com news(tab=1)+正文",
     "endfield": "fz.wiki 活动（wikiCardActivityIndex 结构化日程）",
+    "wuwa": "库洛官方公告 CDN notice.json（毫秒时间戳+详情正文挖奖励）",
+    "pgr": "库街区 wiki 首页热门活动侧栏（countDown.dateRange）",
 }
 
 #: 新增游戏时在这里挂一个 fetch 函数即可。
@@ -1064,6 +1287,8 @@ FETCHERS = {
     "zzz": fetch_zzz_activities,
     "arknights": fetch_arknights_activities,
     "endfield": fetch_endfield_activities,
+    "wuwa": fetch_wuwa_activities,
+    "pgr": fetch_pgr_activities,
 }
 
 

@@ -48,10 +48,13 @@ KNOWN_GAMES: Dict[str, str] = {
     "zzz": "绝区零",
     "arknights": "明日方舟",
     "endfield": "终末地",
+    "wuwa": "鸣潮",
+    "pgr": "战双帕弥什",
+    "bh3": "崩坏3",
 }
 
 #: 米游社数据源覆盖的游戏（query.mihoyo_enabled=False 时跳过它们）
-MIHOYO_GAMES: Tuple[str, ...] = ("genshin", "starrail", "zzz")
+MIHOYO_GAMES: Tuple[str, ...] = ("genshin", "starrail", "zzz", "bh3")
 
 #: 错过时间点后的补发窗口（分钟）。0 = 关掉补发，最大 720 分钟（12 小时）。
 #: 例如 180：21:30 那轮因为休眠没跑到，只要在 23:59 前醒过来，就会立刻补跑一次。
@@ -76,6 +79,9 @@ RESOURCE_THRESHOLD_DEFAULT: Dict[str, int] = {
     "zzz": 200,        # 电量，上限 240
     "arknights": 135,  # 理智，上限随账号等级（常见 135~205）
     "endfield": 300,   # 理智（curStamina），上限实测 350
+    "wuwa": 200,       # 结晶波片，上限 240（溢出转存结晶单质，另算）
+    "pgr": 200,        # 血清，上限 240
+    "bh3": 90,         # 琥珀能量，上限随等级（常见 120）
 }
 
 #: 各游戏"体力/树脂/电量/理智"在任务列表里的显示名，用于从查询结果里认出那一项。
@@ -87,6 +93,9 @@ RESOURCE_TASK_NAMES: Dict[str, str] = {
     "zzz": "电量",
     "arknights": "理智",
     "endfield": "理智",
+    "wuwa": "结晶波片",
+    "pgr": "血清",
+    "bh3": "体力",
 }
 
 #: 阈值允许的最大值（体力上限普遍在 200~240 之间，留点余量）
@@ -123,6 +132,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "zzz_energy_threshold": RESOURCE_THRESHOLD_DEFAULT["zzz"],
         "arknights_ap_threshold": RESOURCE_THRESHOLD_DEFAULT["arknights"],
         "endfield_sanity_threshold": RESOURCE_THRESHOLD_DEFAULT["endfield"],
+        "wuwa_energy_threshold": RESOURCE_THRESHOLD_DEFAULT["wuwa"],
+        "pgr_serum_threshold": RESOURCE_THRESHOLD_DEFAULT["pgr"],
+        "bh3_stamina_threshold": RESOURCE_THRESHOLD_DEFAULT["bh3"],
     },
     "accounts": [
         {
@@ -156,6 +168,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             },
         },
         {
+            "game": "bh3",
+            "nickname": "舰长",
+            "enabled": True,
+            "credential": {
+                "cookie": "ltuid=请填写; ltoken=请填写",
+            },
+        },
+        {
             "game": "arknights",
             "nickname": "博士",
             "enabled": True,
@@ -170,6 +190,24 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "enabled": True,
             "credential": {
                 "token": "请填写鹰角通行证Token",
+            },
+        },
+        {
+            "game": "wuwa",
+            "nickname": "漂泊者",
+            "enabled": True,
+            "credential": {
+                # 库街区 Token：网页版登录后从 Cookie 的 user_token 取
+                "token": "请填写库街区Token",
+            },
+        },
+        {
+            "game": "pgr",
+            "nickname": "指挥官",
+            "enabled": True,
+            "credential": {
+                # 同一张库街区 Token（绑定鸣潮时自动写入）
+                "token": "请填写库街区Token",
             },
         },
     ],
@@ -655,6 +693,8 @@ class AppConfig:
     # 开机自启的用户意图（自愈依据）：注册表 Run 键被外部工具删掉时，
     # 启动链按它重写；手动关开关时落 false。见 autostart.self_heal。
     autostart_desired: bool = False
+    pgr_serum_threshold: int = RESOURCE_THRESHOLD_DEFAULT["pgr"]
+    bh3_stamina_threshold: int = RESOURCE_THRESHOLD_DEFAULT["bh3"]
     # 体力溢出提醒总开关：false 时完全跳过判定（各阈值原样保留）
     resource_alert_enabled: bool = RESOURCE_ALERT_ENABLED_DEFAULT
     # 活动结束提醒总开关：false 时不读活动缓存、不追加任何活动警告
@@ -667,6 +707,7 @@ class AppConfig:
     zzz_energy_threshold: int = RESOURCE_THRESHOLD_DEFAULT["zzz"]
     arknights_ap_threshold: int = RESOURCE_THRESHOLD_DEFAULT["arknights"]
     endfield_sanity_threshold: int = RESOURCE_THRESHOLD_DEFAULT["endfield"]
+    wuwa_energy_threshold: int = RESOURCE_THRESHOLD_DEFAULT["wuwa"]
     accounts: List[AccountConfig] = field(default_factory=list)
     push: PushConfig = field(default_factory=PushConfig)
     query: QueryConfig = field(default_factory=QueryConfig)
@@ -709,6 +750,9 @@ class AppConfig:
             "zzz": self.zzz_energy_threshold,
             "arknights": self.arknights_ap_threshold,
             "endfield": self.endfield_sanity_threshold,
+            "wuwa": self.wuwa_energy_threshold,
+            "pgr": self.pgr_serum_threshold,
+            "bh3": self.bh3_stamina_threshold,
         }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -727,6 +771,9 @@ class AppConfig:
                 "zzz_energy_threshold": int(self.zzz_energy_threshold),
                 "arknights_ap_threshold": int(self.arknights_ap_threshold),
                 "endfield_sanity_threshold": int(self.endfield_sanity_threshold),
+                "wuwa_energy_threshold": int(self.wuwa_energy_threshold),
+                "pgr_serum_threshold": int(self.pgr_serum_threshold),
+                "bh3_stamina_threshold": int(self.bh3_stamina_threshold),
             },
             "accounts": [account.to_dict() for account in self.accounts],
             "push": self.push.to_dict(),
@@ -881,6 +928,12 @@ def parse_config(data: Dict[str, Any], source: Optional[Path] = None) -> AppConf
             app_section.get("arknights_ap_threshold"), "arknights_ap_threshold", "arknights"),
         endfield_sanity_threshold=_parse_threshold(
             app_section.get("endfield_sanity_threshold"), "endfield_sanity_threshold", "endfield"),
+        wuwa_energy_threshold=_parse_threshold(
+            app_section.get("wuwa_energy_threshold"), "wuwa_energy_threshold", "wuwa"),
+        pgr_serum_threshold=_parse_threshold(
+            app_section.get("pgr_serum_threshold"), "pgr_serum_threshold", "pgr"),
+        bh3_stamina_threshold=_parse_threshold(
+            app_section.get("bh3_stamina_threshold"), "bh3_stamina_threshold", "bh3"),
         accounts=accounts,
         push=PushConfig.from_dict(merged.get("push")),
         query=QueryConfig.from_dict(merged.get("query")),

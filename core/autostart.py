@@ -252,9 +252,10 @@ def self_heal(desired: bool) -> str:
             "路径过期" if value else "丢失（疑似被外部工具清理）",
             result.get("message", ""),
         )
-        return "healed"
+        return ("注册表键路径过期，已自愈重写" if value
+                else "注册表键丢失（疑似被外部工具清理），已自愈重写")
     logger.warning("自启自愈失败：%s", result.get("message", ""))
-    return "heal-failed"
+    return "自愈失败：" + str(result.get("message") or "")
 
 
 def status() -> Dict[str, Any]:

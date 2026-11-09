@@ -71,14 +71,17 @@ LOGS_DIR = USER_DIR / "logs"
 
 # 开机自启自愈（2026-11-09）：Run 键被安全软件「开机加速」类工具清理时，
 # 按配置里的 autostart_desired 意图重写。放启动链最前，键在位越早越好；
-# 任何失败都不挡启动。
+# 任何失败都不挡启动。此刻日志系统未就绪，动作结果存全局变量，
+# setup_logging 后由 main() 补记一笔。
+_AUTOSTART_HEAL_NOTE = ""
 try:
     import json as _json
 
     from core.autostart import self_heal as _autostart_heal
 
     with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
-        _autostart_heal(bool((_json.load(_f).get("app") or {}).get("autostart_desired")))
+        _AUTOSTART_HEAL_NOTE = _autostart_heal(
+            bool((_json.load(_f).get("app") or {}).get("autostart_desired")))
 except Exception:  # noqa: BLE001 - 自愈失败绝不挡启动
     pass
 
@@ -1289,6 +1292,9 @@ def run_daemon(use_tray: bool = True) -> int:
 
     logger.info("=" * 56)
     logger.info("守护进程启动｜PID=%s｜间隔=%ds", os.getpid(), TICK_SECONDS)
+    # 模块级自愈发生在日志系统就绪前（键在位越早越好），这里把结果补记一笔
+    if globals().get("_AUTOSTART_HEAL_NOTE"):
+        logger.info("开机自启：%s", _AUTOSTART_HEAL_NOTE)
     logger.info("时间点：%s｜下次：%s", "、".join(read_check_times()) or "(未配置)",
                 next_run_text() or "-")
     catch_up = read_catch_up_minutes()

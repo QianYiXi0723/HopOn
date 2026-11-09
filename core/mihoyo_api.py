@@ -48,13 +48,28 @@ ENDPOINTS: Dict[str, str] = {
     "genshin": "/game_record/app/genshin/api/dailyNote",   # 原神实时便笺（GET，未登录返回 -1 param error）
     "starrail": "/game_record/app/hkrpg/api/note",         # 崩铁实时便笺（GET，未登录返回 -10001 invalid request）
     "zzz": "/event/game_record_zzz/api/zzz/note",          # 绝区零实时便笺（GET，未登录返回 -100 请先登录）
+    # 崩坏3（2026-11-09 攻坚终局）：正确路径族是 **/game_record/app/honkai3rd/**
+    # （社区口径 + 实测 retcode=0），走标准 RECORD_BASE + 星铁同款配方
+    # （DS2+x4 + 整串 ltoken cookie），没有崩3专属头。
+    # 攻坚弯路存档：正确路径挖通前试过两条死路——
+    #   1) /game_record/app/bh3/：全域 404（路径族名错，bh3 不是正确族名）；
+    #   2) /game_record/honkai3rd/（崩3助手 H5 分包 apiBase，act-api-takumi 域）：
+    #      可达但对一切请求恒 retcode=-10001「invalid request」——那是米游社
+    #      「工作台」专用接口族，带网关级身份闸（App webview 桥内才有钥匙，
+    #      无 cookie/坏 cookie/缺参数/无 DS 全是同一个码），别再往那儿打。
+    "bh3": "/game_record/app/honkai3rd/api/note",
 }
+
+#: 部分游戏不走 RECORD_BASE。崩3 一度被错配到 api-takumi.mihoyo.com（503 源头），
+#: 路径族修正后与 genshin/starrail 同走 RECORD_BASE，本表当前无特例。
+GAME_RECORD_BASES: Dict[str, str] = {}
 
 #: 默认区服参数。账号 credential 里可写 "server" 覆盖（如原神渠道服 cn_qd01）。
 DEFAULT_SERVERS: Dict[str, str] = {
     "genshin": "cn_gf01",
     "starrail": "prod_gf_cn",
     "zzz": "prod_gf_cn",   # TODO(字段确认)：绝区零 server 值待带凭证实测确认
+    "bh3": "android01",    # 崩3 官服区服（角色列表实测返回 android01）
 }
 
 #: 米游社凭证字段名（需求 4：字段名集中配置，不散落）。
@@ -1594,7 +1609,7 @@ def request_daily_note(
     Raises:
         MiyousheQueryError: 网络异常 / HTTP 非 200 / 响应非 JSON / retcode != 0 / 端点未配置。
     """
-    base_url = (base_url or RECORD_BASE).rstrip("/")
+    base_url = (base_url or GAME_RECORD_BASES.get(game_id) or RECORD_BASE).rstrip("/")
     endpoint = ENDPOINTS.get(game_id)
     if endpoint is None:
         raise MiyousheQueryError(f"游戏 {game_id} 未配置米游社便笺接口端点")
@@ -1647,7 +1662,10 @@ def request_daily_note(
 
 #: getGameRecordCard 的 game_id -> 本项目 game_id
 #: （实测记录见 RETCODE_HINTS 上方注释：该接口在本项目环境 retcode=0 通过）
-RECORD_CARD_GAME_IDS: Dict[int, str] = {2: "genshin", 6: "starrail", 8: "zzz"}
+#: 崩3 = game_id 1（2026-11-09 实证：getGameRecordCard?uid=<account_id> 返回
+#: 崩3行 game_role_id/region/nickname/level；此前映射漏 1 导致扫码回填
+#: 永远认不出崩3角色，credential.uid 一直空着——查询层误报「未创建角色」）
+RECORD_CARD_GAME_IDS: Dict[int, str] = {1: "bh3", 2: "genshin", 6: "starrail", 8: "zzz"}
 
 #: 米游社「我的角色」列表接口：一次请求返回该账号在**所有游戏**里的角色，
 #: 扫码登录后用它回填各游戏的 uid/server/nickname，并识别"账号没玩过这款游戏"。
@@ -1675,7 +1693,14 @@ def fetch_game_roles(
         （拉不到列表就跳过回填，保持旧行为），绝不能因为这一步失败让登录报错。
     """
     base_url = (base_url or RECORD_BASE).rstrip("/")
-    params: Dict[str, Any] = {"uid": ltuid}
+    # uid 参数必须是米游社账号 id：cookie 里的 account_id 优先——2026-11-09
+    # 实测部分账号的 ltuid 已被 getGameRecordCard 判「Invalid uid」（同 cookie
+    # 的 account_id 正常），崩3扫码回填因此全灭成「未创建角色」
+    uid_param = str(ltuid or "").strip()
+    m = re.search(r"account_id=(\d+)", cookie or "")
+    if m:
+        uid_param = m.group(1)
+    params: Dict[str, Any] = {"uid": uid_param}
     headers = build_headers(
         ltuid, ltoken, query=params, cookie=cookie, with_device=False,
     )

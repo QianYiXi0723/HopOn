@@ -175,7 +175,7 @@ function toggleAll(group, checked){
 function toggleAllCards(){
   const boxes = [...document.querySelectorAll('.sel-card input')];
   const target = !boxes.every(function(b){ return b.checked; });
-  ['m', 's'].forEach(function(g){
+  ['m', 's', 'k'].forEach(function(g){
     const gb = [...document.querySelectorAll('input[name="' + g + '"]')];
     if (gb.some(function(b){ return b.checked !== target; })) toggleAll(g, target);
   });
@@ -212,10 +212,16 @@ function loadAccounts(){
     (d.items || []).forEach(function(it){ window.__accounts[it.id] = it; });
     (d.items || []).forEach(function(it){
       const box = document.querySelector(
-        'input[name="m"][value="' + it.id + '"],input[name="s"][value="' + it.id + '"]');
+        'input[name="m"][value="' + it.id + '"],input[name="s"][value="' + it.id + '"],input[name="k"][value="' + it.id + '"]');
       if (!box) return;
       box.checked = !!it.enabled;
       syncSelCard(box);
+    });
+    /* 存量配置里还没有账号行的游戏（如后加的鸣潮）：勾选框不跟 HTML 默认的
+       checked 走——没有账号行就不算"参与巡检"，诚实显示未勾；绑定后
+       write_kuro 建行，下次 loadAccounts 自动勾上 */
+    [...document.querySelectorAll('.sel-card input')].forEach(function(box){
+      if (!window.__accounts[box.value]) { box.checked = false; syncSelCard(box); }
     });
     renderCredHealth(d);
     renderKpiCred(d);
@@ -232,7 +238,7 @@ function credLoadFailed(){
 
 /* 胶囊黄点：该平台任一游戏未绑定凭证 → 点亮 */
 function renderCapsuleDots(d){
-  ['m', 's'].forEach(function(g){
+  ['m', 's', 'k'].forEach(function(g){
     const dot = document.getElementById('cap-dot-' + g);
     if (!dot) return;
     const missing = (d.items || []).some(function(it){
@@ -436,17 +442,25 @@ async function start(provider, targets){
 
 /* ---------- 两步式扫码：第一步先选游戏，第二步才生成二维码 ---------- */
 const PROVIDER_OF = { m: 'mihoyo', s: 'skland' };
+/* 未绑定（后端还没有账号行）时的显示名兜底——选卡弹窗不能露出裸 id */
+const GAME_LABELS = {
+  genshin: '原神', starrail: '崩坏：星穹铁道', zzz: '绝区零', bh3: '崩坏3',
+  arknights: '明日方舟', endfield: '明日方舟：终末地', wuwa: '鸣潮', pgr: '战双帕弥什',
+};
+let kuroBindTargets = ['wuwa', 'pgr'];   // 库街区绑定目标（选卡弹窗决定，默认两款）
 const PROVIDER_LABEL = { m: '米游社', s: '森空岛' };
 let pickGroup = null;
 
 /* 点胶囊 → 打开选择弹窗（默认勾选已绑定凭证的游戏，未绑定不勾） */
 function openPickModal(group, forced){
   pickGroup = group;
+  const pickBtn = document.getElementById('btn-pick-next');
+  if (pickBtn) pickBtn.textContent = group === 'k' ? '下一步：绑定账号' : '下一步：生成二维码';
   const accs = window.__accounts || {};
   const boxes = [...document.querySelectorAll('input[name="' + group + '"]')];
   document.getElementById('pick-list').innerHTML = boxes.map(function(b){
     const it = accs[b.value] || {};
-    const name = it.name || b.value;
+    const name = it.name || GAME_LABELS[b.value] || b.value;
     const bound = it.has_credential === true;
     const known = it.has_credential === true || it.has_credential === false;
     const stateText = bound ? '已绑定凭证' : (known ? '未绑定' : '凭证状态未知');
@@ -516,6 +530,13 @@ function confirmPick(){
   if (!targets.length || !pickGroup) return;
   const group = pickGroup;
   closePick();
+  if (group === 'k') {
+    /* 库街区没有扫码——选完游戏进「验证码/Token」绑定弹窗，
+       绑定结果只写进勾选的游戏 */
+    kuroBindTargets = targets.slice();
+    startKuroDialog();
+    return;
+  }
   start(PROVIDER_OF[group], targets);
 }
 
@@ -706,7 +727,7 @@ function renderThresholds(d){
   if (!d || !d.ok) { return; }
   const values = d.values || {};
   const defs = d.defaults || {};
-  ['genshin','starrail','zzz','arknights','endfield'].forEach(function(gid){
+  ['genshin','starrail','zzz','arknights','endfield','wuwa','pgr','bh3'].forEach(function(gid){
     const box = document.getElementById('resin-' + gid);
     if (!box) return;
     box.value = (values[gid] != null) ? values[gid] : '';
@@ -742,6 +763,9 @@ function resinPayload(){
     zzz:       document.getElementById('resin-zzz').value,
     arknights: document.getElementById('resin-arknights').value,
     endfield:  document.getElementById('resin-endfield').value,
+    wuwa:      document.getElementById('resin-wuwa').value,
+    pgr:       document.getElementById('resin-pgr').value,
+    bh3:       document.getElementById('resin-bh3').value,
     enabled:   box ? box.checked : true
   };
 }
@@ -1538,7 +1562,7 @@ function refreshSetSummaries(){
   }
 
   const rsBox = document.getElementById('resin-toggle');
-  const rsInputs = ['genshin', 'starrail', 'zzz', 'arknights', 'endfield']
+  const rsInputs = ['genshin', 'starrail', 'zzz', 'arknights', 'endfield', 'wuwa', 'pgr', 'bh3']
     .map(function(g){ return document.getElementById('resin-' + g); });
   const rsLoaded = rsInputs.some(function(inp){ return inp && String(inp.value).trim() !== ''; });
   if (!rsLoaded) setSum('resin', '读取中…');
@@ -1546,7 +1570,7 @@ function refreshSetSummaries(){
   else {
     const labeled = [];
     [['genshin','原神'],['starrail','星铁'],['zzz','绝区零'],
-     ['arknights','方舟'],['endfield','终末地']].forEach(function(r){
+     ['arknights','方舟'],['endfield','终末地'],['wuwa','鸣潮'],['pgr','战双'],['bh3','崩3']].forEach(function(r){
       const inp = document.getElementById('resin-' + r[0]);
       const v = inp ? parseInt(inp.value, 10) : NaN;
       labeled.push(r[1] + ' ' + (isNaN(v) ? '–' : (v === 0 ? '关' : v)));
@@ -1573,7 +1597,7 @@ function refreshSetSummaries(){
    dataset 闸门再兜底，重复调用不会叠加监听器 */
 (function bindSetSummaries(){
   ['catch-up-minutes', 'activity-days', 'resin-genshin', 'resin-starrail',
-   'resin-zzz', 'resin-arknights', 'resin-endfield'].forEach(function(id){
+   'resin-zzz', 'resin-arknights', 'resin-endfield', 'resin-wuwa', 'resin-pgr', 'resin-bh3'].forEach(function(id){
     const el = document.getElementById(id);
     if (!el || el.dataset.sumBound) return;
     el.dataset.sumBound = '1';
@@ -2100,20 +2124,26 @@ function loadQuery(){
 function buildLiveMap(d){
   const map = {};
   (d.games || []).forEach(function(g){
-    if (!g.ok || g.stale || g.no_account) return;
-    map[g.game] = {
-      finished: !!g.finished,
-      tasks: (g.tasks || []).map(function(t){
-        return { name: t.name, done: !!t.done, progress: t.progress || '' };
-      }),
-    };
+    if (!g.ok || g.no_account) return;
+    /* stale（04:00 归零 / 每日活跃未解锁 / 崩3风控）也进表——体力节点是
+       真实可用的（2026-11-09 用户实测：鸣潮/战双未解锁场景概览卡体力被
+       吞成「查询后显示」）。只是 stale 不带 finished/tasks 判定（数据待
+       更新，没有完成度语义），消费方一律以 finished != null 守卫回落 */
+    const entry = {};
     if (g.resource && g.resource.percent != null) {
-      map[g.game].name = g.resource.name;
-      map[g.game].current = g.resource.current;
-      map[g.game].maximum = g.resource.maximum;
-      map[g.game].percent = g.resource.percent;
-      map[g.game].recover = g.resource.recover;
+      entry.name = g.resource.name;
+      entry.current = g.resource.current;
+      entry.maximum = g.resource.maximum;
+      entry.percent = g.resource.percent;
+      entry.recover = g.resource.recover;
     }
+    if (!g.stale) {
+      entry.finished = !!g.finished;
+      entry.tasks = (g.tasks || []).map(function(t){
+        return { name: t.name, done: !!t.done, progress: t.progress || '' };
+      });
+    }
+    map[g.game] = entry;
   });
   return map;
 }
@@ -2141,7 +2171,7 @@ function taskProgressHtml(tasks){
    不写 localStorage；页面常驻时以「信息查询」最新一次结果为准。
    已满 → 「已满」；剩余不足 1 小时 → .eta-soon 橙色；数据缺失 → 空串。 */
 const RECOVERY_RATE_PER_MIN = {
-  genshin: 8, starrail: 6, zzz: 6, arknights: 6, endfield: 6
+  genshin: 8, starrail: 6, zzz: 6, arknights: 6, endfield: 6, wuwa: 10, pgr: 10, bh3: 10
 };
 function staminaEtaHtml(gid, resource){
   if (!resource || resource.current == null || resource.maximum == null) return '';
@@ -2199,7 +2229,7 @@ function renderLive(d){
     }).length;
     let msg;
     if (!enabledIds.length) msg = '没有启用的账号。';
-    else if (!boundN) msg = '启用的账号都还没绑定凭证——去「账号与通知」扫码登录后再来。';
+    else if (!boundN) msg = '启用的账号都还没绑定凭证——去「账号与通知」绑定后再来。';
     else msg = '暂无实时数据（凭证可能失效或角色未创建），稍后重试或查运行日志。';
     box.innerHTML = '<div class="emptybox">' + msg + '</div>';
   } else {
@@ -2228,38 +2258,25 @@ function renderLive(d){
            .live-card-head；body 之后必须再补一个 </div> 才闭合 .live-card。
            2026-11-05 修复：原写法漏了末尾这个（只有 1 个 </div>），导致整张卡
            不闭合、后续游戏卡全被吞进第一张里，网格塌成一列、卡高变 0。 */
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st warn">风控冷却中</span></div>' + body + '</div>';
+        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '</div>' + body + '</div>';
       }
-      /* 占位卡：新勾选的游戏缓存里还没查询结果 —— 诚实占位，不伪造数据 */
-      if (g.placeholder) {
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st">尚未查询</span></div>' +
-          '<div class="live-msg dim">点「刷新」查询实时体力，或等下一轮定时巡检。</div></div>';
-      }
-      if (!g.ok) {
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st err">失败</span></div>' +
-          '<div class="live-msg err-t">' + escHtml(g.error || '未知错误') + '</div></div>';
-      }
-      if (g.stale) {
-        /* 日常 04:00 已归零 ≠ 失败：等玩家上线，数据自然更新 */
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st">待上线更新</span></div>' +
-          '<div class="live-msg dim">' + escHtml(g.stale) + '</div></div>';
-      }
-      if (g.no_account) {
-        /* 未创建角色 ≠ 失败：凭证有效，建号后自动生效 */
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '<span class="st">未创建角色</span></div>' +
-          '<div class="live-msg dim">' + escHtml(g.no_account) + '</div></div>';
-      }
-      const st = g.finished ? '<span class="st ok">已完成</span>'
-                            : '<span class="st warn">未完成</span>';
-      const r = g.resource;
-      if (!r || r.current == null) {
-        return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + st + '</div>' +
-          '<div class="live-msg dim">暂不支持体力查询</div></div>';
-      }
+      /* 2026-11-09 用户裁决：实时体力 = 纯体力视图，与日常进度无关——
+         无体力数据的游戏（失败/待上线/未建号/未解锁）不在这里出现，
+         其状态由游戏概览的日常进度行承接。冷却卡保留（缓存体力仍可用） */
+      if (g.placeholder || !g.ok || g.no_account) return '';
+      let r = g.resource;
+      if (!r || r.current == null) return '';   /* 含未解锁/风控：概览承接 */
       const pct = (r.percent == null) ? 0 : r.percent;
       const max = (r.maximum == null) ? '?' : r.maximum;
-      return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + st + '</div>' +
-        '<div class="live-res"><b class="mono">' + r.current +
+      /* 绝区零边界标注（2026-11-09 实测）：米游社接口对电量满时把道具溢出
+         截断在 max——游戏内 300 接口只报 240，且无备用字段可推算。
+         满格时悬浮说明，防止「游戏内明明更多」的困惑。 */
+      const capTip = (g.game === 'zzz' && r.current != null && max != '?' &&
+                      r.current >= r.maximum)
+        ? ' title="已满。米游社接口不含溢出部分：游戏内用道具超出 240 的体力无法显示（接口无对应字段）"'
+        : '';
+      return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '</div>' +
+        '<div class="live-res"' + capTip + '><b class="mono">' + r.current +
         ' <span class="dim">/ ' + max + '</span></b><span class="dim">' +
         escHtml(r.name) + '</span></div>' +
         '<div class="bar"><i class="' + (pct >= 85 ? 'hot' : '') +
@@ -2359,7 +2376,11 @@ const GAME_ICON = {
   zzz: '/static/icons/zzz',
   arknights: '/static/icons/arknights',
   endfield:  '/static/icons/endfield',
+  wuwa:      '/static/icons/wuwa',
+  pgr:       '/static/icons/pgr',
+  bh3:       '/static/icons/bh3',
   miyoushe:  '/static/icons/miyoushe',
+  kuro:      '/static/icons/kuro',    // 库街区 App 官方图标（平台与游戏分开）
   skland:    '/static/icons/skland'
 };
 
@@ -2424,19 +2445,30 @@ function actCardHtml(it, isHero, heroSlim){
     ? '<span class="act-reward" title="' + escHtml(it.reward) + ' · 抽卡资源">' + escHtml(it.reward) + '</span>'
     : '';
   const prog = actProgHtml(it);
-  /* 合并组卡：成员小字清单（这才是「有信息的 2x2」）；× 不渲染——
-     data-del 只认单活动 id，成员随窗口结束自然拆回，拆回后单卡再删 */
+  /* 合并组卡（2026-11-09 用户裁决三连）：成员清单不再占卡体——
+     光标悬浮经 data-tip 显示全部成员；× 整组删除（逐个写黑名单）。
+     卡体与普通卡同构同高 */
   const mergedList = (it.merged && it.merged.length > 1)
-    ? '<div class="act-merged">' + it.merged.map(function(t){
-        return '<div>· ' + escHtml(t) + '</div>';
+    ? '<div class="act-merged">' + it.merged.map(function(t, i){
+        var mid = (it.merged_ids || [])[i] || '';
+        return '<div class="act-mrow"><span class="mt">· ' + escHtml(t) + '</span>' +
+          '<button type="button" class="act-del-m" data-member-id="' + escHtml(mid) +
+          '" onclick="deleteMemberActivity(this)" title="单独删除这一项">×</button></div>';
       }).join('') + '</div>'
     : '';
   const delBtn = it.merged
-    ? '<span class="act-merged-tag">' + it.merged.length + ' 项同止</span>'
+    ? '<button type="button" class="act-merged-tag act-merged-toggle" onclick="toggleMergedMembers(this)" title="展开成员列表，可分别删除">' +
+      it.merged.length + ' 项同止</button>' +
+      '<button type="button" class="act-del-g" onclick="deleteMergedActivity(this)" data-del-merged="' +
+      escHtml((it.merged_ids || []).join(',')) + '" title="整组删除，之后这 ' +
+      it.merged.length + ' 项都不再提醒">×</button>'
     : '<button type="button" class="act-del" data-del="' + id +
       '" title="删除，之后不再提醒">×</button>';
+  const memberTip = (it.merged && it.merged.length > 1)
+    ? ' data-tip="同止成员：' + escHtml(it.merged.join(' · ')) + '"'
+    : '';
   return '<div class="card acard' + (isHero && !heroSlim ? ' hero' : '') + '"' +
-    actUrgencyAttr(it, isHero) + ' data-id="' + id + '"' +
+    actUrgencyAttr(it, isHero) + ' data-id="' + id + '"' + memberTip +
     ' style="--gc:' + gameDotColor(it.game) + '">' +
     '<div class="acard-top"><span class="act-game">' + actIconHtml(it) +
       '<span class="act-name">' + escHtml(it.game_name) + '</span></span>' +
@@ -2488,7 +2520,12 @@ function buildMergedItem(members){
     title: (first.title || '') + ' 等 ' + members.length + ' 项',
     reward: rewards.join('、'),
     progress: '',
-    merged: members.map(function(x){ return x.title || ''; }),
+    merged: members.map(function(x){
+      /* 跨游戏合并时成员带游戏名前缀（同游戏的重复前缀无意义不加） */
+      var t = x.title || '';
+      return (x.game_name && x.game_name !== first.game_name ? x.game_name + ' ' : '') + t;
+    }),
+    merged_ids: members.map(function(x){ return x.id || ''; }),
   });
 }
 
@@ -2557,8 +2594,10 @@ function renderActivities(d){
     const mergeBuckets = {};
     const mergedOngoing = [];
     ongoing.forEach(function(x){
+      /* 合并桶不带游戏维度（2026-11-09 用户需求）：不同游戏同截止也并成
+         一张特殊合并卡；成员行带游戏名前缀防混 */
       const bucket = (x.ending_soon && (+x.hours_left || 0) <= winH)
-        ? 'm:' + x.game + '|' + String(x.end || '') : null;
+        ? 'm:' + String(x.end || '') : null;
       if (!bucket) { mergedOngoing.push(x); return; }
       (mergeBuckets[bucket] = mergeBuckets[bucket] || []).push(x);
     });
@@ -2569,7 +2608,12 @@ function renderActivities(d){
       mergedOngoing.push(buildMergedItem(members));
     });
     const heroPool = mergedOngoing.slice().sort(byUrgency);
-    const heroIt = heroPool.length ? heroPool[0] : (upcoming[0] || null);
+    /* 英雄卡选择（2026-11-09 三改）：最紧急优先；但最紧急卡「没有内容可展示」
+       （无进度、奖励空、非组卡——鸣潮活动常这样）时 2x2 只会整卡留白
+       （P6-2 的 241px 教训），此时英雄让给下一张「有内容」的卡，
+       紧急卡保持小卡 + 描边。全都没有内容才回落最紧急卡（slim）。
+       用户实证：只剩两天的鸣潮卡把英雄卡整卡挤没了。 */
+    const heroIt = heroPool.find(actHasContent) || heroPool[0] || (upcoming[0] || null);
     const heroSlim = !!heroIt && !actHasContent(heroIt);
 
     let html = '';
@@ -2578,6 +2622,7 @@ function renderActivities(d){
          组内按剩余时间升序；组间按「最近将有活动结束」升序 */
       const groups = [], byGid = {};
       mergedOngoing.concat(upcoming).forEach(function(x){
+        if (x === heroIt) return;   /* 英雄已通栏置顶，不进分组 */
         const gid = x.game || '';
         if (!byGid[gid]) {
           byGid[gid] = { gid: gid, name: x.game_name || '未知游戏', items: [] };
@@ -2592,7 +2637,7 @@ function renderActivities(d){
       groups.sort(function(a, b){ return a.mins - b.mins; });
 
       if (groups.length) {
-        html = groups.map(function(g){
+        html = (heroIt ? actCardHtml(heroIt, true, heroSlim) : '') + groups.map(function(g){
           return '<div class="act-group">' +
             '<div class="act-group-head">' +
               '<span class="gdot" style="background:' + gameDotColor(g.gid) + '"></span>' +
@@ -2607,9 +2652,12 @@ function renderActivities(d){
     } else {
       /* 模式 B · 按剩余时间升序，同时间按标题首字母（localeCompare zh）；
          平坦网格无组头，最紧急一张仍是英雄卡 */
-      const pool = mergedOngoing.concat(upcoming).sort(byUrgency);
-      html = '<div class="act-grid">' +
-        pool.map(function(x){ return actCardHtml(x, x === heroIt, heroSlim); }).join('') +
+      /* 英雄强制第一位（2026-11-09 用户需求）：dense 自动流会被更紧急的
+         无内容卡挤到第二行——英雄出池通栏置顶，其余照紧迫序跟后排 */
+      const pool = mergedOngoing.concat(upcoming).filter(function(x){ return x !== heroIt; }).sort(byUrgency);
+      html = (heroIt ? actCardHtml(heroIt, true, heroSlim) : '') +
+        '<div class="act-grid">' +
+        pool.map(function(x){ return actCardHtml(x, false); }).join('') +
         '</div>';
     }
 
@@ -2633,6 +2681,66 @@ function renderActivities(d){
         }).join('')
       : '';
   }
+}
+
+/* 合并组卡成员列表展开/收起（8 项同止角标即开关） */
+function toggleMergedMembers(btn){
+  const card = btn.closest('.acard');
+  if (card) card.classList.toggle('mopen');
+}
+
+/* 合并组卡分别删除：只删点名的这一项，整卡重渲保持「等 N 项」计数同步 */
+async function deleteMemberActivity(btn){
+  const id = btn.getAttribute('data-member-id');
+  btn.disabled = true;
+  try {
+    const d = await postJSON('/api/activities/delete', { id: id });
+    if (!d || d.ok === false) {
+      toast((d && d.message) || '删除失败', true);
+      btn.disabled = false;
+      return;
+    }
+    toast('已删除该项');
+    loadActivities();
+  } catch (e) {
+    btn.disabled = false;
+    toast('删除失败：' + e, true);
+  }
+}
+
+/* 合并组卡整组删除：逐个写黑名单（data-del-merged 逗号分隔的成员 id），
+   全部成功后重载活动列表；部分失败如实提示 */
+async function deleteMergedActivity(btn){
+  const ids = (btn.getAttribute('data-del-merged') || '').split(',').filter(Boolean);
+  const row = btn.closest('.acard');
+  btn.disabled = true;
+  let fail = 0;
+  for (const id of ids) {
+    try {
+      const d = await postJSON('/api/activities/delete', { id: id });
+      if (!d || d.ok === false) fail++;
+    } catch (e) { fail++; }
+  }
+  if (fail) {
+    btn.disabled = false;
+    toast('整组删除部分失败（' + fail + '/' + ids.length + ' 项），请重试', true);
+    return;
+  }
+  if (row) row.remove();
+  toast('已删除整组 ' + ids.length + ' 项同止活动');
+  loadActivities();
+}
+
+/* 打开设备信息.apk 所在文件夹（资源管理器选中文件）——
+   扫码不通时的兜底：用户把 apk 用微信/QQ 传给手机 */
+function openApkFolder(){
+  fetch('/api/tools/open-apk-folder', { method: 'POST' })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (!d || !d.ok) toast((d && d.error) || '打开失败', true);
+      else toast(d.message || '已打开文件夹');
+    })
+    .catch(function(){ toast('无法连接本地服务', true); });
 }
 
 /* 删除：立刻从界面消失，并写进 data/ignored_activities.json，之后永不提醒 */
@@ -2722,7 +2830,10 @@ const GAME_DOT = {
   starrail:  '#8f7ff0',
   zzz:       '#f0854b',
   arknights: '#4aa3e8',
-  endfield:  '#dcc23c'
+  endfield:  '#dcc23c',
+  wuwa:      '#c8a96a',
+  pgr:       '#d9534f',
+  bh3:       '#8f6fe8'
 };
 function gameDotColor(gid){
   return GAME_DOT[gid] || 'var(--brand)';
@@ -2948,10 +3059,8 @@ function gameCardHtml(g){
   } else if (raw && raw.no_account) {
     badge = '<span class="dim">未创建角色</span>';
     why = String(raw.no_account);
-  } else if (live && live.finished != null) {
-    const miss = (live.tasks || []).filter(function(t){ return !t.done; }).length;
-    badge = live.finished ? '<span class="dim">✔ 今日已完成</span>'
-                          : '<span class="badge warn">未完成 ' + miss + ' 项</span>';
+  } else if (live && (live.tasks || []).length) {
+    badge = '';   /* 日常进度条本身即表达（2026-11-09 用户裁决） */
   } else if (!today || !today.known) {
     badge = '<span class="dim">今日无数据</span>';
   } else if (today.finished) {
@@ -2960,27 +3069,32 @@ function gameCardHtml(g){
     badge = '<span class="badge warn">未完成 ' + (today.unfinished_tasks || 0) + ' 项</span>';
   }
 
-  /* 体力（一眼层）：数值/进度条/预计回满，实时化成果原样保留。
-     三态全用真实值（2026-11-07 用户终裁）：未满 N/N、满 N/N、
-     道具突破上限后 N/N（current 原样透传，服务器给多少显示多少）——
-     「已满」只出现在进度条悬浮提示里，不替代数字 */
-  let stamina;
-  if (live && live.percent != null) {
-    const full = live.current >= live.maximum;
-    const over = live.current > live.maximum;
-    const hot = live.percent >= 85;
-    const tip = over ? '超出上限 ' + (live.current - live.maximum) + '（道具/效果临时提升）'
-      : full ? '体力已满' : '';
-    stamina = '<div class="gcard-stam"><span class="dim">' + escHtml(live.name || '体力') +
-      '</span><span class="sbar"><i class="' + (hot ? 'hot' : '') +
-      '" style="width:' + live.percent + '%"></i><i class="progress-glow' +
-      (hot ? ' hot' : '') + '" style="left:' + live.percent + '%"></i></span>' +
-      '<span class="mono"' + (tip ? ' title="' + escHtml(tip) + '"' : '') + '>' +
-      live.current + '/' + live.maximum + '</span>' +
-      staminaEtaHtml(gid, live) + '</div>';
+  /* 日常进度（一眼层，2026-11-09 用户裁决二轮）：与体力条同形态——
+     每任务一行进度条（名称 + 条 + N/N）；未解锁/风控显示原因文案 */
+  let daily;
+  if (raw && raw.stale) {
+    daily = '<div class="gcard-daily"><span class="dim">' + escHtml(raw.stale) + '</span></div>';
+  } else if (live && (live.tasks || []).length) {
+    daily = (live.tasks || []).map(function(t){
+      const hit = /(\d+)\s*\/\s*(\d+)/.exec(t.progress || '');
+      let pct, txt;
+      if (hit) {
+        const cur = parseInt(hit[1], 10), max = parseInt(hit[2], 10);
+        txt = cur + '/' + max;
+        pct = max > 0 ? Math.min(100, Math.round(cur * 100 / max)) : 100;
+      } else {
+        txt = t.done ? '✓' : '✗';
+        pct = t.done ? 100 : 0;
+      }
+      return '<div class="gcard-task"><span class="dim">' + escHtml(t.name) + '</span>' +
+        '<span class="sbar"><i class="' + (pct >= 85 ? 'hot' : '') +
+        '" style="width:' + pct + '%"></i></span>' +
+        '<span class="mono">' + txt + '</span></div>';
+    }).join('');
+  } else if (raw && raw.no_account) {
+    daily = '<div class="gcard-daily"><span class="dim">' + escHtml(raw.no_account) + '</span></div>';
   } else {
-    stamina = '<div class="gcard-stam"><span class="dim">体力</span>' +
-      '<span class="dim">到「信息查询」查询后显示</span></div>';
+    daily = '<div class="gcard-daily"><span class="dim">今日无日常判定数据</span></div>';
   }
 
   /* 回顾信息（悬浮层）：上次检查｜每日任务明细｜本月统计。
@@ -3008,8 +3122,11 @@ function gameCardHtml(g){
 
   /* 连续天数保护话术：streak > 0 且今天还没做完时，用损失厌恶框架提醒
      「别断」——琥珀不用红（对比是信息不是告警，色彩纪律） */
+  /* 今天别断只在 18 点后出现（2026-11-09 用户裁决）：早上刚刷新一天还长，
+     催了也没意义 */
   const streakAtRisk = Number(g.streak || 0) > 0 &&
-    ((live && live.finished === false) || (today && today.known && !today.finished));
+    ((live && live.finished === false) || (today && today.known && !today.finished)) &&
+    new Date().getHours() >= 18;
 
   return '<div class="card gcard" style="--gc:' + gameDotColor(gid) + '" data-tip="' + escHtml(tip) + '">' +
     '<div class="gcard-head">' + gameIconHtml(gid) +
@@ -3018,7 +3135,7 @@ function gameCardHtml(g){
       '<div class="gcard-streak"><b class="value">' + Number(g.streak || 0) + '</b><small>连续天数' +
         (streakAtRisk ? ' · <span style="color:var(--warn)">今天别断</span>' : '') + '</small></div>' +
     '</div>' +
-    stamina +
+    daily +
     '</div>';
 }
 
@@ -3115,14 +3232,19 @@ document.getElementById('btn-hist-refresh').addEventListener('click', function()
 });
 
 /* 游戏概览卡的刷新（2026-11-06）：只重拉报表并重绘本卡，不触发游戏查询。
-   与上方「刷新」的区别：那个会先 loadLive(true) 真去查一遍游戏（写历史、
-   可能触发风控冷却），代价高；概览只是展示，用已有数据重绘就够。 */
+   2026-11-09 用户裁决：刷新不查询就是假刷新——概览刷新与信息查询页
+   同款 loadLive(true) 真查一遍（写历史、受风控冷却保护），完成后把
+   报表一起重绘。查询耗时约 5~15 秒，转圈反馈。 */
 document.getElementById('btn-stats-refresh').addEventListener('click', function(){
   const btn = this;
   if (!btn || btn.disabled) return;              // 防连点
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
-  loadHistory()
-    .catch(function(err){ console.error('刷新游戏概览失败', err); })
+  loadLive(true)
+    .then(function(){ return loadHistory(); })
+    .catch(function(err){
+      console.error('刷新游戏概览失败', err);
+      toast('刷新失败：' + ((err && err.message) || '无法连接本地服务'), true);
+    })
     .then(function(){ btn.disabled = false; btn.textContent = '刷新'; });
 });
 
@@ -3353,6 +3475,8 @@ function renderMonthModal(d){
     const wdMap = { '周一': 0, '周二': 1, '周三': 2, '周四': 3, '周五': 4, '周六': 5, '周日': 6 };
     const lead = wdMap[d.days[0].weekday] || 0;
     const total = d.games.length || 1;
+    /* 段数随监控数量伸缩（上限 8 档色梯）：监控 8 款 = 8 段、关到 3 款 = 3 段 */
+    const levels = Math.min(8, Math.max(1, total));
     let html = '<div class="mc-grid">';
     ['一', '二', '三', '四', '五', '六', '日'].forEach(function(w){
       html += '<div class="mc-wd">' + w + '</div>';
@@ -3369,21 +3493,21 @@ function renderMonthModal(d){
         if (c.known && c.finished) done += 1;
         return g.game_name + ' ' + monthGameMark(c, row);
       });
-      const lv = done === 0 ? 0 : Math.max(1, Math.ceil(done / total * 4));
+      /* 档位 = 完成数本身（段数 = 监控数量，上限 8 档色梯）：
+         2026-11-09 用户裁决——图例要能直接看到 8 段 */
+      const lv = Math.min(done, levels);
       const tip = '完成 ' + done + '/' + total + '｜' + parts.join(' · ');
       html += '<div class="mc-day mc-l' + lv + (row.is_today ? ' today' : '') +
         '" data-tip="' + escHtml(row.label + '｜' + tip) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
     });
     for (let i = lead + d.days.length; i % 7 !== 0; i++) html += '<div class="mc-day blank"></div>';
     html += '</div>';
+    let legendCells = '';
+    for (let i = 0; i <= levels; i++) {
+      legendCells += '<span class="mc-legend-cell mc-l' + i + '"></span>';
+    }
     body = '<div class="month-scroll">' + html + '</div>' +
-      '<div class="mc-legend">少' +
-      '<span class="mc-legend-cell mc-l0"></span>' +
-      '<span class="mc-legend-cell mc-l1"></span>' +
-      '<span class="mc-legend-cell mc-l2"></span>' +
-      '<span class="mc-legend-cell mc-l3"></span>' +
-      '<span class="mc-legend-cell mc-l4"></span>' +
-      '多</div>';
+      '<div class="mc-legend">少' + legendCells + '多</div>';
   }
   document.getElementById('month-body').innerHTML = body;
 }
@@ -4007,3 +4131,201 @@ function rlReloadKey(e){
 }
 
 /* 刷新反馈：整页白闪已随 2026-11-01 减法裁决移除（转圈按钮承载反馈） */
+
+/* ===================== 库街区绑定（鸣潮，2026-11-09 D2b）=====================
+   双模：短信登录（主，前端嵌极验 v4 人肉过验证）+ Token 粘贴（兜底）。
+   短信走 /api/kuro/sms/send + /sms/login；token 走 /api/kuro/verify + /save。
+   gt4.js 加载失败只影响短信模式（toast 引导切 token），不挡绑定。 */
+
+let kuroCaptcha = null;          // 极验 captchaObj（懒初始化，弹窗内复用）
+let kuroCaptchaBroken = false;   // gt4.js 加载失败 → 短信模式置灰引导 token
+let kuroSmsTimer = null;
+let kuroSmsLeft = 0;
+
+function startKuro(){
+  /* 库街区绑定与米游社/森空岛同流程：先选游戏，再进绑定弹窗 */
+  openPickModal('k');
+}
+
+function startKuroDialog(){
+  document.getElementById('kuro-stage').hidden = false;
+  // 每次进入都清空旧输入：短信码是一次性的，残留只会诱导误提交
+  document.getElementById('kuro-phone').value = '';
+  document.getElementById('kuro-code').value = '';
+  kuroSwitchMode('sms');
+  kuroStatus('');
+  kuroTokenStatus('');
+}
+
+function closeKuro(){
+  document.getElementById('kuro-stage').hidden = true;
+}
+
+function kuroSwitchMode(mode){
+  const sms = mode !== 'token';
+  document.getElementById('kuro-mode-sms').classList.toggle('on', sms);
+  document.getElementById('kuro-mode-token').classList.toggle('on', !sms);
+  document.getElementById('kuro-sms-pane').hidden = !sms;
+  document.getElementById('kuro-token-pane').hidden = sms;
+}
+
+function kuroStatus(text, cls){
+  const el = document.getElementById('kuro-status');
+  el.textContent = text || '';
+  el.className = 'kuro-status' + (cls ? ' ' + cls : '');
+}
+
+function kuroTokenStatus(text, cls){
+  const el = document.getElementById('kuro-token-status');
+  el.textContent = text || '';
+  el.className = 'kuro-status' + (cls ? ' ' + cls : '');
+}
+
+function kuroPhone(){
+  return document.getElementById('kuro-phone').value.trim();
+}
+
+/* 极验 v4 懒初始化：gt4.js 在 head 里 defer 加载；失败置 broken 引导 token 模式。
+   关键参数对齐 Arietta（WebView2 实测可弹的参考实现）：product='bind' +
+   showBox() 弹窗、protocol 强制 https——http 页面下 geetest 自动探测出
+   http:// 端点，showCaptcha() 全程静默不弹（2026-11-09 真机取证）。 */
+function kuroEnsureCaptcha(){
+  return new Promise(function(resolve, reject){
+    if (kuroCaptcha) { resolve(kuroCaptcha); return; }
+    if (typeof window.initGeetest4 !== 'function') {
+      kuroCaptchaBroken = true;
+      reject(new Error('人机验证组件未加载（需要联网访问极验）'));
+      return;
+    }
+    let settled = false;
+    const done = function(fn, arg){ if (!settled) { settled = true; fn(arg); } };
+    const fallback = setTimeout(function(){
+      done(reject, new Error('人机验证初始化超时（极验接口连不上），可改用「Token 粘贴」模式'));
+    }, 10000);
+    try {
+      window.initGeetest4({
+        captchaId: 'ec4aa4174277d822d73f2442a165a2cd',
+        product: 'bind',
+        language: 'zho',
+        protocol: 'https://',
+      }, function(captchaObj){
+        kuroCaptcha = captchaObj;
+        // bind 模式必须先 appendTo 挂载再 showCaptcha，否则弹窗静默不出现
+        //（真机取证：缺这步时 onBoxShow 永不触发、display 恒 none）
+        try { captchaObj.appendTo(document.getElementById('kuro-captcha')); } catch (e) {}
+        captchaObj.onSuccess(function(){
+          const v = captchaObj.getValidate();
+          if (!v) return;
+          kuroDoSendSms(JSON.stringify(v));
+          captchaObj.reset();
+        });
+        captchaObj.onError(function(){
+          kuroStatus('人机验证出错，请重试', 'err');
+          try { captchaObj.reset(); } catch (e) {}
+        });
+        captchaObj.onClose(function(){
+          kuroStatus('人机验证已关闭，点「发送验证码」重新开始');
+        });
+        captchaObj.onReady(function(){
+          clearTimeout(fallback);
+          done(resolve, captchaObj);
+        });
+      });
+    } catch (e) {
+      clearTimeout(fallback);
+      done(reject, new Error('人机验证初始化异常：' + e.message));
+    }
+  });
+}
+
+/* bind 模式弹窗：showBox 与 showCaptcha 双保险（v4 版本间 API 命名有漂移），
+   并给「弹不出来」一个明确的失败反馈，绝不无限卡在「正在唤起」 */
+function kuroShowCaptcha(captcha){
+  try { if (typeof captcha.showBox === 'function') captcha.showBox(); } catch (e) {}
+  try { if (typeof captcha.showCaptcha === 'function') captcha.showCaptcha(); } catch (e) {}
+  setTimeout(function(){
+    // 可见性看 .geetest_box（真身 340x386）；box_wrap 是定位壳，恒 0 高
+    const box = document.querySelector('[class*="geetest_box_wrap"] .geetest_box');
+    const visible = box && getComputedStyle(box).display !== 'none'
+      && box.getBoundingClientRect().height > 0;
+    if (!visible) {
+      kuroStatus('验证窗口未能弹出（网络或组件异常），请重试或改用「Token 粘贴」模式', 'err');
+    } else {
+      kuroStatus('请完成滑块验证，通过后自动发送短信');
+    }
+  }, 1500);
+}
+
+function kuroSendSms(){
+  if (!/^1[3-9]\d{9}$/.test(kuroPhone())) {
+    kuroStatus('请先填写正确的手机号（11 位国内号段）', 'err');
+    return;
+  }
+  if (kuroSmsLeft > 0) return;
+  const btn = document.getElementById('btn-kuro-send');
+  btn.disabled = true;
+  kuroStatus('正在唤起人机验证…');
+  kuroEnsureCaptcha().then(function(captcha){
+    btn.disabled = false;
+    kuroShowCaptcha(captcha);       // 用户手动过验证，成功回调里真正发码
+  }).catch(function(err){
+    btn.disabled = false;
+    kuroStatus(err.message + '。可改用「Token 粘贴」模式绑定', 'err');
+  });
+}
+
+function kuroDoSendSms(geeTestData){
+  const btn = document.getElementById('btn-kuro-send');
+  kuroStatus('正在发送验证码…');
+  postJSON('/api/kuro/sms/send', { mobile: kuroPhone(), gee_test_data: geeTestData })
+    .then(function(d){
+      if (!d || !d.ok) { kuroStatus((d && d.error) || '发送失败', 'err'); return; }
+      kuroStatus(d.message || '验证码已发送', 'ok');
+      kuroSmsLeft = 60;
+      btn.disabled = true;
+      if (kuroSmsTimer) clearInterval(kuroSmsTimer);
+      kuroSmsTimer = setInterval(function(){
+        kuroSmsLeft -= 1;
+        if (kuroSmsLeft <= 0) { clearInterval(kuroSmsTimer); kuroSmsTimer = null; btn.textContent = '发送验证码'; btn.disabled = false; return; }
+        btn.textContent = kuroSmsLeft + 's';
+      }, 1000);
+      btn.textContent = '60s';
+      document.getElementById('kuro-code').focus();
+    })
+    .catch(function(){ kuroStatus('无法连接本地服务', 'err'); });
+}
+
+function kuroLogin(){
+  const code = document.getElementById('kuro-code').value.trim();
+  if (!/^1[3-9]\d{9}$/.test(kuroPhone())) { kuroStatus('手机号格式不对', 'err'); return; }
+  if (!/^\d{6}$/.test(code)) { kuroStatus('请输入 6 位短信验证码', 'err'); return; }
+  const btn = document.getElementById('btn-kuro-login');
+  btn.disabled = true;
+  kuroStatus('正在登录…');
+  postJSON('/api/kuro/sms/login', { mobile: kuroPhone(), code: code, games: kuroBindTargets })
+    .then(function(d){
+      btn.disabled = false;
+      if (!d || !d.ok) { kuroStatus((d && d.error) || '登录失败', 'err'); return; }
+      toast(d.message || '绑定成功');
+      closeKuro();
+      loadAccounts();
+    })
+    .catch(function(){ btn.disabled = false; kuroStatus('无法连接本地服务', 'err'); });
+}
+
+function kuroSaveToken(){
+  const token = document.getElementById('kuro-token').value.trim();
+  if (!token) { kuroTokenStatus('请先粘贴 Token', 'err'); return; }
+  const btn = document.getElementById('btn-kuro-save');
+  btn.disabled = true;
+  kuroTokenStatus('正在校验…');
+  postJSON('/api/kuro/save', { token: token, games: kuroBindTargets })
+    .then(function(d){
+      btn.disabled = false;
+      if (!d || !d.ok) { kuroTokenStatus((d && d.error) || '校验未通过', 'err'); return; }
+      toast(d.message || '绑定成功');
+      closeKuro();
+      loadAccounts();
+    })
+    .catch(function(){ btn.disabled = false; kuroTokenStatus('无法连接本地服务', 'err'); });
+}
