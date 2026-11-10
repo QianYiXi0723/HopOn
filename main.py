@@ -906,8 +906,10 @@ def run_once(config: AppConfig, dry_run: bool = False, quiet_push: bool = False)
             from core import activities
 
             activities.ensure_fresh()
-            activity_alerts = activities.pending_alerts(
-                hours=config.activity_alert_days * 24
+            # 结束推送三段梯度（2026-11-11 #9）：每档终身一次、迟过的档当场
+            # 补发，取代旧「提前 N 天每日可重复」单档——每活动最多三条
+            activity_alerts = activities.pending_deadline_alerts(
+                tiers=config.activity_deadline_tiers
             )
             # 活动上新提醒（开始后 24h 窗口内首巡检触发，终身只推一次）
             activity_start_alerts = activities.pending_start_alerts()
@@ -1043,7 +1045,7 @@ def run_once(config: AppConfig, dry_run: bool = False, quiet_push: bool = False)
             try:
                 from core import activities
 
-                activities.mark_notified(report.activity_alerts)
+                activities.mark_tier_notified(report.activity_alerts)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("记录活动提醒失败（下次可能重复提醒）：%s", exc)
         if report.activity_start_alerts:

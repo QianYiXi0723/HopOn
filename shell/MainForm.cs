@@ -46,6 +46,12 @@ namespace HopOn
         private bool _reallyExit;
         private bool _trayHintShown;
         private int _apiHits;             // 已被拦截代转的 /api/* 次数（只用于首条日志）
+        private Icon _iconNormal;          // 基座图标（品牌原样，不碰观感）
+        private Icon _iconPending;         // 基座 + 右下琥珀角标（微软 overlay 位）
+        private bool _trayPending;         // 角标当前状态（翻转才换图，防闪烁）
+        private System.Windows.Forms.Timer _trayTimer; // 托盘摘要 30s 轮询
+        /// <summary>explorer 重建任务栏的广播消息（值每次会话变化，禁止硬编码）。</summary>
+        private readonly uint _taskbarCreatedMsg = RegisterWindowMessage("TaskbarCreated");
 
         public MainForm(bool startMinimized, int? forcedPort)
         {
@@ -101,6 +107,15 @@ namespace HopOn
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("彻底退出", null, (s, e) => ReallyExit());
             _tray.ContextMenuStrip = menu;
+            // 托盘数据面（2026-11-11 第一队列 #2）：语义在引擎侧 /api/tray_summary
+            // 算好，壳只渲染。待办用右下琥珀角标——微软规范：状态用 overlay 角标、
+            // 基座不碰红黄绿；角标只在状态翻转时换图，绝不闪烁。
+            _iconNormal = _tray.Icon;
+            try { _iconPending = MakePendingIcon(_iconNormal); }
+            catch { _iconPending = _iconNormal; }
+            _trayTimer = new System.Windows.Forms.Timer { Interval = 30000 };
+            _trayTimer.Tick += (s, e) => RefreshTraySummary();
+            _trayTimer.Start();
             _tray.DoubleClick += (s, e) => ShowMain();
 
             Load += async (s, e) => await BootAsync();
@@ -149,6 +164,7 @@ namespace HopOn
 
                 // 冷启动兜底：daemon 唯一入口是页面按钮（发行版无 start.bat）；fire-and-forget 防 6 秒白屏。
                 _ = Task.Run(() => EnsureDaemon(port));
+                RefreshTraySummary();   // 托盘摘要首拉（引擎未就绪时静默失败，30s 后定时器补拉）
 
                 Directory.CreateDirectory(Path.Combine(Root, "logs", "webview2"));
                 var env = await CoreWebView2Environment.CreateAsync(
@@ -688,6 +704,106 @@ namespace HopOn
             catch { return false; }
         }
 
+        /// <summary>拉托盘摘要并刷新菜单与角标。网络失败静默（保留上次内容）。</summary>
+        private void RefreshTraySummary()
+        {
+            if (!IsHandleCreated || IsDisposed) return;
+            Task.Run(() =>
+            {
+                string resp = HttpJson(_port, "/api/tray_summary", "GET", null, 2500);
+                if (string.IsNullOrEmpty(resp)) return;
+                string headline = Regex.Match(resp, "\"headline\"\\s*:\\s*\"([^\"]*)\"").Groups[1].Value;
+                bool pending = Regex.IsMatch(resp, "\"pending\"\\s*:\\s*true");
+                string text = "";
+                var m = Regex.Match(resp, "\"text\"\\s*:\\s*\"([^\"]*)\"");
+                if (m.Success) text = m.Groups[1].Value.Replace("\\n", "\n");
+                if (IsHandleCreated && !IsDisposed)
+                    BeginInvoke((Action)(() => ApplyTraySummary(headline, pending, text)));
+            });
+        }
+
+        /// <summary>把摘要渲染进托盘：信息行置顶（只读），操作区按微软规范排序；
+        /// 默认命令加粗；不适用的信息直接不渲染。菜单展开中则等下个 tick 再拆。</summary>
+        private void ApplyTraySummary(string headline, bool pending, string text)
+        {
+            try
+            {
+                var menu = _tray.ContextMenuStrip;
+                if (menu.Visible) return;   // 用户正看着就别拆，30s 后的 tick 再刷新
+                menu.Items.Clear();
+                menu.Items.Add(new ToolStripMenuItem(
+                    "HopOn · " + (string.IsNullOrEmpty(headline) ? "读取中" : headline))
+                { Enabled = false });
+                if (!string.IsNullOrEmpty(text))
+                    foreach (var line in text.Split('\n'))
+                        if (line.Length > 0)
+                            menu.Items.Add(new ToolStripMenuItem(line) { Enabled = false });
+                menu.Items.Add(new ToolStripSeparator());
+                var open = new ToolStripMenuItem("打开控制台", null, (s, e) => ShowMain());
+                open.Font = new Font(open.Font, FontStyle.Bold);   // 默认命令加粗（微软规范）
+                menu.Items.Add(open);
+                menu.Items.Add("立即巡检", null, (s, e) => RunManualCheck());
+                menu.Items.Add("导出诊断包", null, (s, e) => ExportDiagnostics());
+                menu.Items.Add(new ToolStripSeparator());
+                menu.Items.Add("彻底退出", null, (s, e) => ReallyExit());
+                if (pending != _trayPending)
+                {
+                    _trayPending = pending;
+                    _tray.Icon = pending ? _iconPending : _iconNormal;
+                }
+                try { _tray.Text = "HopOn · " + (string.IsNullOrEmpty(headline) ? "日常巡查" : headline); }
+                catch { }
+            }
+            catch (Exception ex) { Log("托盘菜单刷新失败：" + ex.Message); }
+        }
+
+        /// <summary>基座图标右下角加琥珀圆点（overlay 位），不换基座不碰品牌色。</summary>
+        private static Icon MakePendingIcon(Icon baseIcon)
+        {
+            using (var src = baseIcon.ToBitmap())
+            {
+                int size = Math.Max(src.Width, 32);
+                var bmp = new Bitmap(size, size);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    g.DrawImage(src, 0, 0, size, size);
+                    int d = Math.Max(8, size / 3);
+                    using (var br = new SolidBrush(Color.FromArgb(245, 158, 11)))
+                        g.FillEllipse(br, size - d - 1, size - d - 1, d, d);
+                }
+                return Icon.FromHandle(bmp.GetHicon());
+            }
+        }
+
+        /// <summary>托盘「导出诊断包」：GET /api/diag_export（脱敏+fail-closed 在引擎侧），
+        /// 完成后气泡报落盘路径。导出耗时秒级，先给一条「正在收集」。</summary>
+        private void ExportDiagnostics()
+        {
+            if (!IsHandleCreated || IsDisposed) return;
+            _tray.ShowBalloonTip(2000, "HopOn", "正在收集诊断包…", ToolTipIcon.Info);
+            Task.Run(() =>
+            {
+                string resp = HttpJson(_port, "/api/diag_export", "GET", null, 60000);
+                bool ok = Regex.IsMatch(resp, "\"ok\"\\s*:\\s*true");
+                string msg = "诊断包导出失败，请打开控制台查看";
+                if (ok)
+                {
+                    var m = Regex.Match(resp, "\"path\"\\s*:\\s*\"([^\"]*)\"");
+                    if (m.Success)
+                        msg = "诊断包已导出：" + m.Groups[1].Value.Replace("\\\\", "\\");
+                }
+                else
+                {
+                    var m = Regex.Match(resp, "\"message\"\\s*:\\s*\"([^\"]*)\"");
+                    if (m.Success) msg = m.Groups[1].Value;
+                }
+                if (IsHandleCreated && !IsDisposed)
+                    BeginInvoke((Action)(() => _tray.ShowBalloonTip(5000, "HopOn", msg,
+                        ok ? ToolTipIcon.Info : ToolTipIcon.Warning)));
+            });
+        }
+
         /// <summary>托盘「立即巡检」：经 /api/daemon/run-now 让 daemon 跑一轮，不阻塞 UI。</summary>
         private void RunManualCheck()
         {
@@ -757,6 +873,7 @@ namespace HopOn
                 if (_job != IntPtr.Zero) { CloseHandle(_job); _job = IntPtr.Zero; }  // Job close 连带 daemon
             }
             _tray.Visible = false;
+            try { _trayTimer.Stop(); } catch { }
             Application.Exit();
         }
 
@@ -764,6 +881,26 @@ namespace HopOn
         {
             base.OnShown(e);
             if (_startMinimized) Hide();
+        }
+
+        /// <summary>explorer 重启广播（TaskbarCreated，值每次会话变化必须
+        /// RegisterWindowMessage 取）：托盘图标随任务栏重建全部丢失——
+        /// Visible 双掷重挂 + 重放当前状态图标（2026-11-11 #6·③）。</summary>
+        protected override void WndProc(ref Message m)
+        {
+            if (_taskbarCreatedMsg != 0 && m.Msg == (int)_taskbarCreatedMsg)
+            {
+                try
+                {
+                    Log("收到 TaskbarCreated（explorer 重启），重挂托盘图标");
+                    _tray.Visible = false;
+                    _tray.Visible = true;
+                    _tray.Icon = _trayPending ? _iconPending : _iconNormal;
+                    RefreshTraySummary();   // 菜单数据顺带补一轮
+                }
+                catch (Exception ex) { Log("重挂托盘失败：" + ex.Message); }
+            }
+            base.WndProc(ref m);
         }
 
         // ------------------------------------------------------------ Job Object（内核级收尸）
@@ -789,6 +926,8 @@ namespace HopOn
             catch (Exception ex) { Log("挂 Job 失败（不影响运行，仅失去兜底收尸）：" + ex.Message); }
         }
 
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern uint RegisterWindowMessage(string lpString);
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern IntPtr CreateJobObject(IntPtr a, string lpName);
         [DllImport("kernel32.dll", SetLastError = true)]

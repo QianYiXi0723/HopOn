@@ -1551,12 +1551,146 @@ def _prune_notified(notified: Dict[str, Any]) -> Dict[str, Any]:
     return kept
 
 
-def summary(*, window_hours: Optional[int] = None) -> Dict[str, Any]:
+# --------------------------------------------------------------------------- #
+# 结束推送·三段梯度（2026-11-11 第一队列 #9，用户裁定：三段独立、-1 关闭）
+# --------------------------------------------------------------------------- #
+
+#: 三段默认档（小时）——动作节点分层：规划(72h)→行动(24h)→召回(6h)。
+#: 运行时以 AppConfig.activity_deadline_tiers 为准（main 每次显式传入）；
+#: 本常量仅供独立调用/测试兜底，与 core/config 的默认档保持同值。
+DEADLINE_TIERS_DEFAULT = [72, 24, 6]
+
+
+@dataclass
+class ActivityTierAlert:
+    """活动结束·三段梯度提醒（推送正文用）。
+
+    每档**终身只推一次**；迟过越线（停机跨过整档窗口）的档在下次巡检当场
+    补发一次——「只早不迟：迟到走补发」的用户裁决。旧「每日可重复」结束
+    提醒由三段取代：每活动最多三条，防轰炸从源头收敛。
+    文案按动作节点分层（模仿航班值机/证书到期阶梯）：规划=安排时间、
+    行动=今天该打、召回=马上就没了。
+    """
+
+    game_id: str
+    game_name: str
+    title: str
+    end: datetime
+    tier: int              # 档位序号 1..3（对应 tiers 列表下标 +1）
+    threshold: int         # 该档阈值（小时）
+    hours_left: float
+    uid: str = ""
+
+    def _shown(self) -> str:
+        needs_quote = "「" not in self.title and "」" not in self.title
+        return f"「{self.title}」" if needs_quote else self.title
+
+    def _left_text(self) -> str:
+        hours = max(self.hours_left, 0.0)
+        if hours >= 48:
+            days = max(int(math.ceil(hours / 24.0)), 1)
+            return f"{days} 天"
+        return f"{int(hours)}h{int(hours * 60) % 60:02d}m"
+
+    def warn_line(self) -> str:
+        left = self._left_text()
+        if self.tier == 1:
+            return (f"🗓️ 活动规划：{self.game_name}{self._shown()} 约 {left}后结束"
+                    f"（第 1 档·规划），安排好时间")
+        if self.tier == 2:
+            return (f"⏳ 活动行动：{self.game_name}{self._shown()} 约 {left}后结束"
+                    f"（第 2 档·行动），今天该打了")
+        return (f"🔔 最后冲刺：{self.game_name}{self._shown()} 仅剩约 {left}"
+                f"（第 3 档·冲刺），想拿奖励抓紧了")
+
+
+def pending_deadline_alerts(
+    tiers: Optional[List[int]] = None,
+) -> List[ActivityTierAlert]:
+    """三段梯度结束提醒：越线即推、每档终身一次，迟过的档当场补发。
+
+    「只早不迟」落地：目标时刻 = 结束前 threshold 小时，巡检在越线后的
+    第一个 tick 落地（最迟≈轮询周期）；-1 = 该档关闭（用户裁决）。
+    去重键 = ``uid:档位``，存缓存 ``tier_fired`` 终身账本（prune 同 notified）。
+    """
+    if tiers is None:
+        tiers = list(DEADLINE_TIERS_DEFAULT)
+    cache = load_cache()
+    raw_fired = cache.get("tier_fired")
+    fired = raw_fired if isinstance(raw_fired, dict) else {}
+    alerts: List[ActivityTierAlert] = []
+    for act in ongoing():
+        if act.not_started or act.end is None:
+            continue
+        left = act.hours_left
+        if left <= 0:
+            continue
+        for idx, threshold in enumerate(tiers[:3], start=1):
+            if not isinstance(threshold, int) or threshold < 0:
+                continue  # -1 / 非法 = 该档不提醒
+            if left > threshold:
+                continue
+            key = f"{act.uid}:{idx}"
+            if fired.get(key):
+                continue
+            alerts.append(ActivityTierAlert(
+                game_id=act.game_id, game_name=act.game_name, title=act.title,
+                end=act.end, tier=idx, threshold=threshold,
+                hours_left=left, uid=act.uid,
+            ))
+    return alerts
+
+
+def mark_tier_notified(alerts: Iterable[ActivityTierAlert]) -> None:
+    """把已推的（活动, 档位）记进终身账本 tier_fired——锁纪律同 mark_notified。"""
+    ids = [f"{a.uid}:{a.tier}" for a in alerts if a.uid]
+    if not ids:
+        return
+    with _IGNORED_WRITE_LOCK, ipc_lock.blocking(str(CACHE_PATH) + ".lock"):
+        cache = load_cache()
+        raw = cache.get("tier_fired")
+        fired = raw if isinstance(raw, dict) else {}
+        stamp = datetime.now().strftime("%Y-%m-%d")
+        for key in ids:
+            fired[key] = stamp
+        cache["tier_fired"] = _prune_tier_fired(fired)
+        try:
+            save_cache(cache)
+        except OSError as exc:
+            logger.warning("记录梯度提醒失败（下次可能重复提醒）：%s", exc)
+
+
+def _prune_tier_fired(fired: Dict[str, Any]) -> Dict[str, Any]:
+    cutoff = datetime.now() - timedelta(days=NOTIFIED_KEEP_DAYS)
+    kept: Dict[str, Any] = {}
+    for key, value in fired.items():
+        moment = _parse_time(str(value) + " 00:00:00")
+        if moment is None or moment >= cutoff:
+            kept[key] = value
+    return kept
+
+
+def summary(
+    *,
+    window_hours: Optional[int] = None,
+    tiers: Optional[List[int]] = None,
+) -> Dict[str, Any]:
     """给界面/接口用的汇总：活动（已分好组）+ 暂不支持的游戏 + 缓存状态。"""
     cache = load_cache()
     fetched_at = str(cache.get("fetched_at") or "")
     age = _cache_age_hours(fetched_at)
-    activities = [act.to_dict() for act in ongoing()]
+    _acts = ongoing()
+    activities = [act.to_dict() for act in _acts]
+    # 三段与英雄卡关联（2026-11-11 用户裁定）：每张卡带 tiers_set（已设档位）
+    # 与 tiers_fired（已推档位），前端据此渲染段位标记与打勾
+    raw_fired = cache.get("tier_fired")
+    fired_map = raw_fired if isinstance(raw_fired, dict) else {}
+    tiers_set = [int(t) for t in (tiers if tiers is not None else DEADLINE_TIERS_DEFAULT)][:3]
+    for act, item in zip(_acts, activities):
+        item["tiers_set"] = tiers_set
+        item["tiers_fired"] = [
+            i for i in (1, 2, 3) if fired_map.get(f"{act.uid}:{i}")
+        ]
     # 「即将结束」徽章口径跟用户设置的提醒天数走（2026-11-07 用户裁决）：
     # 传入 window_hours 时按它重算 ending_soon，不依赖缓存时定格的 72h 固定值
     window = window_hours if (window_hours and window_hours > 0) else ALERT_WINDOW_HOURS
@@ -1572,6 +1706,7 @@ def summary(*, window_hours: Optional[int] = None) -> Dict[str, Any]:
     upcoming = [item for item in activities if item.get("group") == "upcoming"]
     return {
         "ok": True,
+        "tiers_set": tiers_set,
         "has_data": bool(fetched_at),
         "fetched_at": fetched_at,
         "stale": (age is None) or (age >= CACHE_TTL_HOURS),

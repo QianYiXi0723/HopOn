@@ -727,7 +727,8 @@ function renderThresholds(d){
   if (!d || !d.ok) { return; }
   const values = d.values || {};
   const defs = d.defaults || {};
-  ['genshin','starrail','zzz','arknights','endfield','wuwa','pgr','bh3'].forEach(function(gid){
+  /* 顺序与 GAME_ORDER 一致（平台分组序，与游戏概览/信息查询同口径） */
+  ['genshin','starrail','zzz','bh3','arknights','endfield','wuwa','pgr'].forEach(function(gid){
     const box = document.getElementById('resin-' + gid);
     if (!box) return;
     box.value = (values[gid] != null) ? values[gid] : '';
@@ -1289,11 +1290,13 @@ function renderSchedule(d, force){
 
   renderCatchUp(d);
   renderDaemon(d.daemon || {});
-  renderActivitySwitch(d.activity_alert_enabled, d.activity_alert_days);
+  renderActivitySwitch(d.activity_alert_enabled, d.activity_alert_days,
+                       d.activity_deadline_tiers);
 }
 
-/* 活动结束提醒：config.app.activity_alert_enabled / activity_alert_days */
-function renderActivitySwitch(enabled, days){
+/* 活动结束提醒：config.app.activity_alert_enabled / activity_alert_days /
+   activity_deadline_tiers（三段，2026-11-11 #9） */
+function renderActivitySwitch(enabled, days, tiers){
   const on = enabled !== false;
   const box = document.getElementById('activity-toggle');
   if (box) box.checked = on;
@@ -1302,6 +1305,13 @@ function renderActivitySwitch(enabled, days){
   const num = parseInt(days, 10);
   const input = document.getElementById('activity-days');
   if (input && document.activeElement !== input && !isNaN(num)) input.value = num;
+  const tArr = Array.isArray(tiers) ? tiers : [72, 24, 6];
+  [1, 2, 3].forEach(function(i){
+    const el = document.getElementById('activity-tier-' + i);
+    if (el && document.activeElement !== el && tArr[i - 1] !== undefined) {
+      el.value = tArr[i - 1];
+    }
+  });
   refreshSetSummaries();
 }
 
@@ -1528,6 +1538,41 @@ async function saveActivityDays(){
 
 document.getElementById('btn-activity-days')
   .addEventListener('click', saveActivityDays);
+
+/* 结束推送三段：单独保存，不碰开关与徽章天数（2026-11-11 #9） */
+async function saveActivityTiers(){
+  const btn = document.getElementById('btn-activity-tiers');
+  if (!btn) return;
+  const vals = [];
+  for (let i = 1; i <= 3; i++) {
+    const el = document.getElementById('activity-tier-' + i);
+    const num = parseInt(el && el.value, 10);
+    if (isNaN(num) || (num !== -1 && (num < 1 || num > 2160))) {
+      toast('第 ' + i + ' 档请填 1–2160 或 -1（关闭）', true);
+      return;
+    }
+    vals.push(num);
+  }
+  btn.disabled = true;
+  try {
+    const d = await postJSON('/api/activity_alert', { tiers: vals });
+    if (!d.ok) { toast(d.message || '保存失败', true); return; }
+    const arr = d.activity_deadline_tiers || vals;
+    [1, 2, 3].forEach(function(i){
+      const el = document.getElementById('activity-tier-' + i);
+      if (el && document.activeElement !== el) el.value = arr[i - 1];
+    });
+    refreshSetSummaries();
+    toast(d.message || '三段已保存');
+  } catch (e) {
+    toast('保存失败：' + e, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btn-activity-tiers')
+  .addEventListener('click', saveActivityTiers);
 document.getElementById('resin-toggle')
   .addEventListener('change', toggleResourceAlert);
 document.getElementById('activity-toggle')
@@ -2445,6 +2490,23 @@ function actCardHtml(it, isHero, heroSlim){
     ? '<span class="act-reward" title="' + escHtml(it.reward) + ' · 抽卡资源">' + escHtml(it.reward) + '</span>'
     : '';
   const prog = actProgHtml(it);
+  /* 三段段位标记（2026-11-11 #9，与英雄卡关联）：已设档位显示「档名+阈值」，
+     已推的打勾，-1 档显「关」——数据全部来自后端 payload，前端零推算 */
+  const tierNames = {1: '规划', 2: '行动', 3: '冲刺'};
+  const tierBadge = (function(){
+    const set = Array.isArray(it.tiers_set) ? it.tiers_set : [];
+    if (!set.some(function(t){ return t >= 0; })) return '';
+    const fired = Array.isArray(it.tiers_fired) ? it.tiers_fired : [];
+    const chips = set.map(function(t, i){
+      const idx = i + 1;
+      if (t < 0) return '<span class="act-tier off">档' + idx + '关</span>';
+      const done = fired.indexOf(idx) >= 0;
+      return '<span class="act-tier' + (done ? ' done' : '') + '" title="第 ' + idx +
+        ' 档·' + tierNames[idx] + '：剩 ' + t + 'h 内推一次' + (done ? '（已推）' : '') +
+        '">' + (done ? '✓' : '') + tierNames[idx] + ' ' + t + 'h</span>';
+    }).join('');
+    return '<div class="act-tiers">' + chips + '</div>';
+  })();
   /* 合并组卡（2026-11-09 用户裁决三连）：成员清单不再占卡体——
      光标悬浮经 data-tip 显示全部成员；× 整组删除（逐个写黑名单）。
      卡体与普通卡同构同高 */
@@ -2477,6 +2539,7 @@ function actCardHtml(it, isHero, heroSlim){
     '<div class="act-time ' + timeCls + '">始 ' + (st || '时间待定') +
       (en ? ' · 止 ' + en : '') + '</div>' +
     '<div class="act-cd ' + cdCls + '">' + escHtml(it.countdown || '') + '</div>' +
+    tierBadge +
     mergedList +
     prog +
     '</div>';
@@ -3259,6 +3322,78 @@ document.getElementById('btn-stats-refresh').addEventListener('click', function(
 /* 立即巡检（2026-11-05 P2）：让 daemon 跑一轮并写历史，绑号当天不用等到
    明天第一个时间点才见报表。成功后 12 秒自动重拉一次报表（daemon 0.5s 内
    响应 .run_now 标记，一轮并行查询约 6-15s）。 */
+/* 诊断包导出（#3）：控制台守护卡与杀软自检卡共用同一条链路 */
+async function exportDiagnostics(btn){
+  if (!btn || btn.disabled) return;              // 防连点
+  const label = btn.dataset.label || '诊断包';
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+  try {
+    const res = await fetch('/api/diag_export').then(function(r){ return r.json(); });
+    btn.disabled = false; btn.textContent = label;
+    if (res && res.ok) {
+      toast('诊断包已导出到桌面');
+      if (res.empty && res.empty.length) {
+        toast('注意：部分文件为空 — ' + res.empty.join('、'));
+      }
+    } else {
+      toast((res && res.message) || '诊断包导出失败');
+    }
+  } catch (err) {
+    btn.disabled = false; btn.textContent = label;
+    console.error('诊断包导出失败', err);
+    toast('诊断包导出失败：' + err);
+  }
+}
+
+document.getElementById('btn-diag-export').addEventListener('click', function(){
+  exportDiagnostics(this);
+});
+
+/* 杀软拦截自检（#4）：判定+步骤指引+哈希对照，绝不自动改杀软设置 */
+function renderAv(d){
+  const v = document.getElementById('av-verdict');
+  if (!v) return;
+  v.className = 'av-verdict ' + (d.verdict || 'clear');
+  v.textContent = d.message || '';
+  const lines = [];
+  if (d.missing && d.missing.length) lines.push('缺失文件：' + d.missing.join('、'));
+  if (d.defender_hits && d.defender_hits.length) {
+    lines.push('Defender 检测命中：' + d.defender_hits.join('；'));
+  }
+  if (d.defender_note) lines.push('Defender 检测记录：' + d.defender_note);
+  lines.push('守护进程：' + (d.daemon_running ? '运行中' : '未运行'));
+  const det = document.getElementById('av-detail');
+  if (det) det.innerHTML = lines.map(function(s){ return '<div>· ' + escHtml(s) + '</div>'; }).join('');
+  const sha = document.getElementById('av-sha');
+  if (sha && d.sha256) sha.value = d.sha256;
+  setSum('av', d.verdict === 'blocked' ? '疑似被拦截'
+    : (d.verdict === 'suspect' ? '疑似（文件都在）' : '未见拦截'), '杀软自检');
+}
+
+async function runAvCheck(){
+  const v = document.getElementById('av-verdict');
+  if (v) { v.className = 'av-verdict'; v.textContent = '自检中…（查询 Defender 记录约需数秒）'; }
+  try {
+    const d = await fetch('/api/av_check').then(function(r){ return r.json(); });
+    renderAv(d);
+  } catch (err) {
+    if (v) { v.className = 'av-verdict blocked'; v.textContent = '自检失败：' + err; }
+  }
+}
+
+document.getElementById('btn-av-check').addEventListener('click', runAvCheck);
+const accAvEl = document.getElementById('acc-av');
+if (accAvEl) {
+  accAvEl.addEventListener('toggle', function(){
+    if (accAvEl.open && !accAvEl.dataset.avRan) {   // 首次展开自动查一次（dataset 闸门防叠加）
+      accAvEl.dataset.avRan = '1';
+      runAvCheck();
+    }
+  });
+}
+const avDiagBtn = document.getElementById('btn-av-diag');
+if (avDiagBtn) avDiagBtn.addEventListener('click', function(){ exportDiagnostics(this); });
+
 document.getElementById('btn-run-now').addEventListener('click', function(){
   const btn = this;
   if (!btn || btn.disabled) return;              // 防连点

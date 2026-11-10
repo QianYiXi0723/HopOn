@@ -1379,3 +1379,26 @@
   .kuro-status.err{color:var(--err,#e5484d)}
   .kuro-status.ok{color:var(--ok,#46a758)}
   #kuro-captcha:empty{display:none}
+
+  /* ---- 结束推送三段·卡片段位标记（2026-11-11 #9，与英雄卡关联）---- */
+  .row-tiers{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;
+    margin-top:10px;align-items:stretch}
+  .row-tiers .btn{border-radius:4px}
+  .act-tiers{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
+  .act-tier{flex:none;font-size:12px;font-weight:600;line-height:1;
+    padding:4px 8px;border-radius:999px;
+    background:var(--subtle);color:var(--muted)}
+  .act-tier.done{background:color-mix(in srgb, var(--ok,#46a758) 16%, transparent);
+    color:var(--ok,#46a758)}
+  .act-tier.off{opacity:.5}
+
+  /* ---- 杀软拦截自检（2026-11-11 #4）---- */
+  .av-verdict{font-size:14px;font-weight:600;line-height:1.6;margin-bottom:8px}
+  .av-verdict.clear{color:var(--ok,#46a758)}
+  .av-verdict.suspect{color:#d97706}
+  .av-verdict.blocked{color:var(--err,#e5484d)}
+  .av-detail{font-size:13px;line-height:1.7;color:var(--muted);margin-bottom:10px}
+  .av-steps{margin:6px 0}
+  .av-steps summary{cursor:pointer;font-size:13px;color:var(--fg)}
+  .av-steps .hint{margin:6px 0 2px}
+  #av-sha{font-family:Consolas,'Courier New',monospace;font-size:12px}

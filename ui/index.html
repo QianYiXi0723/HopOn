@@ -572,6 +572,7 @@
         <span class="spacer"></span>
         <button type="button" class="mini" id="btn-daemon-start">启动</button>
         <button type="button" class="mini" id="btn-daemon-stop">停止</button>
+        <button type="button" class="mini" id="btn-diag-export" data-label="诊断包" data-tip="导出脱敏诊断包到桌面：环境信息+近7天日志+脱敏配置+数据摘要（用于反馈问题）">诊断包</button>
       </div>
     </section>
 
@@ -657,6 +658,9 @@
                 <label><span>绝区零 · 电量</span>
                   <input type="number" id="resin-zzz" min="0" max="1000" step="10"
                          placeholder="200" inputmode="numeric"></label>
+                <label><span>崩坏3 · 体力</span>
+                  <input type="number" id="resin-bh3" min="0" max="1000" step="10"
+                         placeholder="90" inputmode="numeric"></label>
                 <label><span>方舟 · 理智</span>
                   <input type="number" id="resin-arknights" min="0" max="1000" step="10"
                          placeholder="135" inputmode="numeric"></label>
@@ -669,9 +673,6 @@
                 <label><span>战双 · 血清</span>
                   <input type="number" id="resin-pgr" min="0" max="1000" step="10"
                          placeholder="200" inputmode="numeric"></label>
-                <label><span>崩坏3 · 体力</span>
-                  <input type="number" id="resin-bh3" min="0" max="1000" step="10"
-                         placeholder="90" inputmode="numeric"></label>
               </div>
               <button id="btn-resin-save" class="btn">保存阈值</button>
               <div class="hint" id="resin-hint">读取中…</div>
@@ -694,7 +695,47 @@
                        inputmode="numeric" placeholder="3">
                 <button id="btn-activity-days" class="btn">保存</button>
               </div>
-              <div class="hint">活动结束前设定天数时，在推送末尾追加提醒，1–30 天。</div>
+              <div class="row-tiers">
+                <input type="number" id="activity-tier-1" min="-1" max="2160" step="1"
+                       inputmode="numeric" placeholder="72" data-tip="第 1 档·规划：剩 72h 内推一次（-1 关闭）">
+                <input type="number" id="activity-tier-2" min="-1" max="2160" step="1"
+                       inputmode="numeric" placeholder="24" data-tip="第 2 档·行动：剩 24h 内推一次（-1 关闭）">
+                <input type="number" id="activity-tier-3" min="-1" max="2160" step="1"
+                       inputmode="numeric" placeholder="6" data-tip="第 3 档·冲刺：剩 6h 内推一次（-1 关闭）">
+                <button id="btn-activity-tiers" class="btn">保存三段</button>
+              </div>
+              <div class="hint">结束推送三段（小时）：规划 → 行动 → 冲刺，每档只推一次，迟过的档下次巡检补发；填 -1 关闭该段。上面的「天数」只控「即将结束」徽章显示窗。</div>
+            </div>
+          </details>
+
+          <details class="set-item" id="acc-av">
+            <summary class="set-head">
+              <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-shield"/></svg></i>
+                <span class="set-txt"><b>杀软拦截自检</b></span>
+              </span>
+              <span class="set-sum" id="sum-av">尚未自检</span>
+              <span class="set-end">
+                <button type="button" class="btn" id="btn-av-check">重新自检</button>
+              </span>
+            </summary>
+            <div class="set-body">
+              <div class="av-verdict" id="av-verdict">尚未自检——点右上「重新自检」</div>
+              <div class="av-detail" id="av-detail"></div>
+              <details class="av-steps"><summary>Windows Defender 加白名单</summary>
+                <div class="hint">Windows 安全中心 → 病毒和威胁防护 → 管理设置 → 排除项 → 添加排除项 → 文件夹 → 选择 HopOn 安装目录。若文件已被隔离：保护历史记录 → 还原后再加。</div>
+              </details>
+              <details class="av-steps"><summary>火绒加信任区</summary>
+                <div class="hint">右上菜单 → 信任区 → 添加文件夹 → 选择 HopOn 安装目录。若已被隔离：病毒查杀 → 隔离区 → 恢复，再加信任。</div>
+              </details>
+              <details class="av-steps"><summary>360 加信任区</summary>
+                <div class="hint">木马查杀 → 信任区 → 添加目录 → 选择 HopOn 安装目录。若已被隔离：恢复区 → 恢复，再加信任。</div>
+              </details>
+              <div class="hint">被误报可到 <a href="https://www.microsoft.com/wdsi/filesubmission" target="_blank" rel="noreferrer">微软误报上报</a> 提交（附下方哈希与诊断包）；官方发布哈希见 <a href="https://github.com/QianYiXi0723/HopOn/releases" target="_blank" rel="noreferrer">Releases 页</a> 的 SHA256SUMS.txt——与下方本机哈希一致即证明文件与官方发布一致（误报实锤）。</div>
+              <div class="row3">
+                <input type="text" id="av-sha" readonly placeholder="点「重新自检」后显示 HopOn.exe 的 SHA256">
+                <button type="button" class="btn" id="btn-av-diag" data-label="导出诊断包">导出诊断包</button>
+              </div>
+              <div class="hint">白名单会让该目录完全绕过查杀——请确认目录内只有 HopOn 官方文件（对照上方哈希）再操作。</div>
             </div>
           </details>
 

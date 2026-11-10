@@ -360,9 +360,10 @@ def save_last_run(state: Dict[str, Any]) -> None:
 
     tmp = LAST_RUN_FILE.with_name(LAST_RUN_FILE.name + ".tmp")
     try:
-        tmp.write_text(
-            json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        with open(tmp, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())   # 耐久线（#6①补全）
         os.replace(tmp, LAST_RUN_FILE)
     except OSError:
         logger.warning("写 %s 失败，本轮防重复记录可能丢失", LAST_RUN_FILE.name)
@@ -1018,6 +1019,12 @@ def _loop(stop_event: threading.Event) -> None:
         write_heartbeat()
         _maybe_weekly_report()   # 周日 21:00 后的周度推送（常开，错过自动补发）
         try:
+            from core.snapshots import snapshot_daily
+
+            snapshot_daily(USER_DIR)   # 数据快照（#6②）：跨日触发拍一次（幂等）
+        except Exception:  # noqa: BLE001 - 快照炸了不许弄死轮询线程
+            logger.exception("数据快照异常（已忽略，继续运行）")
+        try:
             _check_resin_watch()  # ⭐ 回满即推：预测到点触发复核巡检
         except Exception:  # noqa: BLE001 - watcher 炸了不许弄死轮询线程
             # 2026-11-05 实证：watcher 一抛 NameError 整个 check-loop 线程无声
@@ -1269,8 +1276,42 @@ def stop_daemon(timeout: float = 8.0) -> Dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
+def _second_instance_handoff(reason: str) -> None:
+    """第二实例交接（2026-11-11 第一队列 #1）：已有守护在跑时不再静默退。
+
+    模仿 qBittorrent「已在运行→唤起现有实例」的反馈语义：这里没有可唤起的
+    原生窗口（控制台是独立进程），于是直接走与托盘「打开控制台」同一条
+    _open_console 链路（控制台已在就不再拉第二份）。自启/壳拉起路径经
+    start_daemon 的 already 快速通道返回，到不了这里；落到这里的只有
+    脚本模式双击与直接拉起。本函数只负责留痕与反馈，绝不碰锁——锁的
+    正确性仍由 try_acquire 独立保证。
+    """
+    try:
+        pid = int((read_pid_info() or {}).get("pid") or 0)
+    except (TypeError, ValueError):
+        pid = 0
+    alive = pid > 0 and pid_alive(pid)
+    if alive and not _console_running():
+        logger.info("第二实例交接：%s（PID %s）——拉起控制台后退出", reason, pid)
+        _open_console()
+        return
+    if alive:
+        logger.info(
+            "第二实例交接：%s（PID %s）——控制台已在运行，本次直接退出", reason, pid
+        )
+        return
+    logger.warning(
+        "第二实例交接：%s，但 PID %s 已无对应进程（疑似锁残留），本次直接退出",
+        reason,
+        pid,
+    )
+
+
 def run_daemon(use_tray: bool = True) -> int:
     ensure_dirs()
+    # 日志先于锁判定：第二实例交接必须发生在 setup_logging 之后才能留痕——
+    # 原先日志在锁后才初始化，静默退的分支在日志里什么都没留下。
+    setup_logging(console=not use_tray)
     # 单实例终极防线：对 daemon.lock 取非阻塞排它锁并持有到进程死亡——
     # 内核保证被杀时自动释放，不存在陈旧锁（2026-10-31 审计：原「status 检查 →
     # clear_state → write_pid」两步之间存在 TOCTOU，并发拉起可双实例同槽位双推送）。
@@ -1279,16 +1320,26 @@ def run_daemon(use_tray: bool = True) -> int:
 
     daemon_lock_fd = try_acquire(str(USER_DIR / "logs" / "daemon.lock"))
     if daemon_lock_fd is None:
-        print("另一个守护进程正在运行（daemon.lock 被其它进程持有），本次不重复启动")
+        _second_instance_handoff("daemon.lock 被其它进程持有")
         return 0
     current = status()
     if current["running"]:
-        print(f"守护进程已在运行（PID {current['pid']}），本次不重复启动")
+        _second_instance_handoff(f"守护进程已在运行（PID {current['pid']}）")
         return 0
 
     clear_state()
     write_pid()
-    setup_logging(console=not use_tray)
+
+    # 数据自愈·启动校验（2026-11-11 #6）：主数据 JSON 损坏 → 最新快照回填。
+    # 放在班次调度前：恢复完的文件供本轮巡检正常读写；失败绝不挡启动。
+    try:
+        from core.snapshots import validate_and_recover
+
+        for _item in (validate_and_recover(USER_DIR).get("recovered") or []):
+            logger.warning(
+                "数据自愈：%s 损坏，已从快照 %s 回填", _item["file"], _item["from"])
+    except Exception as _exc:  # noqa: BLE001
+        logger.warning("启动数据校验失败（忽略继续）：%s", _exc)
 
     logger.info("=" * 56)
     logger.info("守护进程启动｜PID=%s｜间隔=%ds", os.getpid(), TICK_SECONDS)
