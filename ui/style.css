@@ -49,14 +49,19 @@
   /* ---------- 布局：整体纵向（上方=侧栏+内容，底部=日志台），日志不再挤占/悬浮 ---------- */
   .app{height:100vh;display:flex;flex-direction:column;overflow:hidden}
   .app-body{flex:1;display:flex;min-height:0}
+  /* ---------- 侧栏（2026-11-11 按抖音侧栏提示词统一几何）----------
+     六条规则：保留内容/配色/交互，只动几何——字号圆角间距统一、
+     两侧留白一致、图标略小于文字、行留白+热区、组间>组内、左缘对齐。
+     水平节奏基准 = side 左右 10px + 行内 12px = 22px 文字左缘，
+     brand / nav / side-foot 三段全部对齐到这条线。 */
   .side{width:200px;flex:none;background:var(--bg-side);
-        display:flex;flex-direction:column;padding:10px 8px}
-  .brand{display:flex;align-items:center;gap:8px;padding:6px 8px 12px}
+        display:flex;flex-direction:column;padding:12px 10px}
+  .brand{display:flex;align-items:center;gap:8px;padding:4px 12px 14px}
   .logo{width:26px;height:26px;border-radius:4px;background:var(--brand);color:#fff;
         display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}
   .brand b{display:block;font-size:15px;line-height:1.2}
   .brand span{font-size:12px;color:var(--muted)}
-  .nav{display:flex;flex-direction:column;gap:4px}
+  .nav{display:flex;flex-direction:column;gap:6px}
   .nav button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
         padding:10px 12px;border-radius:8px;
         border:none;background:transparent;color:var(--fg);font-size:13px;cursor:pointer;
@@ -68,7 +73,7 @@
   .nav button.on .nav-ico{color:var(--nav-on-fg)}
   /* 选中态交互（借鉴 SRA 侧栏）：图标淡出收起、文字平滑左移补位 */
   .nav button.on .nav-ico{width:0;opacity:0}
-  .side-foot{margin-top:auto;padding:10px 8px 4px;
+  .side-foot{margin-top:auto;padding:10px 12px 4px;
         font-size:12px;color:var(--muted)}
   .theme-btn{display:flex;align-items:center;gap:8px;width:100%;
         text-align:left;padding:4px 0;border:none;background:transparent;
@@ -1187,7 +1192,7 @@
      emoji 收不了的三个问题（跨版本渲染漂移 / 彩色与官方位图打架 / 不随主题）在此收口 */
   .ico{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;
        stroke-linecap:round;stroke-linejoin:round;flex:none}
-  .nav-ico .ico{width:15px;height:15px;vertical-align:-2px}
+  .nav-ico .ico{width:14px;height:14px;vertical-align:-2px}
   .set-ico .ico{width:16px;height:16px;vertical-align:-3px}
   h2 .ico{vertical-align:-3px}
   .console-title .ico{vertical-align:-3px}
