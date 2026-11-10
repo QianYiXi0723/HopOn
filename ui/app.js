@@ -160,25 +160,19 @@ function syncSelCard(box){
   if (card) card.classList.toggle('on', box.checked);
 }
 
-function toggleAll(group, checked){
-  document.querySelectorAll('input[name="' + group + '"]').forEach(function(i){
-    i.checked = checked;
-    syncSelCard(i);
-  });
-  updateLoginButtons();
-  pushEnabled(group,
-    [...document.querySelectorAll('input[name="' + group + '"]')].map(function(i){ return i.value; }),
-    checked);
-}
-
-/* 标题行右侧的「全选」次级按钮：未全开 → 全开；已全开 → 取消全选 */
+/* 标题行右侧的「全选」次级按钮：未全开 → 全开；已全开 → 取消全选。
+   一次性合并成一个请求（2026-11-11）：原先按 m/s/k 三组串发三条，
+   气泡互相顶掉只能看到最后一组；只提交真正翻面的游戏。 */
 function toggleAllCards(){
   const boxes = [...document.querySelectorAll('.sel-card input')];
   const target = !boxes.every(function(b){ return b.checked; });
-  ['m', 's', 'k'].forEach(function(g){
-    const gb = [...document.querySelectorAll('input[name="' + g + '"]')];
-    if (gb.some(function(b){ return b.checked !== target; })) toggleAll(g, target);
+  const flipped = boxes.filter(function(b){ return b.checked !== target; });
+  flipped.forEach(function(b){
+    b.checked = target;
+    syncSelCard(b);
   });
+  updateLoginButtons();
+  if (flipped.length) pushEnabled(null, flipped.map(function(b){ return b.value; }), target);
 }
 
 function pushEnabled(group, games, enabled){

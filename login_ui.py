@@ -515,20 +515,25 @@ def set_account_enabled(games: List[str], enabled: bool) -> Dict[str, Any]:
         if isinstance(a, dict)
     }
     changed: List[str] = []
+    game_names: List[str] = []
     for game in games:
         node = present.get(game)
         if node is None:
             continue
         node["enabled"] = bool(enabled)
         changed.append(_toggle_label(node, game, names))
+        game_names.append(names.get(game, game))
     if not changed:
         raise ValueError("config.json 里找不到这些游戏节点")
     save_raw_config(raw)
+    # 批量开关（≥3 款，只有「全选/取消全选」走得到）：逐款带昵称括注太长，
+    # 气泡降成纯游戏名清单——单款/双款仍保持「游戏名（昵称）」明细
+    labels = game_names if len(changed) >= 3 else changed
     if enabled:
-        message = "已开启提醒：" + "、".join(changed)
+        message = "已开启提醒：" + "、".join(labels)
     else:
-        message = "已关闭提醒：" + "、".join(changed)
-    return {"ok": True, "enabled": bool(enabled), "games": changed, "message": message}
+        message = "已关闭提醒：" + "、".join(labels)
+    return {"ok": True, "enabled": bool(enabled), "games": labels, "message": message}
 
 
 # --------------------------------------------------------------------------- #
