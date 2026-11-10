@@ -485,6 +485,20 @@ def _display_nickname(node: Dict[str, Any], game: str,
     return table.get(game, game)
 
 
+def _toggle_label(node: Dict[str, Any], game: str,
+                  names: Optional[Dict[str, str]] = None) -> str:
+    """开关监控气泡里的称呼：游戏名在前，真实昵称括注。
+
+    2026-11-11 用户实测指出：只念昵称（KiloDusk）看不出切的是哪款游戏，
+    游戏标识必须出现。占位昵称/空昵称时括注省略，只报游戏名。
+    """
+    game_name = (names or {}).get(game, game)
+    nick = _display_nickname(node, game, names)
+    if nick == game_name:
+        return game_name
+    return f"{game_name}（{nick}）"
+
+
 @_serialized_write
 def set_account_enabled(games: List[str], enabled: bool) -> Dict[str, Any]:
     """把指定游戏写进/移出每日巡检（config accounts[].enabled）。
@@ -506,7 +520,7 @@ def set_account_enabled(games: List[str], enabled: bool) -> Dict[str, Any]:
         if node is None:
             continue
         node["enabled"] = bool(enabled)
-        changed.append(_display_nickname(node, game, names))
+        changed.append(_toggle_label(node, game, names))
     if not changed:
         raise ValueError("config.json 里找不到这些游戏节点")
     save_raw_config(raw)
