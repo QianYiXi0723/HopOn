@@ -2573,7 +2573,9 @@ def tray_summary_status() -> Dict[str, Any]:
                 eff = max(0, int(recover) - (age or 0))
                 if eff > 0:
                     h, m = eff // 3600, (eff % 3600) // 60
-                    tail = f"剩 {min(h, 99):>2}h{m:02d}"
+                    # 「剩」字每行重复=零信息填充（2026-11-12 用户裁），裸排时间；
+                    # 列位固定（「 · 」后必是回满倒计时），扫读习惯一次建立
+                    tail = f"{min(h, 99):>2}h{m:02d}"
                     if eff <= 7200:
                         hm = f"{h}h{m:02d}m" if h else f"{m}m"
                         pending_descs.append(f"{short} 将满({hm})")
