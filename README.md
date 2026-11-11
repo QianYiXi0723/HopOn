@@ -12,7 +12,7 @@
 
 只做「查询 → 判断 → 提醒」三件事：**不代打、不碰游戏客户端、不修改任何游戏内数据**。
 
-> 最新版本 **v2.5.1** → [下载](https://github.com/QianYiXi0723/HopOn/releases/latest) ｜ 功能总览见下
+> 最新版本 **v2.6.0** → [下载](https://github.com/QianYiXi0723/HopOn/releases/latest) ｜ 功能总览见下
 
 内置常驻守护进程 + 系统托盘，**不需要 Windows 任务计划**；所有配置都在网页控制台里完成。
 
@@ -49,7 +49,7 @@
 - 手机推送：Server酱（微信）/ Qmsg（QQ）双渠道长期实测；Bark / 飞书 / 钉钉
   发送引擎已内置、配置界面待做（见开发者文档待办）
 
-## 🚀 最新版本 v2.5.1
+## 🚀 最新版本 v2.6.0
 
 - **体力三态真实值**：未满 `157/200`、满 `200/200`、道具突破上限 `312/240` 原样显示，
   悬浮提示区分「已满」与「超出上限 N」
@@ -62,8 +62,8 @@
 ## 📥 下载
 
 到 [Releases](https://github.com/QianYiXi0723/HopOn/releases/latest) 下载：
-- `HopOn_v2.5.1_Setup.exe` —— 安装器版（推荐，per-user 无需管理员）
-- `HopOn_v2.5.1_Windows_x64.zip` —— 绿色版（解压即用）
+- `HopOn_v2.6.0_Setup.exe` —— 安装器版（推荐，per-user 无需管理员）
+- `HopOn_v2.6.0_Windows_x64.zip` —— 绿色版（解压即用）
 - `SHA256SUMS.txt` —— 校验和清单：下载后核对文件完整性用（`certutil -hashfile 文件名 SHA256` 比对），不需要它的话可忽略
 - 找历史版本 / 逐版更新说明 → [全部 Releases](https://github.com/QianYiXi0723/HopOn/releases)
 - 🇨🇳 **国内免梯下载** → [Gitee 镜像](https://gitee.com/qianyixi/HopOn/releases)（与 GitHub 同步发版）
