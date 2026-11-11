@@ -1602,17 +1602,19 @@ function renderDailiesList(){
     box.innerHTML = '<div class="hint">还没有手动打卡项——点下方「＋ 新增提醒」添加第一个。</div>';
   } else {
     box.innerHTML = items.map(function(it){
+      const enabled = it.enabled !== false;
       const done = !!it.done_today;
       const resetTxt = (it.reset && it.reset !== '04:00') ? (' · 重置 ' + it.reset) : '';
       const modeTxt = it.mode === 'standalone'
         ? ('每日 · 独立 ' + (it.time || '--:--')) : '每日 · 随巡检推送';
-      const tip = '点击勾掉/恢复今日打卡 ｜ 推送效果：' + (it.push_text || '');
-      return '<div class="dl-row' + (done ? ' is-done' : '') + (!it.enabled ? ' is-off' : '') + '">' +
-        '<input type="checkbox" class="dl-check" data-id="' + escHtml(it.id) + '"' +
-        (done ? ' checked' : '') + (!it.enabled ? ' disabled' : '') +
-        ' title="' + escHtml(tip) + '">' +
+      /* 行首勾选框 = 启用/停用（管理面职责）；今日完成去概览卡/托盘勾 */
+      return '<div class="dl-row' + (!enabled ? ' is-off' : '') + '">' +
+        '<input type="checkbox" class="dl-enable" data-id="' + escHtml(it.id) + '"' +
+        (enabled ? ' checked' : '') +
+        ' title="启用/停用（停用后不提醒不推送，配置保留）">' +
         '<div class="dl-main"><span class="dl-name">' + escHtml(it.name) + '</span>' +
-        '<span class="dl-meta">' + escHtml(modeTxt + resetTxt) + (!it.enabled ? ' · 已停用' : '') + '</span></div>' +
+        '<span class="dl-meta">' + escHtml(modeTxt + resetTxt) +
+        (done ? ' · 今日已打卡' : '') + (!enabled ? ' · 已停用' : '') + '</span></div>' +
         '<button type="button" class="dl-edit" data-id="' + escHtml(it.id) + '">编辑</button>' +
         '<button type="button" class="dl-del" data-id="' + escHtml(it.id) + '" title="删除，之后不再提醒">×</button>' +
         '</div>';
@@ -1654,6 +1656,23 @@ function renderManualGroup(){
         '<span class="mono">' + (done ? '1/1' : '0/1') + '</span></div></div>' +
       '</div>';
   }).join('');
+}
+
+async function toggleDailiesEnable(id, enabled, box){
+  if (box) box.disabled = true;
+  const it = (dlState.items || []).find(function(i){ return i.id === id; }) || {};
+  try {
+    const d = await postJSON('/api/custom_dailies', {
+      action: 'update', id: id, name: it.name, mode: it.mode,
+      time: it.time || '', reset: it.reset || '04:00',
+      template: it.template || '', enabled: enabled,
+    });
+    if (!d.ok) toast(d.message || '操作失败', true);
+    await loadDailies();   // 停用后托盘/概览/推送同源跟进
+  } catch (e) {
+    toast('操作失败：' + e, true);
+    if (box) box.disabled = false;
+  }
 }
 
 async function toggleDailiesDone(id, done, box){
@@ -1723,8 +1742,8 @@ function closeDailiesModal(){
 document.getElementById('btn-dailies-add')
   .addEventListener('click', function(){ openDailiesModal(''); });
 document.getElementById('dailies-list').addEventListener('change', function(e){
-  const box = e.target.closest('.dl-check');
-  if (box) toggleDailiesDone(box.dataset.id, box.checked, box);
+  const box = e.target.closest('.dl-enable');
+  if (box) toggleDailiesEnable(box.dataset.id, box.checked, box);
 });
 document.getElementById('dailies-list').addEventListener('click', function(e){
   const ed = e.target.closest('.dl-edit');

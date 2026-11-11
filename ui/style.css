@@ -1406,6 +1406,11 @@
   .av-verdict.suspect{color:#d97706}
   .av-verdict.blocked{color:var(--err,#e5484d)}
 
+  /* ---- 带单位输入框（2026-11-12：前缀标签+后缀单位，替代裸数字）---- */
+  .unit-field{display:flex;align-items:center;gap:6px;min-width:0}
+  .unit-field .u-pre,.unit-field .u-suf{flex:none;font-size:13px;color:var(--muted)}
+  .unit-field input{flex:1;min-width:0}
+
   /* ---- 手动打卡（2026-11-12）---- */
   /* auto-fit 会把空轨道塌缩成 0 → 单卡被拉满整行；auto-fill 保留空轨道，
      手动打卡卡与上方游戏网格永远同宽同列 */

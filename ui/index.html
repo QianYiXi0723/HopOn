@@ -692,20 +692,24 @@
             </summary>
             <div class="set-body">
               <div class="row3">
-                <input type="number" id="activity-days" min="1" max="30" step="1"
-                       inputmode="numeric" placeholder="3">
+                <label class="unit-field"><span class="u-pre">提前</span>
+                  <input type="number" id="activity-days" min="1" max="30" step="1"
+                         inputmode="numeric" placeholder="3"><span class="u-suf">天</span></label>
                 <button id="btn-activity-days" class="btn">保存</button>
               </div>
               <div class="row-tiers">
-                <input type="number" id="activity-tier-1" min="-1" max="2160" step="1"
-                       inputmode="numeric" placeholder="72" data-tip="第 1 档·规划：剩 72h 内推一次（-1 关闭）">
-                <input type="number" id="activity-tier-2" min="-1" max="2160" step="1"
-                       inputmode="numeric" placeholder="24" data-tip="第 2 档·行动：剩 24h 内推一次（-1 关闭）">
-                <input type="number" id="activity-tier-3" min="-1" max="2160" step="1"
-                       inputmode="numeric" placeholder="6" data-tip="第 3 档·冲刺：剩 6h 内推一次（-1 关闭）">
+                <label class="unit-field"><span class="u-pre">规划</span>
+                  <input type="number" id="activity-tier-1" min="-1" max="2160" step="1"
+                         inputmode="numeric" placeholder="72"><span class="u-suf">时</span></label>
+                <label class="unit-field"><span class="u-pre">行动</span>
+                  <input type="number" id="activity-tier-2" min="-1" max="2160" step="1"
+                         inputmode="numeric" placeholder="24"><span class="u-suf">时</span></label>
+                <label class="unit-field"><span class="u-pre">冲刺</span>
+                  <input type="number" id="activity-tier-3" min="-1" max="2160" step="1"
+                         inputmode="numeric" placeholder="6"><span class="u-suf">时</span></label>
                 <button id="btn-activity-tiers" class="btn">保存三段</button>
               </div>
-              <div class="hint">结束推送三段（小时）：规划 → 行动 → 冲刺，每档只推一次，迟过的档下次巡检补发；填 -1 关闭该段。上面的「天数」只控「即将结束」徽章显示窗。</div>
+              <div class="hint">每档只推一次，-1 关闭；「提前天数」只控徽章显示窗。</div>
             </div>
           </details>
 
@@ -753,7 +757,6 @@
             <div class="set-body">
               <div id="dailies-list"><div class="hint">读取中…</div></div>
               <button type="button" class="btn" id="btn-dailies-add" style="width:100%;margin-top:8px">＋ 新增提醒</button>
-              <div class="hint">没有游戏外数据源的日常/习惯在这自定义：每天提醒、做完勾掉，次日 04:00 随游戏日常重置自动重开。「随巡检推送」并进班次推送末尾，不单独打扰。</div>
             </div>
           </details>
 
