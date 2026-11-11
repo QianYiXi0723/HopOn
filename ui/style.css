@@ -197,6 +197,13 @@
      压缩，迷你卡（含体力条）溢出画进「最近 7 天」卡；改为卡内滚动后溢出归零 */
   #h-stats{flex:1 1 auto;min-height:0;overflow-y:auto;
            padding:6px 10px 20px;margin:-6px -10px 0;scrollbar-gutter:stable}
+  /* 日常概览全量露出（2026-11-12 用户裁决：不要卡内滚动，每个游戏都露出来）——
+     大窗对齐小窗：退出仪表盘高度链，概览/末卡按内容生长，.main 页面级滚动接管；
+     KPI 吸顶在 .main 滚动容器内自然生效。回滚 = 删除本块 */
+  #tab-history.on{flex:none;height:auto;grid-template-rows:none}
+  #h-stats{flex:0 0 auto;overflow-y:visible;padding-bottom:0;scrollbar-gutter:auto}
+  #tab-history > .card:last-child > div:not(.card-head){
+    flex:0 0 auto;overflow-y:visible;padding-bottom:0}
   .gdot{display:inline-block;width:8px;height:8px;border-radius:50%;
         margin-right:8px;vertical-align:1px}
   .pill{display:inline-block;padding:2px 12px;border-radius:999px;
@@ -1399,6 +1406,19 @@
   .av-verdict.blocked{color:var(--err,#e5484d)}
 
   /* ---- 手动打卡（2026-11-12）---- */
+  /* auto-fit 会把空轨道塌缩成 0 → 单卡被拉满整行；auto-fill 保留空轨道，
+     手动打卡卡与上方游戏网格永远同宽同列 */
+  #manual-group .gcards{grid-template-columns:repeat(auto-fill, minmax(420px, 1fr));margin-top:16px}
+@media (max-width:1099px){
+  #manual-group .gcards{grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));margin-top:16px}}
+  /* 首字占位框：复用 gcard-ico 尺寸（40px），无图标游戏的兜底也顺带受益 */
+  .gcard-ico.ph{display:inline-grid;place-items:center;background:var(--subtle);
+    font-size:18px;font-weight:700;color:var(--fg)}
+  .dl-gcard{cursor:pointer}
+  .dl-gcard.is-done{opacity:.72}
+  .dl-gcard.is-done .gcard-ico.ph{
+    background:color-mix(in srgb, var(--ok,#46a758) 18%, transparent);
+    color:var(--ok,#46a758)}
   .dl-row{display:flex;align-items:center;gap:8px;padding:7px 0;
     border-bottom:1px solid var(--border)}
   .dl-row:last-child{border-bottom:none}

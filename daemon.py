@@ -1021,7 +1021,7 @@ def _check_manual_dailies() -> None:
 
     config = load_config(CONFIG_PATH)
     items = [dict(id=d.id, name=d.name, mode=d.mode, time=d.time,
-                  template=d.template, enabled=d.enabled)
+                  reset=d.reset, template=d.template, enabled=d.enabled)
              for d in config.custom_dailies
              if d.enabled and d.mode == "standalone"]
     if not items:

@@ -721,7 +721,7 @@ function renderThresholds(d){
   if (!d || !d.ok) { return; }
   const values = d.values || {};
   const defs = d.defaults || {};
-  /* 顺序与 GAME_ORDER 一致（平台分组序，与游戏概览/信息查询同口径） */
+  /* 顺序与 GAME_ORDER 一致（平台分组序，与日常概览/信息查询同口径） */
   ['genshin','starrail','zzz','bh3','arknights','endfield','wuwa','pgr'].forEach(function(gid){
     const box = document.getElementById('resin-' + gid);
     if (!box) return;
@@ -1585,7 +1585,13 @@ async function loadDailies(){
       renderDailiesList();
       renderManualGroup();
     }
-  } catch (e) { console.error('手动打卡读取失败', e); }
+  } catch (e) {
+    console.error('手动打卡读取失败', e);
+    const box = document.getElementById('dailies-list');
+    if (box) box.innerHTML = '<div class="hint">读取失败——<a href="javascript:void(0)" id="dl-retry">点此重试</a>（读取失败≠没有，别急着重加）</div>';
+    const r = document.getElementById('dl-retry');
+    if (r) r.addEventListener('click', function(ev){ ev.preventDefault(); loadDailies(); });
+  }
 }
 
 function renderDailiesList(){
@@ -1597,15 +1603,16 @@ function renderDailiesList(){
   } else {
     box.innerHTML = items.map(function(it){
       const done = !!it.done_today;
+      const resetTxt = (it.reset && it.reset !== '04:00') ? (' · 重置 ' + it.reset) : '';
       const modeTxt = it.mode === 'standalone'
         ? ('每日 · 独立 ' + (it.time || '--:--')) : '每日 · 随巡检推送';
-      const tip = '推送效果：' + (it.push_text || '');
+      const tip = '点击勾掉/恢复今日打卡 ｜ 推送效果：' + (it.push_text || '');
       return '<div class="dl-row' + (done ? ' is-done' : '') + (!it.enabled ? ' is-off' : '') + '">' +
         '<input type="checkbox" class="dl-check" data-id="' + escHtml(it.id) + '"' +
         (done ? ' checked' : '') + (!it.enabled ? ' disabled' : '') +
         ' title="' + escHtml(tip) + '">' +
         '<div class="dl-main"><span class="dl-name">' + escHtml(it.name) + '</span>' +
-        '<span class="dl-meta">' + escHtml(modeTxt) + (!it.enabled ? ' · 已停用' : '') + '</span></div>' +
+        '<span class="dl-meta">' + escHtml(modeTxt + resetTxt) + (!it.enabled ? ' · 已停用' : '') + '</span></div>' +
         '<button type="button" class="dl-edit" data-id="' + escHtml(it.id) + '">编辑</button>' +
         '<button type="button" class="dl-del" data-id="' + escHtml(it.id) + '" title="删除，之后不再提醒">×</button>' +
         '</div>';
@@ -1613,7 +1620,7 @@ function renderDailiesList(){
   }
   const doneN = items.filter(function(i){ return i.done_today; }).length;
   setSum('dailies', items.length
-    ? (items.length + ' 项 · 今日 ' + doneN + '/' + items.length) : '0 项', '手动打卡');
+    ? (items.length + ' 项 · 今日 ' + doneN + '/' + items.length) : '0 项', '自定义提醒');
 }
 
 function renderManualGroup(){
@@ -1621,18 +1628,29 @@ function renderManualGroup(){
   if (!box) return;
   const items = dlState.items || [];
   if (!items.length) { box.hidden = true; box.innerHTML = ''; return; }
-  const doneN = items.filter(function(i){ return i.done_today; }).length;
   box.hidden = false;
-  box.innerHTML = '<div class="manual-head">—— 手动打卡 · 今日 ' + doneN + '/' + items.length + ' ——</div>' +
-    items.map(function(it){
-      const done = !!it.done_today;
-      const modeTxt = it.mode === 'standalone' ? ('独立 ' + (it.time || '')) : '随巡检推送';
-      return '<div class="dl-row' + (done ? ' is-done' : '') + '">' +
-        '<input type="checkbox" class="dl-check" data-id="' + escHtml(it.id) + '"' +
-        (done ? ' checked' : '') + '>' +
-        '<div class="dl-main"><span class="dl-name">' + escHtml(it.name) + '</span>' +
-        '<span class="dl-meta">' + escHtml(modeTxt) + '</span></div></div>';
-    }).join('');
+  box.innerHTML = '<div class="gcards">' + items.map(function(it){
+    const done = !!it.done_today;
+    const first = (it.name || '?').trim().charAt(0) || '?';
+    const cls = done ? 'ok' : '';
+    const pct = done ? 100 : 0;
+    const modeTxt = it.mode === 'standalone' ? ('独立 ' + (it.time || '--:--')) : '随巡检推送';
+    const tip = '点击勾掉/恢复今日 ｜ 推送效果：' + (it.push_text || '');
+    return '<div class="card gcard dl-gcard' + (done ? ' is-done' : '') +
+        '" style="--gc:var(--brand)" data-id="' + escHtml(it.id) +
+        '" data-tip="' + escHtml(tip) + '" title="点击勾掉/恢复今日打卡">' +
+      '<div class="gcard-head">' +
+        '<span class="gcard-ico ph">' + (done ? '✓' : escHtml(first)) + '</span>' +
+        '<div class="gcard-name"><b>' + escHtml(it.name) + '</b></div>' +
+        '<div class="gcard-streak"><b class="value">' + Number(it.streak || 0) +
+        '</b><small>连续天数</small></div>' +
+      '</div>' +
+      '<div class="gcard-daily"><div class="gcard-task"><span class="dim">' +
+        escHtml(modeTxt) + '</span>' +
+        '<span class="sbar"><i class="' + cls + '" style="width:' + pct + '%"></i></span>' +
+        '<span class="mono">' + (done ? '1/1' : '0/1') + '</span></div></div>' +
+      '</div>';
+  }).join('');
 }
 
 async function toggleDailiesDone(id, done, box){
@@ -1660,7 +1678,7 @@ function updateDailiesPreview(){
   const name = document.getElementById('df-name').value.trim() || '（名称）';
   const tpl = document.getElementById('df-template').value.trim()
     || dlState.default_template
-    || '📌 {name} 还没做，记得处理，完成后在托盘勾掉';
+    || '📌 {name} 还没做';
   const timeVal = currentDailiesMode() === 'standalone'
     ? (document.getElementById('df-time').value || '--:--') : '';
   const txt = tpl.replace(/\{name\}/g, name).replace(/\{time\}/g, timeVal)
@@ -1687,6 +1705,7 @@ function openDailiesModal(id){
   document.getElementById('df-name').value = it.name || '';
   setDailiesMode(it.mode || 'merged');
   document.getElementById('df-time').value = it.time || '20:00';
+  document.getElementById('df-reset').value = it.reset || '04:00';
   document.getElementById('df-enabled').checked = it.enabled !== false;
   document.getElementById('df-template').value = it.template || '';
   document.getElementById('df-err').hidden = true;
@@ -1712,9 +1731,15 @@ document.getElementById('dailies-list').addEventListener('click', function(e){
 });
 const manualGroupEl = document.getElementById('manual-group');
 if (manualGroupEl) {
-  manualGroupEl.addEventListener('change', function(e){
-    const box = e.target.closest('.dl-check');
-    if (box) toggleDailiesDone(box.dataset.id, box.checked, box);
+  manualGroupEl.addEventListener('click', function(e){
+    const card = e.target.closest('.dl-gcard');
+    if (card) toggleDailiesDone(card.dataset.id, !card.classList.contains('is-done'), null);
+  });
+}
+const accDlEl = document.getElementById('acc-dailies');
+if (accDlEl) {
+  accDlEl.addEventListener('toggle', function(){
+    if (accDlEl.open) loadDailies();   // 每次展开强制重拉：页面里的清单永不过期
   });
 }
 document.getElementById('df-mode').addEventListener('click', function(e){
@@ -1764,6 +1789,7 @@ document.getElementById('df-save').addEventListener('click', function(){
   const payload = {
     action: dlEditingId ? 'update' : 'add',
     name: name, mode: mode, time: mode === 'standalone' ? time : '',
+    reset: document.getElementById('df-reset').value || '04:00',
     template: document.getElementById('df-template').value.trim(),
     enabled: document.getElementById('df-enabled').checked,
   };
@@ -2513,7 +2539,7 @@ function renderLive(d){
       }
       /* 2026-11-09 用户裁决：实时体力 = 纯体力视图，与日常进度无关——
          无体力数据的游戏（失败/待上线/未建号/未解锁）不在这里出现，
-         其状态由游戏概览的日常进度行承接。冷却卡保留（缓存体力仍可用） */
+         其状态由日常概览的日常进度行承接。冷却卡保留（缓存体力仍可用） */
       if (g.placeholder || !g.ok || g.no_account) return '';
       let r = g.resource;
       if (!r || r.current == null) return '';   /* 含未解锁/风控：概览承接 */
@@ -3251,7 +3277,7 @@ function renderHistory(d){
 
   if (!d.has_data) {
     /* 没有历史数据时也要把界面画出来：列 = 最近 7 天，行 = 已启用游戏，格子全灰；
-       游戏概览同样画满每款启用游戏的迷你卡（今日状态显示"今日无数据"）——
+       日常概览同样画满每款启用游戏的迷你卡（今日状态显示"今日无数据"）——
        用户要看的是"界面长什么样、缺的只是数据"，不是一块空白。 */
     if ((d.tracked || []).length && (d.days || []).length) {
       const statsBox = document.getElementById('h-stats');
@@ -3278,7 +3304,7 @@ function renderHistory(d){
     return;
   }
 
-  // --- 游戏概览：每款一张迷你卡 ---
+  // --- 日常概览：每款一张迷你卡 ---
   const statsBox = document.getElementById('h-stats');
   if (statsBox) {
     statsBox.innerHTML = '<div class="gcards">' +
@@ -3508,7 +3534,7 @@ document.getElementById('btn-hist-refresh').addEventListener('click', function()
     .then(function(){ btn.disabled = false; btn.textContent = '刷新'; });
 });
 
-/* 游戏概览卡的刷新（2026-11-06）：只重拉报表并重绘本卡，不触发游戏查询。
+/* 日常概览卡的刷新（2026-11-06）：只重拉报表并重绘本卡，不触发游戏查询。
    2026-11-09 用户裁决：刷新不查询就是假刷新——概览刷新与信息查询页
    同款 loadLive(true) 真查一遍（写历史、受风控冷却保护），完成后把
    报表一起重绘。查询耗时约 5~15 秒，转圈反馈。 */
@@ -3519,7 +3545,7 @@ document.getElementById('btn-stats-refresh').addEventListener('click', function(
   loadLive(true)
     .then(function(){ return loadHistory(); })
     .catch(function(err){
-      console.error('刷新游戏概览失败', err);
+      console.error('刷新日常概览失败', err);
       toast('刷新失败：' + ((err && err.message) || '无法连接本地服务'), true);
     })
     .then(function(){ btn.disabled = false; btn.textContent = '刷新'; });
@@ -3555,25 +3581,41 @@ document.getElementById('btn-diag-export').addEventListener('click', function(){
   exportDiagnostics(this);
 });
 
-/* 杀软拦截自检（#4）：判定+步骤指引+哈希对照，绝不自动改杀软设置 */
+/* 杀软拦截自检（#4）：状态驱动渲染——健康=一行绿字，其余信息只在
+   疑似/被拦时出现（减法收尾：没必要的东西不占健康态的版面） */
 function renderAv(d){
   const v = document.getElementById('av-verdict');
   if (!v) return;
-  v.className = 'av-verdict ' + (d.verdict || 'clear');
-  v.textContent = d.message || '';
-  const lines = [];
-  if (d.missing && d.missing.length) lines.push('缺失文件：' + d.missing.join('、'));
-  if (d.defender_hits && d.defender_hits.length) {
-    lines.push('Defender 检测命中：' + d.defender_hits.join('；'));
-  }
-  if (d.defender_note) lines.push('Defender 检测记录：' + d.defender_note);
-  lines.push('守护进程：' + (d.daemon_running ? '运行中' : '未运行'));
+  const extra = document.getElementById('av-extra');
   const det = document.getElementById('av-detail');
-  if (det) det.innerHTML = lines.map(function(s){ return '<div>· ' + escHtml(s) + '</div>'; }).join('');
   const sha = document.getElementById('av-sha');
-  if (sha && d.sha256) sha.value = d.sha256;
-  setSum('av', d.verdict === 'blocked' ? '疑似被拦截'
-    : (d.verdict === 'suspect' ? '疑似（文件都在）' : '未见拦截'), '杀软自检');
+  const t = new Date();
+  const hh = String(t.getHours()).padStart(2, '0') + ':' +
+             String(t.getMinutes()).padStart(2, '0');
+  v.className = 'av-verdict ' + (d.verdict || 'clear');
+  if (d.verdict === 'blocked') {
+    v.textContent = d.message || '疑似被杀软拦截';
+    if (extra) extra.hidden = false;
+    const lines = [];
+    if (d.missing && d.missing.length) lines.push('缺失文件：' + d.missing.join('、'));
+    if (d.defender_hits && d.defender_hits.length) {
+      lines.push('Defender 检测命中：' + d.defender_hits.join('；'));
+    }
+    if (det) det.innerHTML = lines.map(function(s){ return '<div>· ' + escHtml(s) + '</div>'; }).join('');
+    if (sha && d.sha256) sha.value = d.sha256;
+    setSum('av', '疑似被拦截', '杀软自检');
+  } else if (d.verdict === 'suspect') {
+    v.textContent = d.message || '';
+    if (extra) extra.hidden = false;
+    if (det) det.innerHTML = '<div>· 守护进程：' + (d.daemon_running ? '运行中' : '未运行') + '</div>';
+    if (sha && d.sha256) sha.value = d.sha256;
+    setSum('av', '疑似（文件都在）', '杀软自检');
+  } else {
+    v.textContent = '✅ 未发现拦截迹象（' + hh + ' 自检）';
+    if (extra) extra.hidden = true;
+    if (det) det.innerHTML = '';
+    setSum('av', '未见拦截', '杀软自检');
+  }
 }
 
 async function runAvCheck(){

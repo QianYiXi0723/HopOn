@@ -1475,17 +1475,21 @@ def custom_dailies_status() -> Dict[str, Any]:
     for it in items:
         if not isinstance(it, dict):
             continue
+        it = dict(it)
+        it.setdefault("reset", dailies.DEFAULT_RESET)
         out.append({
             "id": str(it.get("id") or ""),
             "name": str(it.get("name") or ""),
             "mode": str(it.get("mode") or "merged"),
             "time": str(it.get("time") or ""),
+            "reset": it["reset"],
             "template": str(it.get("template") or ""),
             "enabled": bool(it.get("enabled", True)),
-            "done_today": dailies.is_done(str(it.get("id") or ""), user_dir),
+            "done_today": dailies.is_done(it, user_dir),
+            "streak": dailies.streak_of(it, user_dir),
             "push_text": dailies.render_message(it),
         })
-    return {"ok": True, "items": out, "day_key": dailies._day_key(),
+    return {"ok": True, "items": out,
             "default_template": dailies.DEFAULT_TEMPLATE}
 
 
@@ -1506,9 +1510,12 @@ def custom_dailies_update(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     if action == "toggle_done":
         item_id = str(payload.get("id") or "")
-        if not item_id:
-            raise ValueError("缺少 id")
-        dailies.mark_done(item_id, user_dir, undo=bool(payload.get("undo")))
+        hit = next((it for it in items if str(it.get("id")) == item_id), None)
+        if hit is None:
+            raise ValueError("项不存在")
+        hit = dict(hit)
+        hit.setdefault("reset", dailies.DEFAULT_RESET)
+        dailies.mark_done(hit, user_dir, undo=bool(payload.get("undo")))
         result = custom_dailies_status()
         result["message"] = ("已勾掉今日（次日 04:00 自动重开）"
                              if not payload.get("undo") else "已恢复今日待办")
@@ -1538,19 +1545,22 @@ def custom_dailies_update(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("独立时刻需要有效的 HH:MM")
     if mode == "merged":
         time_s = ""
+    reset_s = str(payload.get("reset") or dailies.DEFAULT_RESET).strip()
+    if not re.match(r"^\d{1,2}:\d{2}$", reset_s):
+        reset_s = dailies.DEFAULT_RESET
     template = str(payload.get("template") or "").strip()[:100]
     enabled = bool(payload.get("enabled", True))
 
     if action == "add":
         items.append({"id": f"cd-{_uuid.uuid4().hex[:8]}", "name": name,
-                      "mode": mode, "time": time_s, "template": template,
-                      "enabled": enabled})
+                      "mode": mode, "time": time_s, "reset": reset_s,
+                      "template": template, "enabled": enabled})
     elif action == "update":
         item_id = str(payload.get("id") or "")
         hit = next((it for it in items if str(it.get("id")) == item_id), None)
         if hit is None:
             raise ValueError("要编辑的项不存在")
-        hit.update({"name": name, "mode": mode, "time": time_s,
+        hit.update({"name": name, "mode": mode, "time": time_s, "reset": reset_s,
                     "template": template, "enabled": enabled})
     else:
         raise ValueError(f"未知 action：{action}")

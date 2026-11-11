@@ -123,8 +123,8 @@
     <!-- 报表页主角卡（Oil UI「一屏一主角」）：主色顶条标识，次卡保持安静 -->
     <section class="card s12 card--protagonist">
       <div class="card-head">
-        <h2><svg class="ico"><use href="#i-grid"/></svg> 游戏概览
-          <span class="q" data-tip="每款游戏一张卡：今日完成状态、当前体力与连续完成天数"></span>
+        <h2><svg class="ico"><use href="#i-grid"/></svg> 日常概览
+          <span class="q" data-tip="每款游戏/手动打卡项一张卡：今日完成状态、当前体力与连续打卡天数"></span>
         </h2>
         <span class="spacer"></span>
         <button type="button" class="btn sm" id="btn-stats-refresh" style="height:24px" data-tip="重新查询全部游戏并渲染概览（同时更新报表；受风控冷却保护，约需 5~15 秒）">刷新</button>
@@ -722,28 +722,30 @@
             <div class="set-body">
               <div class="av-verdict" id="av-verdict">尚未自检——点右上「重新自检」</div>
               <div class="av-detail" id="av-detail"></div>
-              <details class="av-steps"><summary>Windows Defender 加白名单</summary>
-                <div class="hint">Windows 安全中心 → 病毒和威胁防护 → 管理设置 → 排除项 → 添加排除项 → 文件夹 → 选择 HopOn 安装目录。若文件已被隔离：保护历史记录 → 还原后再加。</div>
-              </details>
-              <details class="av-steps"><summary>火绒加信任区</summary>
-                <div class="hint">右上菜单 → 信任区 → 添加文件夹 → 选择 HopOn 安装目录。若已被隔离：病毒查杀 → 隔离区 → 恢复，再加信任。</div>
-              </details>
-              <details class="av-steps"><summary>360 加信任区</summary>
-                <div class="hint">木马查杀 → 信任区 → 添加目录 → 选择 HopOn 安装目录。若已被隔离：恢复区 → 恢复，再加信任。</div>
-              </details>
-              <div class="hint">被误报可到 <a href="https://www.microsoft.com/wdsi/filesubmission" target="_blank" rel="noreferrer">微软误报上报</a> 提交（附下方哈希与诊断包）；官方发布哈希见 <a href="https://github.com/QianYiXi0723/HopOn/releases" target="_blank" rel="noreferrer">Releases 页</a> 的 SHA256SUMS.txt——与下方本机哈希一致即证明文件与官方发布一致（误报实锤）。</div>
-              <div class="row3">
-                <input type="text" id="av-sha" readonly placeholder="点「重新自检」后显示 HopOn.exe 的 SHA256">
-                <button type="button" class="btn" id="btn-av-diag" data-label="导出诊断包">导出诊断包</button>
+              <div id="av-extra" hidden>
+                <details class="av-steps"><summary>Windows Defender 加白名单</summary>
+                  <div class="hint">Windows 安全中心 → 病毒和威胁防护 → 管理设置 → 排除项 → 添加排除项 → 文件夹 → 选择 HopOn 安装目录。若文件已被隔离：保护历史记录 → 还原后再加。</div>
+                </details>
+                <details class="av-steps"><summary>火绒加信任区</summary>
+                  <div class="hint">右上菜单 → 信任区 → 添加文件夹 → 选择 HopOn 安装目录。若已被隔离：病毒查杀 → 隔离区 → 恢复，再加信任。</div>
+                </details>
+                <details class="av-steps"><summary>360 加信任区</summary>
+                  <div class="hint">木马查杀 → 信任区 → 添加目录 → 选择 HopOn 安装目录。若已被隔离：恢复区 → 恢复，再加信任。</div>
+                </details>
+                <div class="hint">被误报可到 <a href="https://www.microsoft.com/wdsi/filesubmission" target="_blank" rel="noreferrer">微软误报上报</a> 提交（附下方哈希与诊断包）；官方发布哈希见 <a href="https://github.com/QianYiXi0723/HopOn/releases" target="_blank" rel="noreferrer">Releases 页</a> 的 SHA256SUMS.txt——与下方本机哈希一致即证明文件与官方发布一致（误报实锤）。</div>
+                <div class="row3">
+                  <input type="text" id="av-sha" readonly placeholder="点「重新自检」后显示 HopOn.exe 的 SHA256">
+                  <button type="button" class="btn" id="btn-av-diag" data-label="导出诊断包">导出诊断包</button>
+                </div>
+                <div class="hint">白名单会让该目录完全绕过查杀——请确认目录内只有 HopOn 官方文件（对照上方哈希）再操作。</div>
               </div>
-              <div class="hint">白名单会让该目录完全绕过查杀——请确认目录内只有 HopOn 官方文件（对照上方哈希）再操作。</div>
             </div>
           </details>
 
           <details class="set-item" id="acc-dailies">
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-list"/></svg></i>
-                <span class="set-txt"><b>手动打卡</b></span>
+                <span class="set-txt"><b>自定义提醒</b></span>
               </span>
               <span class="set-sum" id="sum-dailies">读取中…</span>
               <span class="set-end"></span>
@@ -751,7 +753,7 @@
             <div class="set-body">
               <div id="dailies-list"><div class="hint">读取中…</div></div>
               <button type="button" class="btn" id="btn-dailies-add" style="width:100%;margin-top:8px">＋ 新增提醒</button>
-              <div class="hint">无 API 游戏的日常在这手动记：每天提醒、做完勾掉，次日 04:00 随游戏日常重置自动重开。「随巡检推送」并进班次推送末尾，不单独打扰。</div>
+              <div class="hint">没有游戏外数据源的日常/习惯在这自定义：每天提醒、做完勾掉，次日 04:00 随游戏日常重置自动重开。「随巡检推送」并进班次推送末尾，不单独打扰。</div>
             </div>
           </details>
 
@@ -828,11 +830,13 @@
           </div></div>
         <div class="df-row" id="df-time-row"><span class="df-label">提醒时刻</span>
           <input type="time" id="df-time" value="20:00" step="60"></div>
+        <div class="df-row"><span class="df-label" data-tip="勾掉的「今日」到这个时刻自动重开">重置时刻</span>
+          <input type="time" id="df-reset" value="04:00" step="60"></div>
         <div class="df-row"><span class="df-label">启用</span>
           <input type="checkbox" id="df-enabled" checked></div>
         <div class="df-row df-row--top"><span class="df-label">消息模板</span>
           <textarea id="df-template" rows="2" maxlength="100"
-                    placeholder="📌 {name} 还没做，记得处理，完成后在托盘勾掉"></textarea></div>
+                    placeholder="📌 {name} 还没做"></textarea></div>
         <div class="df-actions">
           <button type="button" class="btn" id="df-tpl-reset">恢复默认文案</button>
           <span class="spacer"></span>

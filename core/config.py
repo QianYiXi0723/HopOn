@@ -686,12 +686,15 @@ class CustomDaily:
 
     mode=merged 随班次推送末尾；standalone 按独立时刻推（只早不迟）。
     template 为消息模板（空=默认文案），变量 {name}/{time}，Python 端渲染。
+    reset 为该项的重置时刻（勾掉的「今日」到点自动重开）——默认 04:00
+    与游戏日常重置同频，但每项可自定义（如健身房用 00:00）。
     """
 
     id: str
     name: str
     mode: str = "merged"
     time: str = ""
+    reset: str = "04:00"
     template: str = ""
     enabled: bool = True
 
@@ -791,7 +794,7 @@ class AppConfig:
                 "activity_deadline_tiers": list(self.activity_deadline_tiers),
                 "custom_dailies": [
                     dict(id=d.id, name=d.name, mode=d.mode, time=d.time,
-                         template=d.template, enabled=bool(d.enabled))
+                         reset=d.reset, template=d.template, enabled=bool(d.enabled))
                     for d in self.custom_dailies
                 ],
                 "genshin_resin_threshold": int(self.genshin_resin_threshold),
@@ -923,10 +926,13 @@ def _parse_custom_dailies(raw: Any) -> List["CustomDaily"]:
             time_s = "20:00"
         if mode == "merged":
             time_s = ""
+        reset = str(node.get("reset") or "04:00").strip()
+        if not re.match(r"^\d{1,2}:\d{2}$", reset):
+            reset = "04:00"
         template = str(node.get("template") or "").strip()[:CUSTOM_DAILY_TEMPLATE_MAX]
         out.append(CustomDaily(
             id=str(node.get("id") or f"cd-{_uuid.uuid4().hex[:8]}"),
-            name=name, mode=mode, time=time_s, template=template,
+            name=name, mode=mode, time=time_s, reset=reset, template=template,
             enabled=bool(node.get("enabled", True)),
         ))
     return out
