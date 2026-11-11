@@ -2649,21 +2649,34 @@ def tray_summary_status() -> Dict[str, Any]:
 
     # 手动打卡：待办点名 + 托盘可勾行数据源（id|name|done 单行编码，C# 拆分）
     manual_rows: List[str] = []
+    raw = load_raw_config()
     try:
         from core import dailies as _dl
 
-        _items = (load_raw_config().get("app") or {}).get("custom_dailies") or []
+        _items = (raw.get("app") or {}).get("custom_dailies") or []
         for _it in _items:
             if not isinstance(_it, dict) or not _it.get("enabled", True):
                 continue
             _id = str(_it.get("id") or "")
             _name = str(_it.get("name") or "?").replace("|", " ").replace("\n", " ")
-            _done = _dl.is_done(_id, CONFIG_PATH.parent)
+            _itd = dict(_it)
+            _itd.setdefault("reset", _dl.DEFAULT_RESET)
+            _done = _dl.is_done(_itd, CONFIG_PATH.parent)
             manual_rows.append(f"{_id}|{_name}|{1 if _done else 0}")
             if not _done:
                 pending_descs.append(f"{_name} 未清")
     except Exception:  # noqa: BLE001 - 手动打卡读不到不影响托盘主面
         pass
+
+    # 启用集过滤（2026-11-12 实锤：live 缓存可能含已停用游戏的旧数据——
+    # 崩3 已停用仍泄漏进托盘；缓存缺失的启用游戏也要有行——方舟/终末地隐身实锤）
+    enabled_games = {str(a.get("game")) for a in (raw.get("accounts") or [])
+                     if a.get("enabled")}
+    cached_games: Dict[str, Dict[str, Any]] = {}
+    if disk and disk.get("games"):
+        for g in disk.get("games") or []:
+            if isinstance(g, dict) and g.get("game"):
+                cached_games[str(g["game"])] = g
 
     if disk and disk.get("games"):
         try:
@@ -2675,8 +2688,20 @@ def tray_summary_status() -> Dict[str, Any]:
         stale_tag = ""
         if age is not None and age >= 7200:
             stale_tag = f"（数据 {age // 3600}h 前）"
-        for g in disk.get("games") or []:
-            if not isinstance(g, dict) or g.get("no_account"):
+        from core.history import GAME_ORDER as _GAME_ORDER
+        ordered_ids = ([g for g in _GAME_ORDER
+                        if g in cached_games or g in enabled_games]
+                       + [g for g in cached_games if g not in _GAME_ORDER])
+        for gid in ordered_ids:
+            g = cached_games.get(gid)
+            if g is None:
+                # 启用但缓存缺失（刚勾选还没查过）：占位行，等下次巡检/刷新进缓存
+                short = TRAY_GAME_SHORT.get(gid) or gid[:1]
+                lines.append(f"{short}　  —/  — · 待巡检")
+                continue
+            if not g.get("enabled", True) or gid not in enabled_games:
+                continue  # 已停用：不渲染（移除而非置灰）
+            if g.get("no_account"):
                 continue  # 未绑定：不渲染（移除而非置灰）
             key = str(g.get("game") or "")
             short = TRAY_GAME_SHORT.get(key) or str(g.get("game_name") or "?")[:1]
