@@ -1643,8 +1643,6 @@ function renderManualGroup(){
   box.innerHTML = '<div class="gcards">' + items.map(function(it){
     const done = !!it.done_today;
     const first = (it.name || '?').trim().charAt(0) || '?';
-    const cls = done ? 'ok' : '';
-    const pct = done ? 100 : 0;
     const modeTxt = it.mode === 'standalone' ? ('独立 ' + (it.time || '--:--')) : '随巡检推送';
     const tip = '点击勾掉/恢复今日 ｜ 推送效果：' + (it.push_text || '');
     return '<div class="card gcard dl-gcard' + (done ? ' is-done' : '') +
@@ -1659,10 +1657,9 @@ function renderManualGroup(){
         '<div class="gcard-streak"><b class="value">' + Number(it.streak || 0) +
         '</b><small>连续天数</small></div>' +
       '</div>' +
-      '<div class="gcard-daily"><div class="gcard-task"><span class="dim">' +
-        escHtml(modeTxt) + '</span>' +
-        '<span class="sbar"><i class="' + cls + '" style="width:' + pct + '%"></i></span>' +
-        '<span class="mono">' + (done ? '1/1' : '0/1') + '</span></div></div>' +
+      /* 二值状态没有「进度」可言（2026-11-12 用户裁）：去伪进度条，
+         底行只留模式文字——完成态由打卡钮颜色表达 */
+      '<div class="gcard-daily"><span class="dim">' + escHtml(modeTxt) + '</span></div>' +
       '</div>';
   }).join('');
 }
