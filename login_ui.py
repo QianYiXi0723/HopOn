@@ -2563,8 +2563,9 @@ def tray_summary_status() -> Dict[str, Any]:
                 # 排版纪律（2026-11-11 用户反馈：托盘行要排列整齐）：定宽三段式——
                 # 简称 + 全角空格（2026-11-12 用户反馈：名字与数据再拉开）+
                 # 值/上限各右对齐 3 位 + 「 · 」+ 12 半角宽尾列。
-                # 已满尾列用「已满（可清）」凑等宽，顺带把动作提示带上。
-                lines.append(f"{short}　{cur:>3}/{mx:>3} · 已满（可清）{stale_tag}")
+                # 2026-11-12 再裁（用户）：尾列「约 X 满」与「已满」同尾字，真已满
+                # 不显眼——已满行加 ★ 前缀成为唯一带符号的行，未满行去「满」尾字。
+                lines.append(f"{short}　{cur:>3}/{mx:>3} · ★ 已满，可清{stale_tag}")
                 continue
             recover = res.get("recover")
             tail = ""
@@ -2572,7 +2573,7 @@ def tray_summary_status() -> Dict[str, Any]:
                 eff = max(0, int(recover) - (age or 0))
                 if eff > 0:
                     h, m = eff // 3600, (eff % 3600) // 60
-                    tail = f"约 {min(h, 99):>2}h{m:02d}m 满"
+                    tail = f"剩 {min(h, 99):>2}h{m:02d}"
                     if eff <= 7200:
                         hm = f"{h}h{m:02d}m" if h else f"{m}m"
                         pending_descs.append(f"{short} 将满({hm})")
