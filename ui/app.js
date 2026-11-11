@@ -1220,8 +1220,10 @@ function renderDaemon(st){
   document.getElementById('d-last').textContent =
     last.at ? (last.exit === 0 ? '成功' : '退出码 ' + last.exit) + ' · ' + shortStamp(last.at)
             : '还没跑过';
-  document.getElementById('btn-daemon-start').disabled = running;
-  document.getElementById('btn-daemon-stop').disabled = !running;
+  /* 拨杆开关（2026-11-12 用户裁决：启动/停止合一）跟随真实运行态；
+     操作进行中由 daemonBusy 守卫，不让 3s 轮询把拨杆翻走 */
+  const dt = document.getElementById('daemon-toggle');
+  if (dt && !daemonBusy) dt.checked = running;
 
   /* 心跳显示统一入口：按状态起/停 timer，并立即刷新一次
      （从暂停恢复为运行时马上出数，不等下一个 30 秒 tick） */
@@ -2353,13 +2355,15 @@ rlBindLongPress('btn-time-down', -1, rlNudge, null);
 
 document.getElementById('btn-catch-up').addEventListener('click', saveCatchUp);
 
+let daemonBusy = false;
 async function controlDaemon(action){
-  const btn = document.getElementById(action === 'start' ? 'btn-daemon-start' : 'btn-daemon-stop');
-  const old = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = action === 'start' ? '启动中…' : '停止中…';
+  const dt = document.getElementById('daemon-toggle');
+  if (!dt || daemonBusy) return;
+  daemonBusy = true;
+  dt.disabled = true;
   /* 死命令：点停止 = 前端 heartbeatTimer 立刻停 + 后端 /api/daemon/stop 真停进程，
-     两件事必须同时发生；若后端失败，finally 的 loadSchedule 会把状态纠回来 */
+     两件事必须同时发生；若后端失败，finally 的 loadSchedule 会把状态纠回来。
+     拨杆开关（2026-11-12 用户裁决）：checked=运行，操作中禁用防 3s 轮询翻杆 */
   if (action === 'stop') stopHeartbeat();
   try {
     const d = await postJSON('/api/daemon/' + action, {});
@@ -2371,13 +2375,15 @@ async function controlDaemon(action){
   } catch (e) {
     toast('操作失败：' + e, true);
   } finally {
-    btn.textContent = old;
+    daemonBusy = false;
+    dt.disabled = false;
     loadSchedule();
   }
 }
 
-document.getElementById('btn-daemon-start').addEventListener('click', function(){ controlDaemon('start'); });
-document.getElementById('btn-daemon-stop').addEventListener('click', function(){ controlDaemon('stop'); });
+document.getElementById('daemon-toggle').addEventListener('change', function(){
+  controlDaemon(this.checked ? 'start' : 'stop');
+});
 document.getElementById('btn-dev-save').addEventListener('click', saveDevice);
 document.getElementById('btn-dev-shuffle').addEventListener('click', shuffleDevice);
 document.getElementById('btn-dev-reset').addEventListener('click', resetDevice);
