@@ -3612,9 +3612,6 @@ async function exportDiagnostics(btn){
   }
 }
 
-document.getElementById('btn-diag-export').addEventListener('click', function(){
-  exportDiagnostics(this);
-});
 const logDiagBtn = document.getElementById('btn-log-diag');
 if (logDiagBtn) logDiagBtn.addEventListener('click', function(){ exportDiagnostics(this); });
 
