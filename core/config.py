@@ -681,6 +681,22 @@ class LoggingConfig:
 
 
 @dataclass
+class CustomDaily:
+    """手动打卡项：无 API 游戏的日常（2026-11-12）。
+
+    mode=merged 随班次推送末尾；standalone 按独立时刻推（只早不迟）。
+    template 为消息模板（空=默认文案），变量 {name}/{time}，Python 端渲染。
+    """
+
+    id: str
+    name: str
+    mode: str = "merged"
+    time: str = ""
+    template: str = ""
+    enabled: bool = True
+
+
+@dataclass
 class AppConfig:
     """完整配置对象，main 只依赖它。"""
 
@@ -705,6 +721,8 @@ class AppConfig:
     # 结束推送三段阈值（小时）：规划/行动/召回三档独立，-1 = 该档不提醒
     activity_deadline_tiers: List[int] = field(
         default_factory=lambda: list(ACTIVITY_DEADLINE_TIERS_DEFAULT))
+    # 手动打卡项（无 API 游戏的日常，2026-11-12）
+    custom_dailies: List[CustomDaily] = field(default_factory=list)
     # 体力溢出预警：当前值 >= 阈值则强制推送（0 = 关闭）。只看已有查询结果，不额外请求。
     genshin_resin_threshold: int = RESOURCE_THRESHOLD_DEFAULT["genshin"]
     starrail_stamina_threshold: int = RESOURCE_THRESHOLD_DEFAULT["starrail"]
@@ -771,6 +789,11 @@ class AppConfig:
                 "activity_alert_enabled": bool(self.activity_alert_enabled),
                 "activity_alert_days": int(self.activity_alert_days),
                 "activity_deadline_tiers": list(self.activity_deadline_tiers),
+                "custom_dailies": [
+                    dict(id=d.id, name=d.name, mode=d.mode, time=d.time,
+                         template=d.template, enabled=bool(d.enabled))
+                    for d in self.custom_dailies
+                ],
                 "genshin_resin_threshold": int(self.genshin_resin_threshold),
                 "starrail_stamina_threshold": int(self.starrail_stamina_threshold),
                 "zzz_energy_threshold": int(self.zzz_energy_threshold),
@@ -873,6 +896,42 @@ ACTIVITY_DEADLINE_TIERS_DEFAULT = [72, 24, 6]
 ACTIVITY_DEADLINE_TIER_MAX = 2160  # 90 天，覆盖最长活动周期
 
 
+#: 手动打卡（2026-11-12）：无 API 游戏的日常手动记账项
+CUSTOM_DAILY_MODES = ("merged", "standalone")
+CUSTOM_DAILY_NAME_MAX = 20
+CUSTOM_DAILY_TEMPLATE_MAX = 100
+
+
+def _parse_custom_dailies(raw: Any) -> List["CustomDaily"]:
+    """解析手动打卡清单：坏项跳过不致命，字段越界收敛。"""
+    import uuid as _uuid
+
+    out: List[CustomDaily] = []
+    if not isinstance(raw, list):
+        return out
+    for node in raw:
+        if not isinstance(node, dict):
+            continue
+        name = str(node.get("name") or "").strip()[:CUSTOM_DAILY_NAME_MAX]
+        if not name:
+            continue
+        mode = str(node.get("mode") or "merged")
+        if mode not in CUSTOM_DAILY_MODES:
+            mode = "merged"
+        time_s = str(node.get("time") or "").strip()
+        if mode == "standalone" and not re.match(r"^\d{1,2}:\d{2}$", time_s):
+            time_s = "20:00"
+        if mode == "merged":
+            time_s = ""
+        template = str(node.get("template") or "").strip()[:CUSTOM_DAILY_TEMPLATE_MAX]
+        out.append(CustomDaily(
+            id=str(node.get("id") or f"cd-{_uuid.uuid4().hex[:8]}"),
+            name=name, mode=mode, time=time_s, template=template,
+            enabled=bool(node.get("enabled", True)),
+        ))
+    return out
+
+
 def _parse_deadline_tiers(raw: Any) -> List[int]:
     """解析结束推送三段（小时）：每段 -1（关闭）或 1~2160；缺省 = 默认档。"""
     if raw is None:
@@ -955,6 +1014,7 @@ def parse_config(data: Dict[str, Any], source: Optional[Path] = None) -> AppConf
         activity_alert_days=_parse_activity_days(app_section.get("activity_alert_days")),
         activity_deadline_tiers=_parse_deadline_tiers(
             app_section.get("activity_deadline_tiers")),
+        custom_dailies=_parse_custom_dailies(app_section.get("custom_dailies")),
         genshin_resin_threshold=_parse_threshold(
             app_section.get("genshin_resin_threshold"), "genshin_resin_threshold", "genshin"),
         starrail_stamina_threshold=_parse_threshold(

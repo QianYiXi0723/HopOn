@@ -922,11 +922,33 @@ def run_once(config: AppConfig, dry_run: bool = False, quiet_push: bool = False)
         except Exception as exc:  # noqa: BLE001 - 活动提醒坏了也不能影响日常检查
             logger.warning("读取活动提醒失败（不影响本轮检查）：%s", exc)
 
+    # 1.7) 手动打卡（2026-11-12）：无 API 游戏的日常，未完成项并入班次推送
+    #      （模板已在 core.dailies 渲染好；做完勾掉的用户当日不再出现）
+    manual_lines = []
+    if config.custom_dailies:
+        try:
+            from core import dailies
+
+            user_dir = config.config_path.parent
+            enabled_items = [
+                dict(id=d.id, name=d.name, mode=d.mode, time=d.time,
+                     template=d.template, enabled=d.enabled)
+                for d in config.custom_dailies
+                if d.enabled and d.mode == "merged"   # standalone 有自己的独立时刻
+            ]
+            manual_lines = [
+                dailies.render_message(it)
+                for it in dailies.undone_today(enabled_items, user_dir)
+            ]
+        except Exception as exc:  # noqa: BLE001 - 手动打卡坏了不影响本轮检查
+            logger.warning("读取手动打卡失败（不影响本轮检查）：%s", exc)
+
     # 2) 判断（体力溢出预警复用本轮查询结果，不额外发请求）
     report = build_report(
         statuses, config.resource_thresholds,
         activity_alerts=activity_alerts,
         activity_start_alerts=activity_start_alerts,
+        manual_lines=manual_lines,
     )
     # 2.1) 体力回满预测：写进 watch 文件（daemon tick 预测到点 → 复核巡检）。
     #      必须放在 build_report 之后——第二轮实参是「本轮已到预警阈值的游戏」，

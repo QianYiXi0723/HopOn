@@ -1464,6 +1464,107 @@ def save_catch_up(raw_minutes: Any, enabled: Any = None) -> Dict[str, Any]:
     return result
 
 
+def custom_dailies_status() -> Dict[str, Any]:
+    """手动打卡清单 + 今日完成态（抽屉/报表/托盘共用数据源）。"""
+    from core import dailies
+
+    raw = load_raw_config()
+    items = (raw.get("app") or {}).get("custom_dailies") or []
+    user_dir = CONFIG_PATH.parent
+    out = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        out.append({
+            "id": str(it.get("id") or ""),
+            "name": str(it.get("name") or ""),
+            "mode": str(it.get("mode") or "merged"),
+            "time": str(it.get("time") or ""),
+            "template": str(it.get("template") or ""),
+            "enabled": bool(it.get("enabled", True)),
+            "done_today": dailies.is_done(str(it.get("id") or ""), user_dir),
+            "push_text": dailies.render_message(it),
+        })
+    return {"ok": True, "items": out, "day_key": dailies._day_key(),
+            "default_template": dailies.DEFAULT_TEMPLATE}
+
+
+@_serialized_write
+def custom_dailies_update(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """手动打卡增删改/今日勾选（写 config + 完成账本，双写一致）。"""
+    import uuid as _uuid
+
+    from core import dailies
+
+    action = str(payload.get("action") or "")
+    user_dir = CONFIG_PATH.parent
+    raw = load_raw_config()
+    if not isinstance(raw.get("app"), dict):
+        raw["app"] = {}
+    items = [it for it in (raw["app"].get("custom_dailies") or [])
+             if isinstance(it, dict)]
+
+    if action == "toggle_done":
+        item_id = str(payload.get("id") or "")
+        if not item_id:
+            raise ValueError("缺少 id")
+        dailies.mark_done(item_id, user_dir, undo=bool(payload.get("undo")))
+        result = custom_dailies_status()
+        result["message"] = ("已勾掉今日（次日 04:00 自动重开）"
+                             if not payload.get("undo") else "已恢复今日待办")
+        return result
+
+    if action == "del":
+        item_id = str(payload.get("id") or "")
+        items = [it for it in items if str(it.get("id")) != item_id]
+        dailies.forget(item_id, user_dir)
+        raw["app"]["custom_dailies"] = items
+        from core.config import parse_config
+
+        parse_config(raw, source=CONFIG_PATH)
+        save_raw_config(raw)
+        result = custom_dailies_status()
+        result["message"] = "已删除"
+        return result
+
+    name = str(payload.get("name") or "").strip()[:20]
+    if not name:
+        raise ValueError("名称不能为空")
+    mode = str(payload.get("mode") or "merged")
+    if mode not in ("merged", "standalone"):
+        mode = "merged"
+    time_s = str(payload.get("time") or "").strip()
+    if mode == "standalone" and not re.match(r"^\d{1,2}:\d{2}$", time_s):
+        raise ValueError("独立时刻需要有效的 HH:MM")
+    if mode == "merged":
+        time_s = ""
+    template = str(payload.get("template") or "").strip()[:100]
+    enabled = bool(payload.get("enabled", True))
+
+    if action == "add":
+        items.append({"id": f"cd-{_uuid.uuid4().hex[:8]}", "name": name,
+                      "mode": mode, "time": time_s, "template": template,
+                      "enabled": enabled})
+    elif action == "update":
+        item_id = str(payload.get("id") or "")
+        hit = next((it for it in items if str(it.get("id")) == item_id), None)
+        if hit is None:
+            raise ValueError("要编辑的项不存在")
+        hit.update({"name": name, "mode": mode, "time": time_s,
+                    "template": template, "enabled": enabled})
+    else:
+        raise ValueError(f"未知 action：{action}")
+
+    raw["app"]["custom_dailies"] = items
+    from core.config import parse_config
+
+    parse_config(raw, source=CONFIG_PATH)
+    save_raw_config(raw)
+    result = custom_dailies_status()
+    result["message"] = "已添加" if action == "add" else "已保存"
+    return result
+
+
 def _normalize_deadline_tiers(raw: Any) -> List[int]:
     """三段阈值的展示口径：非法/缺失回默认档（保存侧校验走 parse_config）。"""
     from core.config import ACTIVITY_DEADLINE_TIERS_DEFAULT
@@ -2536,6 +2637,24 @@ def tray_summary_status() -> Dict[str, Any]:
     if not daemon_ok:
         pending_descs.append("守护未运行")
 
+    # 手动打卡：待办点名 + 托盘可勾行数据源（id|name|done 单行编码，C# 拆分）
+    manual_rows: List[str] = []
+    try:
+        from core import dailies as _dl
+
+        _items = (load_raw_config().get("app") or {}).get("custom_dailies") or []
+        for _it in _items:
+            if not isinstance(_it, dict) or not _it.get("enabled", True):
+                continue
+            _id = str(_it.get("id") or "")
+            _name = str(_it.get("name") or "?").replace("|", " ").replace("\n", " ")
+            _done = _dl.is_done(_id, CONFIG_PATH.parent)
+            manual_rows.append(f"{_id}|{_name}|{1 if _done else 0}")
+            if not _done:
+                pending_descs.append(f"{_name} 未清")
+    except Exception:  # noqa: BLE001 - 手动打卡读不到不影响托盘主面
+        pass
+
     if disk and disk.get("games"):
         try:
             gen = datetime.strptime(
@@ -2602,6 +2721,7 @@ def tray_summary_status() -> Dict[str, Any]:
         "headline": headline,
         "pending": bool(pending_descs),
         "daemon_ok": daemon_ok,
+        "manual": "\n".join(manual_rows),
         "text": "\n".join(lines[:12]),
         "generated_at": str((disk or {}).get("generated_at") or ""),
     }
@@ -2910,6 +3030,7 @@ _GET_SIMPLE_ROUTES: Dict[str, Any] = {
     "/api/tray_summary": tray_summary_status,
     "/api/diag_export": diag_export,
     "/api/av_check": av_check,
+    "/api/custom_dailies": custom_dailies_status,
 }
 
 
@@ -3343,6 +3464,18 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"ok": False, "message": str(exc)}, 400)
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("保存活动提醒开关失败")
+                    self._json({"ok": False, "message": f"保存失败：{exc}"}, 500)
+            return
+
+        if path == "/api/custom_dailies":
+            payload = self._read_json_body()
+            if payload is not None:
+                try:
+                    self._json(custom_dailies_update(payload))
+                except ValueError as exc:
+                    self._json({"ok": False, "message": str(exc)}, 400)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("保存手动打卡失败")
                     self._json({"ok": False, "message": f"保存失败：{exc}"}, 500)
             return
 

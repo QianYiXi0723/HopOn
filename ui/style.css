@@ -1397,6 +1397,35 @@
   .av-verdict.clear{color:var(--ok,#46a758)}
   .av-verdict.suspect{color:#d97706}
   .av-verdict.blocked{color:var(--err,#e5484d)}
+
+  /* ---- 手动打卡（2026-11-12）---- */
+  .dl-row{display:flex;align-items:center;gap:8px;padding:7px 0;
+    border-bottom:1px solid var(--border)}
+  .dl-row:last-child{border-bottom:none}
+  .dl-row.is-done{opacity:.55}
+  .dl-row.is-off{opacity:.4}
+  .dl-check{flex:none;width:16px;height:16px;accent-color:var(--brand)}
+  .dl-main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .dl-name{font-size:14px;color:var(--fg);line-height:1.4;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dl-meta{font-size:13px;color:var(--muted);line-height:1.4}
+  .dl-edit,.dl-del{flex:none;background:none;border:none;color:var(--muted);
+    cursor:pointer;font-size:13px;padding:2px 6px}
+  .dl-edit:hover{color:var(--fg)}
+  .dl-del:hover{color:var(--err,#e5484d)}
+  .manual-head{font-size:13px;color:var(--muted);margin:10px 0 4px;text-align:center}
+  .df-row{display:flex;align-items:center;gap:8px;margin:10px 0;font-size:14px}
+  .df-row--top{align-items:flex-start}
+  .df-label{flex:none;width:64px;color:var(--muted)}
+  .df-row input[type=text],.df-row input[type=time],.df-row textarea{
+    flex:1;min-width:0;background:var(--subtle);border:1px solid var(--border);
+    border-radius:8px;padding:8px 10px;color:var(--fg);font-family:inherit;font-size:14px}
+  .df-row textarea{resize:vertical}
+  .df-row input[type=checkbox]{width:auto}
+  .df-row.is-disabled{opacity:.5}
+  .df-actions{display:flex;align-items:center;margin:4px 0}
+  .df-err{color:var(--err,#e5484d)}
+  .modal--dailies{max-width:560px}
   .av-detail{font-size:13px;line-height:1.7;color:var(--muted);margin-bottom:10px}
   .av-steps{margin:6px 0}
   .av-steps summary{cursor:pointer;font-size:13px;color:var(--fg)}

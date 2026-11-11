@@ -1009,6 +1009,41 @@ def _check_resin_watch() -> None:
         pass  # 清理失败也不致命：pushed 标记仍挡重复推送
 
 
+def _check_manual_dailies() -> None:
+    """手动打卡·独立时刻提醒（2026-11-12）：到点即推、当日一次、做完跳过。
+
+    只早不迟：第一个越过目标的 tick 落地（最迟≈轮询周期）；daemon 停机
+    跨过目标的，下次 tick 当场补发（fired 账本按 04:00 日界隔离，跨日自动
+    重置）。推送未成功不记账，下个 tick 重试——与活动提醒记账同哲学。
+    """
+    from core.config import load_config
+    from core import dailies
+
+    config = load_config(CONFIG_PATH)
+    items = [dict(id=d.id, name=d.name, mode=d.mode, time=d.time,
+                  template=d.template, enabled=d.enabled)
+             for d in config.custom_dailies
+             if d.enabled and d.mode == "standalone"]
+    if not items:
+        return
+    for it in dailies.standalone_due(items, USER_DIR):
+        body = dailies.render_message(it)
+        try:
+            from core.notifier import build_notifiers, push_all
+
+            notifiers = build_notifiers(config.push)
+            results = push_all(
+                notifiers, dailies.STANDALONE_TITLE, body, dry_run=False
+            ) if notifiers else []
+            if any(r.ok for r in results):
+                dailies.mark_fired(it["id"], USER_DIR)
+                logger.info("手动打卡独立提醒已推：%s（%s）", it["name"], it["time"])
+            else:
+                logger.warning("手动打卡推送未成功（下个 tick 重试）：%s", it["name"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("手动打卡推送异常（下个 tick 重试）：%s", exc)
+
+
 def _loop(stop_event: threading.Event) -> None:
     logger.info("轮询线程已启动，间隔 %d 秒", TICK_SECONDS)
     while not stop_event.is_set():
@@ -1024,6 +1059,10 @@ def _loop(stop_event: threading.Event) -> None:
             snapshot_daily(USER_DIR)   # 数据快照（#6②）：跨日触发拍一次（幂等）
         except Exception:  # noqa: BLE001 - 快照炸了不许弄死轮询线程
             logger.exception("数据快照异常（已忽略，继续运行）")
+        try:
+            _check_manual_dailies()   # 手动打卡独立时刻提醒（只早不迟）
+        except Exception:  # noqa: BLE001 - 打卡炸了不许弄死轮询线程
+            logger.exception("手动打卡独立提醒异常（已忽略，继续运行）")
         try:
             _check_resin_watch()  # ⭐ 回满即推：预测到点触发复核巡检
         except Exception:  # noqa: BLE001 - watcher 炸了不许弄死轮询线程

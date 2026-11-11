@@ -29,6 +29,8 @@ class DailyReport:
     activity_alerts: List[Any] = field(default_factory=list)
     #: 活动开始提醒（刚上线、今天还没提醒过的活动）
     activity_start_alerts: List[Any] = field(default_factory=list)
+    #: 手动打卡未完成行（已渲染好模板文案，2026-11-12）
+    manual_lines: List[str] = field(default_factory=list)
 
     # ---------------- 分组 ---------------- #
     @property
@@ -142,6 +144,9 @@ class DailyReport:
             lines.append(f"⚠️  {alert.warn_line()}")
         for alert in self.activity_alerts:
             lines.append(alert.warn_line())
+        # 手动打卡未完成行（2026-11-12）：日志与推送同口径
+        for row in self.manual_lines:
+            lines.append(row)
 
         if self.unfinished:
             names = "、".join(item.game_name for item in self.unfinished)
@@ -244,6 +249,11 @@ class DailyReport:
                 lines.append(alert.warn_line())
             for alert in self.activity_start_alerts:
                 lines.append(alert.warn_line())
+        # 手动打卡未完成行（2026-11-12）：与游戏日常同列的「今天还差什么」
+        if self.manual_lines:
+            lines.append("")
+            for row in self.manual_lines:
+                lines.append(row)
         return title, "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -353,6 +363,7 @@ def build_report(
     thresholds: Optional[Dict[str, int]] = None,
     activity_alerts: Optional[List[Any]] = None,
     activity_start_alerts: Optional[List[Any]] = None,
+    manual_lines: Optional[List[str]] = None,
 ) -> DailyReport:
     """入口函数：状态列表 -> 汇总报告。
 
@@ -360,12 +371,14 @@ def build_report(
     传了就顺带判定体力溢出，不传则不做（向后兼容旧调用）。
     ``activity_alerts`` 由 ``core.activities.pending_alerts()`` 提供，直接挂进报告。
     ``activity_start_alerts`` 由 ``pending_start_alerts()`` 提供（活动上新提醒）。
+    ``manual_lines`` 由 ``core.dailies`` 渲染的手动打卡未完成行（2026-11-12）。
     """
     return DailyReport(
         statuses=list(statuses),
         resource_alerts=detect_resource_alerts(statuses, thresholds),
         activity_alerts=list(activity_alerts or []),
         activity_start_alerts=list(activity_start_alerts or []),
+        manual_lines=list(manual_lines or []),
     )
 
 

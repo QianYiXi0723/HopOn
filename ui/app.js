@@ -1572,6 +1572,218 @@ document.getElementById('resin-toggle')
 document.getElementById('activity-toggle')
   .addEventListener('change', toggleActivityAlert);
 
+/* ========================= 手动打卡（2026-11-12） ========================= */
+/* 数据单源：/api/custom_dailies（04:00 游戏日界账本在引擎侧）；
+   抽屉/报表组/托盘三面同账本，前端零本地持久化 */
+let dlState = { items: [], default_template: '' };
+
+async function loadDailies(){
+  try {
+    const d = await fetch('/api/custom_dailies').then(function(r){ return r.json(); });
+    if (d && d.ok) {
+      dlState = d;
+      renderDailiesList();
+      renderManualGroup();
+    }
+  } catch (e) { console.error('手动打卡读取失败', e); }
+}
+
+function renderDailiesList(){
+  const box = document.getElementById('dailies-list');
+  if (!box) return;
+  const items = dlState.items || [];
+  if (!items.length) {
+    box.innerHTML = '<div class="hint">还没有手动打卡项——点下方「＋ 新增提醒」添加第一个。</div>';
+  } else {
+    box.innerHTML = items.map(function(it){
+      const done = !!it.done_today;
+      const modeTxt = it.mode === 'standalone'
+        ? ('每日 · 独立 ' + (it.time || '--:--')) : '每日 · 随巡检推送';
+      const tip = '推送效果：' + (it.push_text || '');
+      return '<div class="dl-row' + (done ? ' is-done' : '') + (!it.enabled ? ' is-off' : '') + '">' +
+        '<input type="checkbox" class="dl-check" data-id="' + escHtml(it.id) + '"' +
+        (done ? ' checked' : '') + (!it.enabled ? ' disabled' : '') +
+        ' title="' + escHtml(tip) + '">' +
+        '<div class="dl-main"><span class="dl-name">' + escHtml(it.name) + '</span>' +
+        '<span class="dl-meta">' + escHtml(modeTxt) + (!it.enabled ? ' · 已停用' : '') + '</span></div>' +
+        '<button type="button" class="dl-edit" data-id="' + escHtml(it.id) + '">编辑</button>' +
+        '<button type="button" class="dl-del" data-id="' + escHtml(it.id) + '" title="删除，之后不再提醒">×</button>' +
+        '</div>';
+    }).join('');
+  }
+  const doneN = items.filter(function(i){ return i.done_today; }).length;
+  setSum('dailies', items.length
+    ? (items.length + ' 项 · 今日 ' + doneN + '/' + items.length) : '0 项', '手动打卡');
+}
+
+function renderManualGroup(){
+  const box = document.getElementById('manual-group');
+  if (!box) return;
+  const items = dlState.items || [];
+  if (!items.length) { box.hidden = true; box.innerHTML = ''; return; }
+  const doneN = items.filter(function(i){ return i.done_today; }).length;
+  box.hidden = false;
+  box.innerHTML = '<div class="manual-head">—— 手动打卡 · 今日 ' + doneN + '/' + items.length + ' ——</div>' +
+    items.map(function(it){
+      const done = !!it.done_today;
+      const modeTxt = it.mode === 'standalone' ? ('独立 ' + (it.time || '')) : '随巡检推送';
+      return '<div class="dl-row' + (done ? ' is-done' : '') + '">' +
+        '<input type="checkbox" class="dl-check" data-id="' + escHtml(it.id) + '"' +
+        (done ? ' checked' : '') + '>' +
+        '<div class="dl-main"><span class="dl-name">' + escHtml(it.name) + '</span>' +
+        '<span class="dl-meta">' + escHtml(modeTxt) + '</span></div></div>';
+    }).join('');
+}
+
+async function toggleDailiesDone(id, done, box){
+  if (box) box.disabled = true;
+  try {
+    const d = await postJSON('/api/custom_dailies',
+                             { action: 'toggle_done', id: id, undo: !done });
+    if (!d.ok) toast(d.message || '操作失败', true);
+    await loadDailies();   // 回显以服务端为准（三面同账本）
+  } catch (e) {
+    toast('操作失败：' + e, true);
+    if (box) box.disabled = false;
+  }
+}
+
+/* 弹窗：新增/编辑共用（dlEditingId 空=新增） */
+let dlEditingId = '';
+
+function currentDailiesMode(){
+  const b = document.querySelector('#df-mode button.on');
+  return b ? b.dataset.mode : 'merged';
+}
+
+function updateDailiesPreview(){
+  const name = document.getElementById('df-name').value.trim() || '（名称）';
+  const tpl = document.getElementById('df-template').value.trim()
+    || dlState.default_template
+    || '📌 {name} 还没做，记得处理，完成后在托盘勾掉';
+  const timeVal = currentDailiesMode() === 'standalone'
+    ? (document.getElementById('df-time').value || '--:--') : '';
+  const txt = tpl.replace(/\{name\}/g, name).replace(/\{time\}/g, timeVal)
+    .replace(/\{[a-zA-Z_]+\}/g, '');
+  document.getElementById('df-preview').textContent = '推送效果：' + txt;
+}
+
+function setDailiesMode(mode){
+  document.querySelectorAll('#df-mode button').forEach(function(b){
+    b.classList.toggle('on', b.dataset.mode === mode);
+  });
+  const row = document.getElementById('df-time-row');
+  const time = document.getElementById('df-time');
+  if (row) row.classList.toggle('is-disabled', mode !== 'standalone');
+  if (time) time.disabled = mode !== 'standalone';
+  updateDailiesPreview();
+}
+
+function openDailiesModal(id){
+  dlEditingId = id || '';
+  const it = (dlState.items || []).find(function(i){ return i.id === id; }) || {};
+  document.getElementById('dailies-modal-title').textContent =
+    id ? '编辑提醒' : '新增提醒';
+  document.getElementById('df-name').value = it.name || '';
+  setDailiesMode(it.mode || 'merged');
+  document.getElementById('df-time').value = it.time || '20:00';
+  document.getElementById('df-enabled').checked = it.enabled !== false;
+  document.getElementById('df-template').value = it.template || '';
+  document.getElementById('df-err').hidden = true;
+  updateDailiesPreview();
+  document.getElementById('dailies-modal').hidden = false;
+}
+
+function closeDailiesModal(){
+  document.getElementById('dailies-modal').hidden = true;
+}
+
+document.getElementById('btn-dailies-add')
+  .addEventListener('click', function(){ openDailiesModal(''); });
+document.getElementById('dailies-list').addEventListener('change', function(e){
+  const box = e.target.closest('.dl-check');
+  if (box) toggleDailiesDone(box.dataset.id, box.checked, box);
+});
+document.getElementById('dailies-list').addEventListener('click', function(e){
+  const ed = e.target.closest('.dl-edit');
+  if (ed) { openDailiesModal(ed.dataset.id); return; }
+  const del = e.target.closest('.dl-del');
+  if (del) postDailiesDelete(del.dataset.id);
+});
+const manualGroupEl = document.getElementById('manual-group');
+if (manualGroupEl) {
+  manualGroupEl.addEventListener('change', function(e){
+    const box = e.target.closest('.dl-check');
+    if (box) toggleDailiesDone(box.dataset.id, box.checked, box);
+  });
+}
+document.getElementById('df-mode').addEventListener('click', function(e){
+  const b = e.target.closest('button[data-mode]');
+  if (b) setDailiesMode(b.dataset.mode);
+});
+['df-name', 'df-time', 'df-template'].forEach(function(id){
+  document.getElementById(id).addEventListener('input', updateDailiesPreview);
+});
+document.getElementById('df-tpl-reset').addEventListener('click', function(){
+  document.getElementById('df-template').value = '';
+  updateDailiesPreview();
+});
+document.getElementById('dailies-modal-close').addEventListener('click', closeDailiesModal);
+document.getElementById('df-cancel').addEventListener('click', closeDailiesModal);
+document.getElementById('dailies-modal').addEventListener('click', function(e){
+  if (e.target === this) closeDailiesModal();   // 点遮罩关闭
+});
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape' && !document.getElementById('dailies-modal').hidden) {
+    closeDailiesModal();
+  }
+});
+
+function postDailiesDelete(id){
+  postJSON('/api/custom_dailies', { action: 'del', id: id })
+    .then(function(d){
+      if (!d.ok) { toast(d.message || '删除失败', true); return; }
+      toast(d.message || '已删除');
+      loadDailies();
+    })
+    .catch(function(e){ toast('删除失败：' + e, true); });
+}
+
+document.getElementById('df-save').addEventListener('click', function(){
+  const btn = this;
+  const name = document.getElementById('df-name').value.trim();
+  const mode = currentDailiesMode();
+  const time = document.getElementById('df-time').value;
+  const err = document.getElementById('df-err');
+  if (!name) { err.textContent = '名称不能为空'; err.hidden = false; return; }
+  if (mode === 'standalone' && !time) {
+    err.textContent = '独立时刻需要选择时间'; err.hidden = false; return;
+  }
+  err.hidden = true;
+  btn.disabled = true;
+  const payload = {
+    action: dlEditingId ? 'update' : 'add',
+    name: name, mode: mode, time: mode === 'standalone' ? time : '',
+    template: document.getElementById('df-template').value.trim(),
+    enabled: document.getElementById('df-enabled').checked,
+  };
+  if (dlEditingId) payload.id = dlEditingId;
+  postJSON('/api/custom_dailies', payload)
+    .then(function(d){
+      btn.disabled = false;
+      if (!d.ok) { err.textContent = d.message || '保存失败'; err.hidden = false; return; }
+      closeDailiesModal();
+      toast(d.message || '已保存');
+      loadDailies();
+    })
+    .catch(function(e){
+      btn.disabled = false;
+      toast('保存失败：' + e, true);
+    });
+});
+
+loadDailies().catch(function(){});   // 初始拉一次（报表组同源）
+
 /* ========================= 折叠面板参数摘要 =========================
    每个设置行标题右侧的 11px 摘要，数据永远取当前 DOM（开关 + 输入框）。
    三类时机会刷新：

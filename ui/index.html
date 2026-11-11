@@ -130,6 +130,7 @@
         <button type="button" class="btn sm" id="btn-stats-refresh" style="height:24px" data-tip="重新查询全部游戏并渲染概览（同时更新报表；受风控冷却保护，约需 5~15 秒）">刷新</button>
       </div>
       <div id="h-stats"></div>
+      <div id="manual-group" hidden></div>
     </section>
 
     <section class="card s12">
@@ -739,6 +740,21 @@
             </div>
           </details>
 
+          <details class="set-item" id="acc-dailies">
+            <summary class="set-head">
+              <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-list"/></svg></i>
+                <span class="set-txt"><b>手动打卡</b></span>
+              </span>
+              <span class="set-sum" id="sum-dailies">读取中…</span>
+              <span class="set-end"></span>
+            </summary>
+            <div class="set-body">
+              <div id="dailies-list"><div class="hint">读取中…</div></div>
+              <button type="button" class="btn" id="btn-dailies-add" style="width:100%;margin-top:8px">＋ 新增提醒</button>
+              <div class="hint">无 API 游戏的日常在这手动记：每天提醒、做完勾掉，次日 04:00 随游戏日常重置自动重开。「随巡检推送」并进班次推送末尾，不单独打扰。</div>
+            </div>
+          </details>
+
           <details class="set-item" id="acc-quiet">
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-clock"/></svg></i>
@@ -795,6 +811,41 @@
      其它页签下整棵子树 display:none，弹窗会「点了没反应」 -->
     <!-- ======== 月报下钻（2026-11-06）：徽章点击 → 整月月历 ======== -->
     <!-- ======== 月报下钻（2026-11-06）：徽章点击 → 整月月历 ======== -->
+    <!-- 手动打卡：新增/编辑弹窗（必须放 .app / 所有 tabpanel 之外） -->
+    <div class="modal-mask" id="dailies-modal" hidden>
+      <div class="modal modal--dailies">
+        <div class="modal-head">
+          <b id="dailies-modal-title">新增提醒</b>
+          <span class="spacer"></span>
+          <button type="button" class="modal-x" id="dailies-modal-close" title="关闭">✕</button>
+        </div>
+        <div class="df-row"><span class="df-label">名称*</span>
+          <input type="text" id="df-name" maxlength="20" placeholder="如：死亡搁浅2 日常"></div>
+        <div class="df-row"><span class="df-label">模式</span>
+          <div class="seg-mini" id="df-mode">
+            <button type="button" data-mode="merged" class="on">随巡检推送</button>
+            <button type="button" data-mode="standalone">独立时刻</button>
+          </div></div>
+        <div class="df-row" id="df-time-row"><span class="df-label">提醒时刻</span>
+          <input type="time" id="df-time" value="20:00" step="60"></div>
+        <div class="df-row"><span class="df-label">启用</span>
+          <input type="checkbox" id="df-enabled" checked></div>
+        <div class="df-row df-row--top"><span class="df-label">消息模板</span>
+          <textarea id="df-template" rows="2" maxlength="100"
+                    placeholder="📌 {name} 还没做，记得处理，完成后在托盘勾掉"></textarea></div>
+        <div class="df-actions">
+          <button type="button" class="btn" id="df-tpl-reset">恢复默认文案</button>
+          <span class="spacer"></span>
+        </div>
+        <div class="hint" id="df-preview">推送效果：—</div>
+        <div class="hint df-err" id="df-err" hidden></div>
+        <div class="row3">
+          <button type="button" class="btn" id="df-cancel">取消</button>
+          <button type="button" class="btn" id="df-save">保存</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-mask" id="month-modal" hidden>
       <div class="modal modal--month">
         <div class="modal-head">

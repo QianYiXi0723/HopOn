@@ -717,14 +717,17 @@ namespace HopOn
                 string text = "";
                 var m = Regex.Match(resp, "\"text\"\\s*:\\s*\"([^\"]*)\"");
                 if (m.Success) text = m.Groups[1].Value.Replace("\\n", "\n");
+                string manual = "";
+                var mm = Regex.Match(resp, "\"manual\"\\s*:\\s*\"([^\"]*)\"");
+                if (mm.Success) manual = mm.Groups[1].Value.Replace("\\n", "\n");
                 if (IsHandleCreated && !IsDisposed)
-                    BeginInvoke((Action)(() => ApplyTraySummary(headline, pending, text)));
+                    BeginInvoke((Action)(() => ApplyTraySummary(headline, pending, text, manual)));
             });
         }
 
-        /// <summary>把摘要渲染进托盘：信息行置顶（只读），操作区按微软规范排序；
-        /// 默认命令加粗；不适用的信息直接不渲染。菜单展开中则等下个 tick 再拆。</summary>
-        private void ApplyTraySummary(string headline, bool pending, string text)
+        /// <summary>把摘要渲染进托盘：信息行置顶（只读），手动打卡可勾行，
+        /// 操作区按微软规范排序；默认命令加粗；不适用的信息直接不渲染。</summary>
+        private void ApplyTraySummary(string headline, bool pending, string text, string manual)
         {
             try
             {
@@ -738,6 +741,22 @@ namespace HopOn
                     foreach (var line in text.Split('\n'))
                         if (line.Length > 0)
                             menu.Items.Add(new ToolStripMenuItem(line) { Enabled = false });
+                // 手动打卡可勾行（2026-11-12）：「☐ 名称」点一下=今日完成
+                if (!string.IsNullOrEmpty(manual))
+                    foreach (var line in manual.Split('\n'))
+                    {
+                        var parts = line.Split('|');
+                        if (parts.Length < 3 || parts[0].Length == 0) continue;
+                        bool done = parts[2] == "1";
+                        var mi = new ToolStripMenuItem((done ? "✓ " : "☐ ") + parts[1])
+                        { Enabled = !done };
+                        if (!done)
+                        {
+                            var mid = parts[0];
+                            mi.Click += (s, e) => ToggleManualDone(mid);
+                        }
+                        menu.Items.Add(mi);
+                    }
                 menu.Items.Add(new ToolStripSeparator());
                 var open = new ToolStripMenuItem("打开控制台", null, (s, e) => ShowMain());
                 open.Font = new Font(open.Font, FontStyle.Bold);   // 默认命令加粗（微软规范）
@@ -801,6 +820,17 @@ namespace HopOn
                 if (IsHandleCreated && !IsDisposed)
                     BeginInvoke((Action)(() => _tray.ShowBalloonTip(5000, "HopOn", msg,
                         ok ? ToolTipIcon.Info : ToolTipIcon.Warning)));
+            });
+        }
+
+        /// <summary>托盘手动打卡勾选：POST toggle_done 后立即重拉摘要。</summary>
+        private void ToggleManualDone(string id)
+        {
+            Task.Run(() =>
+            {
+                HttpJson(_port, "/api/custom_dailies", "POST",
+                         "{\"action\":\"toggle_done\",\"id\":\"" + id + "\"}", 8000);
+                RefreshTraySummary();
             });
         }
 
