@@ -180,8 +180,15 @@ function pushEnabled(group, games, enabled){
     .then(function(d){
       if (!d || !d.ok) { toast((d && d.message) || '设置失败', true); loadAccounts(); return; }
       toast(d.message || (enabled ? '已开启提醒' : '已关闭提醒'));
+      kickLiveRefresh();   // 监控集变了：后台踢一次全量实时查询，缓存/托盘/概览跟进
     })
     .catch(function(){ toast('无法连接本地服务', true); });
+}
+
+/* 监控开关变化后的缓存跟进（fire-and-forget 不阻塞 UI）：force 全量查询
+   走引擎侧并发闸（连点去重）；新缓存落地后托盘 30s 内自动跟随 */
+function kickLiveRefresh(){
+  fetch('/api/live?refresh=1').catch(function(){});
 }
 
 /* 「全选」按钮文案随状态变化 + 游戏监控抽屉的折叠摘要
