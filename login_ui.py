@@ -2552,7 +2552,7 @@ def tray_summary_status() -> Dict[str, Any]:
             key = str(g.get("game") or "")
             short = TRAY_GAME_SHORT.get(key) or str(g.get("game_name") or "?")[:1]
             if g.get("error"):
-                lines.append(f"{short} 查询失败：{str(g.get('error'))[:18]}")
+                lines.append(f"{short}　查询失败：{str(g.get('error'))[:18]}")
                 continue
             res = g.get("resource") or {}
             cur, mx = res.get("current"), res.get("maximum")
@@ -2561,9 +2561,10 @@ def tray_summary_status() -> Dict[str, Any]:
             if cur >= mx:
                 pending_descs.append(f"{short} 已满")
                 # 排版纪律（2026-11-11 用户反馈：托盘行要排列整齐）：定宽三段式——
-                # 简称+空格 + 值/上限各右对齐 3 位 + 「 · 」+ 12 半角宽尾列。
+                # 简称 + 全角空格（2026-11-12 用户反馈：名字与数据再拉开）+
+                # 值/上限各右对齐 3 位 + 「 · 」+ 12 半角宽尾列。
                 # 已满尾列用「已满（可清）」凑等宽，顺带把动作提示带上。
-                lines.append(f"{short} {cur:>3}/{mx:>3} · 已满（可清）{stale_tag}")
+                lines.append(f"{short}　{cur:>3}/{mx:>3} · 已满（可清）{stale_tag}")
                 continue
             recover = res.get("recover")
             tail = ""
@@ -2576,9 +2577,9 @@ def tray_summary_status() -> Dict[str, Any]:
                         hm = f"{h}h{m:02d}m" if h else f"{m}m"
                         pending_descs.append(f"{short} 将满({hm})")
             if tail:
-                lines.append(f"{short} {cur:>3}/{mx:>3} · {tail}{stale_tag}")
+                lines.append(f"{short}　{cur:>3}/{mx:>3} · {tail}{stale_tag}")
             else:
-                lines.append(f"{short} {cur:>3}/{mx:>3}{stale_tag}")
+                lines.append(f"{short}　{cur:>3}/{mx:>3}{stale_tag}")
 
     if pending_descs:
         shown = " · ".join(pending_descs[:3])
