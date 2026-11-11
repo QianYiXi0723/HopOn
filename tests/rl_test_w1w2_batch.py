@@ -110,6 +110,14 @@ if gate_at >= 0:
     call_at = src.find("alert, reason = should_push(")
     check("B5 硬闸在 should_push 之后", call_at >= 0 and gate_at > call_at)
 
+# B6：全关游戏（statuses 空）时「完成也推送」不得产生 0 账号平安通知
+# 2026-11-11 真机实证：用户开着 always_notify，取消全选后本应静默，
+# 修复前 should_push 会推一条「账号数据未就绪」的垃圾通知。
+check(
+    "B6 空账号表时 always_notify 被护栏压掉",
+    "always_notify=config.push.always_notify and bool(report.statuses)" in src,
+)
+
 
 print("=== C. 免打扰窗口边界 ===")
 from core.notifier import in_quiet_window  # noqa: E402

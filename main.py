@@ -981,11 +981,14 @@ def run_once(config: AppConfig, dry_run: bool = False, quiet_push: bool = False)
         quiet_window = quiet_window or "日界前落盘（不打扰）"
 
     # 3) 推送决策
+    # 「完成也推送」的平安通知只在真查到了账号时才有意义：所有游戏都被关掉
+    # （statuses 空）时，0 账号的「全部完成/数据未就绪」是纯噪音，按未开启处理
+    # （2026-11-11 用户问及「取消全选」场景时补的护栏）
     alert, reason = should_push(
         config.test_mode,
         report.need_alert,
         len(report.unfinished),
-        always_notify=config.push.always_notify,
+        always_notify=config.push.always_notify and bool(report.statuses),
         overflow_count=len(report.resource_alerts),
         activity_count=(
             len(report.activity_alerts) + len(report.activity_start_alerts)
