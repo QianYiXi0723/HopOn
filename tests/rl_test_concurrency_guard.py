@@ -16,6 +16,7 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -113,10 +114,14 @@ check("T2 skland cred 缓存并发不丢条目",
 import core.activities as acts
 
 acts.CACHE_PATH = TMP / "activities.json"
+# 用「今天」做键：_prune_notified 按 NOTIFIED_KEEP_DAYS 裁旧日期，
+# 写死 2026-10-31 一旦过保留期就会被裁掉（2026-11-11 全量回归实测），
+# 那样测的就不是「合并」而是「过期清理」了。
+_today_key = datetime.now().strftime("%Y-%m-%d")
 acts.CACHE_PATH.write_text(json.dumps({
     "version": acts.CACHE_VERSION,
     "items": [{"game": "genshin", "kind": "act", "title": "旧活动", "remote_id": "r1"}],
-    "notified": {"2026-10-31": ["genshin:act:r1"]},   # daemon 刚 mark 的（磁盘最新）
+    "notified": {_today_key: ["genshin:act:r1"]},   # daemon 刚 mark 的（磁盘最新）
     "fetched_at": "2026-10-30 01:00:00",
 }, ensure_ascii=False), encoding="utf-8")
 
@@ -128,7 +133,7 @@ acts._merge_notified_and_save(stale)
 
 after = json.loads(acts.CACHE_PATH.read_text(encoding="utf-8"))
 check("T3 notified 合并以磁盘为准不被回滚",
-      after["notified"].get("2026-10-31") == ["genshin:act:r1"]
+      after["notified"].get(_today_key) == ["genshin:act:r1"]
       and after["items"][0]["remote_id"] == "r2",
       "notified=%s" % after["notified"])
 

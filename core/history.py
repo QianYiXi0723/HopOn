@@ -200,6 +200,8 @@ def _atomic_write(data: Dict[str, Any]) -> None:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
             handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())   # 耐久线（#6①补全）：断电时 replace 指向的必是完整内容
         os.replace(tmp, HISTORY_PATH)
     except BaseException:
         try:

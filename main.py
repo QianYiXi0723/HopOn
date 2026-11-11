@@ -906,8 +906,10 @@ def run_once(config: AppConfig, dry_run: bool = False, quiet_push: bool = False)
             from core import activities
 
             activities.ensure_fresh()
-            activity_alerts = activities.pending_alerts(
-                hours=config.activity_alert_days * 24
+            # 结束推送三段梯度（2026-11-11 #9）：每档终身一次、迟过的档当场
+            # 补发，取代旧「提前 N 天每日可重复」单档——每活动最多三条
+            activity_alerts = activities.pending_deadline_alerts(
+                tiers=config.activity_deadline_tiers
             )
             # 活动上新提醒（开始后 24h 窗口内首巡检触发，终身只推一次）
             activity_start_alerts = activities.pending_start_alerts()
@@ -920,11 +922,33 @@ def run_once(config: AppConfig, dry_run: bool = False, quiet_push: bool = False)
         except Exception as exc:  # noqa: BLE001 - 活动提醒坏了也不能影响日常检查
             logger.warning("读取活动提醒失败（不影响本轮检查）：%s", exc)
 
+    # 1.7) 手动打卡（2026-11-12）：无 API 游戏的日常，未完成项并入班次推送
+    #      （模板已在 core.dailies 渲染好；做完勾掉的用户当日不再出现）
+    manual_lines = []
+    if config.custom_dailies:
+        try:
+            from core import dailies
+
+            user_dir = config.config_path.parent
+            enabled_items = [
+                dict(id=d.id, name=d.name, mode=d.mode, time=d.time,
+                     template=d.template, enabled=d.enabled)
+                for d in config.custom_dailies
+                if d.enabled and d.mode == "merged"   # standalone 有自己的独立时刻
+            ]
+            manual_lines = [
+                dailies.render_message(it)
+                for it in dailies.undone_today(enabled_items, user_dir)
+            ]
+        except Exception as exc:  # noqa: BLE001 - 手动打卡坏了不影响本轮检查
+            logger.warning("读取手动打卡失败（不影响本轮检查）：%s", exc)
+
     # 2) 判断（体力溢出预警复用本轮查询结果，不额外发请求）
     report = build_report(
         statuses, config.resource_thresholds,
         activity_alerts=activity_alerts,
         activity_start_alerts=activity_start_alerts,
+        manual_lines=manual_lines,
     )
     # 2.1) 体力回满预测：写进 watch 文件（daemon tick 预测到点 → 复核巡检）。
     #      必须放在 build_report 之后——第二轮实参是「本轮已到预警阈值的游戏」，
@@ -979,11 +1003,14 @@ def run_once(config: AppConfig, dry_run: bool = False, quiet_push: bool = False)
         quiet_window = quiet_window or "日界前落盘（不打扰）"
 
     # 3) 推送决策
+    # 「完成也推送」的平安通知只在真查到了账号时才有意义：所有游戏都被关掉
+    # （statuses 空）时，0 账号的「全部完成/数据未就绪」是纯噪音，按未开启处理
+    # （2026-11-11 用户问及「取消全选」场景时补的护栏）
     alert, reason = should_push(
         config.test_mode,
         report.need_alert,
         len(report.unfinished),
-        always_notify=config.push.always_notify,
+        always_notify=config.push.always_notify and bool(report.statuses),
         overflow_count=len(report.resource_alerts),
         activity_count=(
             len(report.activity_alerts) + len(report.activity_start_alerts)
@@ -1043,7 +1070,7 @@ def run_once(config: AppConfig, dry_run: bool = False, quiet_push: bool = False)
             try:
                 from core import activities
 
-                activities.mark_notified(report.activity_alerts)
+                activities.mark_tier_notified(report.activity_alerts)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("记录活动提醒失败（下次可能重复提醒）：%s", exc)
         if report.activity_start_alerts:

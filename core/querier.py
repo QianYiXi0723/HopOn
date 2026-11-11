@@ -734,8 +734,10 @@ class SklandQuerier(BaseQuerier):
         nickname = str(binding.get("nickName") or "")
         role = binding.get("defaultRole") if isinstance(binding.get("defaultRole"), dict) else {}
 
-        # 展示玩家昵称优先角色昵称
-        display = str(role.get("nickname") or "") or nickname
+        # 展示玩家昵称优先角色昵称。明日方舟昵称带「#0642」标签，只留名字
+        # （用户裁决 2026-11-09：编号是平台内部后缀，界面上是噪音）
+        display = re.sub(r"\s*#\d+\s*$", "",
+                         str(role.get("nickname") or "") or nickname).strip()
         if display:
             account.nickname = display
 

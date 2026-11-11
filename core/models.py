@@ -199,9 +199,11 @@ class ResourceAlert:
                 f"{self.current}/{self.maximum}（超出 {self.current - self.maximum} 点）！"
             )
         if self.current == self.maximum:
+            # 2026-11-09 用户要求：已满只说「已满 N/N」，后面那句解释去掉
+            # （原话「就行了，后面的不要」）——满没满一眼可见，不必再说教。
             return (
                 f"⚠️ 警告：{self.game_name}{self.resource}已满 "
-                f"{self.current}/{self.maximum}，体力已停止恢复，赶紧消耗！"
+                f"{self.current}/{self.maximum}"
             )
         return (
             f"⚠️ 警告：{self.game_name}{self.resource}已达到 "

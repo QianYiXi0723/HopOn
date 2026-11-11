@@ -49,14 +49,19 @@
   /* ---------- 布局：整体纵向（上方=侧栏+内容，底部=日志台），日志不再挤占/悬浮 ---------- */
   .app{height:100vh;display:flex;flex-direction:column;overflow:hidden}
   .app-body{flex:1;display:flex;min-height:0}
+  /* ---------- 侧栏（2026-11-11 按抖音侧栏提示词统一几何）----------
+     六条规则：保留内容/配色/交互，只动几何——字号圆角间距统一、
+     两侧留白一致、图标略小于文字、行留白+热区、组间>组内、左缘对齐。
+     水平节奏基准 = side 左右 10px + 行内 12px = 22px 文字左缘，
+     brand / nav / side-foot 三段全部对齐到这条线。 */
   .side{width:200px;flex:none;background:var(--bg-side);
-        display:flex;flex-direction:column;padding:10px 8px}
-  .brand{display:flex;align-items:center;gap:8px;padding:6px 8px 12px}
+        display:flex;flex-direction:column;padding:12px 10px}
+  .brand{display:flex;align-items:center;gap:8px;padding:4px 12px 14px}
   .logo{width:26px;height:26px;border-radius:4px;background:var(--brand);color:#fff;
         display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}
   .brand b{display:block;font-size:15px;line-height:1.2}
   .brand span{font-size:12px;color:var(--muted)}
-  .nav{display:flex;flex-direction:column;gap:4px}
+  .nav{display:flex;flex-direction:column;gap:6px}
   .nav button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
         padding:10px 12px;border-radius:8px;
         border:none;background:transparent;color:var(--fg);font-size:13px;cursor:pointer;
@@ -68,7 +73,7 @@
   .nav button.on .nav-ico{color:var(--nav-on-fg)}
   /* 选中态交互（借鉴 SRA 侧栏）：图标淡出收起、文字平滑左移补位 */
   .nav button.on .nav-ico{width:0;opacity:0}
-  .side-foot{margin-top:auto;padding:10px 8px 4px;
+  .side-foot{margin-top:auto;padding:10px 12px 4px;
         font-size:12px;color:var(--muted)}
   .theme-btn{display:flex;align-items:center;gap:8px;width:100%;
         text-align:left;padding:4px 0;border:none;background:transparent;
@@ -192,6 +197,13 @@
      压缩，迷你卡（含体力条）溢出画进「最近 7 天」卡；改为卡内滚动后溢出归零 */
   #h-stats{flex:1 1 auto;min-height:0;overflow-y:auto;
            padding:6px 10px 20px;margin:-6px -10px 0;scrollbar-gutter:stable}
+  /* 日常概览全量露出（2026-11-12 用户裁决：不要卡内滚动，每个游戏都露出来）——
+     大窗对齐小窗：退出仪表盘高度链，概览/末卡按内容生长，.main 页面级滚动接管；
+     KPI 吸顶在 .main 滚动容器内自然生效。回滚 = 删除本块 */
+  #tab-history.on{flex:none;height:auto;grid-template-rows:none}
+  #h-stats{flex:0 0 auto;overflow-y:visible;padding-bottom:0;scrollbar-gutter:auto}
+  #tab-history > .card:last-child > div:not(.card-head){
+    flex:0 0 auto;overflow-y:visible;padding-bottom:0}
   .gdot{display:inline-block;width:8px;height:8px;border-radius:50%;
         margin-right:8px;vertical-align:1px}
   .pill{display:inline-block;padding:2px 12px;border-radius:999px;
@@ -991,7 +1003,7 @@
      auto-fit 折叠空轨道，N 张卡摊满整行，宽度由列数吸收（满幅纪律）；
      420px 下限保证卡内进度条不失真。 */
   .gcards{display:grid;
-          grid-template-columns:repeat(auto-fit, minmax(420px, 1fr));
+          grid-template-columns:repeat(auto-fill, minmax(420px, 1fr));
           gap:16px;align-content:start}
   .gcard{border-radius:8px;padding:16px 16px;min-width:0;
          display:flex;flex-direction:column;gap:8px;
@@ -1044,6 +1056,10 @@
   .sbar{flex:1;position:relative;height:6px;background:var(--line);border-radius:999px;min-width:0}
   .sbar i{display:block;height:100%;background:var(--brand);border-radius:999px}
   .sbar i.hot{background:var(--warn)}
+  /* 已完成（2026-11-09 用户要求「日常做完了进度条就变成绿色」）：
+     与 .hot 语义相反——hot 是「满了要溢出来，快处理」的告警色，
+     ok 是「做完了，安心」的达成色。日常进度条用 ok，体力条仍用 hot。 */
+  .sbar i.ok{background:var(--ok)}
   .gcard-foot{font-size:12px;color:var(--muted);
               padding-top:8px;margin-top:auto}
   .gcard-foot b{color:var(--fg)}
@@ -1162,6 +1178,7 @@
        缩号塞进标题行（概览 24 / 实时 22），卡片高度不变。
        例外：本周汇总 chips 行 8 款连排太挤，小窗不显示图标 */
     .gcard-ico{width:24px;height:24px;border-radius:6px}
+    #manual-group .gcard-ico.ph{font-size:14px}
     .live-card-head .gcard-ico.gcard-ico{width:22px;height:22px}
     .week-chip .gcard-ico{display:none}
     /* 小窗实时体力两列（与概览同口径）：minmax 420→300；
@@ -1173,7 +1190,7 @@
     .gcard{padding:10px 12px}
     /* 小窗两列（2026-11-09 用户裁决）：minmax 收到 300 让 auto-fit 排下两列，
        极窄（内容 <620px）时 auto-fit 自然回落单列 */
-    .gcards{grid-template-columns:repeat(auto-fit, minmax(300px, 1fr))}
+    .gcards{grid-template-columns:repeat(auto-fill, minmax(300px, 1fr))}
     .gcard-tasks .tp-item{font-size:12px}
     .hm-row{min-height:32px}
   }
@@ -1183,7 +1200,7 @@
      emoji 收不了的三个问题（跨版本渲染漂移 / 彩色与官方位图打架 / 不随主题）在此收口 */
   .ico{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;
        stroke-linecap:round;stroke-linejoin:round;flex:none}
-  .nav-ico .ico{width:15px;height:15px;vertical-align:-2px}
+  .nav-ico .ico{width:14px;height:14px;vertical-align:-2px}
   .set-ico .ico{width:16px;height:16px;vertical-align:-3px}
   h2 .ico{vertical-align:-3px}
   .console-title .ico{vertical-align:-3px}
@@ -1370,3 +1387,76 @@
   .kuro-status.err{color:var(--err,#e5484d)}
   .kuro-status.ok{color:var(--ok,#46a758)}
   #kuro-captcha:empty{display:none}
+
+  /* ---- 结束推送三段·卡片段位标记（2026-11-11 #9，与英雄卡关联）---- */
+  .row-tiers{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;
+    margin-top:10px;align-items:stretch}
+  .row-tiers .btn{border-radius:4px}
+  .act-tiers{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
+  .act-tier{flex:none;font-size:12px;font-weight:600;line-height:1;
+    padding:4px 8px;border-radius:999px;
+    background:var(--subtle);color:var(--muted)}
+  .act-tier.done{background:color-mix(in srgb, var(--ok,#46a758) 16%, transparent);
+    color:var(--ok,#46a758)}
+  .act-tier.off{opacity:.5}
+
+  /* ---- 杀软拦截自检（2026-11-11 #4）---- */
+  .av-verdict{font-size:14px;font-weight:600;line-height:1.6;margin-bottom:8px}
+  .av-verdict.clear{color:var(--ok,#46a758)}
+  .av-verdict.suspect{color:#d97706}
+  .av-verdict.blocked{color:var(--err,#e5484d)}
+
+  /* ---- 带单位输入框（2026-11-12：前缀标签+后缀单位，替代裸数字）---- */
+  .unit-field{display:flex;align-items:center;gap:6px;min-width:0}
+  .unit-field .u-pre,.unit-field .u-suf{flex:none;font-size:13px;color:var(--muted)}
+  .unit-field input{flex:1;min-width:0}
+
+  /* ---- 手动打卡（2026-11-12）---- */
+  /* auto-fit 会把空轨道塌缩成 0 → 单卡被拉满整行；auto-fill 保留空轨道，
+     手动打卡卡与上方游戏网格永远同宽同列 */
+  #manual-group .gcards{grid-template-columns:repeat(auto-fill, minmax(420px, 1fr));margin-top:16px}
+@media (max-width:1099px){
+  #manual-group .gcards{grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));margin-top:16px}}
+  /* 首字占位框：复用 gcard-ico 尺寸（40px），无图标游戏的兜底也顺带受益 */
+  .gcard-ico.ph{display:grid;place-items:center;background:var(--subtle);
+    font-size:18px;font-weight:700;color:var(--fg);line-height:1;padding:0;
+    text-align:center}
+  .dl-toggle{flex:none;border:none;border-radius:999px;padding:4px 12px;
+    font-size:12px;font-weight:600;cursor:pointer;line-height:1.4;
+    background:color-mix(in srgb, var(--brand) 16%, transparent);color:var(--brand)}
+  .dl-toggle.done{background:color-mix(in srgb, var(--ok,#46a758) 18%, transparent);
+    color:var(--ok,#46a758)}
+  .dl-toggle:hover{filter:brightness(1.15)}
+  .dl-gcard.is-done{opacity:.72}
+  .dl-row{display:flex;align-items:center;gap:8px;padding:7px 0;
+    border-bottom:1px solid var(--border)}
+  .dl-row:last-child{border-bottom:none}
+  .dl-row.is-done{opacity:.55}
+  .dl-row.is-off{opacity:.4}
+  .dl-check{flex:none;width:16px;height:16px;accent-color:var(--brand)}
+  .dl-main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .dl-name{font-size:14px;color:var(--fg);line-height:1.4;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dl-meta{font-size:13px;color:var(--muted);line-height:1.4}
+  .dl-edit,.dl-del{flex:none;background:none;border:none;color:var(--muted);
+    cursor:pointer;font-size:13px;padding:2px 6px}
+  .dl-edit:hover{color:var(--fg)}
+  .dl-del:hover{color:var(--err,#e5484d)}
+  .manual-head{font-size:13px;color:var(--muted);margin:10px 0 4px;text-align:center}
+  .df-row{display:flex;align-items:center;gap:8px;margin:10px 0;font-size:14px}
+  .df-row--top{align-items:flex-start}
+  .df-label{flex:none;width:64px;color:var(--muted)}
+  .df-row input[type=text],.df-row input[type=time],.df-row textarea{
+    flex:1;min-width:0;background:var(--subtle);border:1px solid var(--border);
+    border-radius:8px;padding:8px 10px;color:var(--fg);font-family:inherit;font-size:14px}
+  .df-row textarea{resize:vertical}
+  .df-row input[type=checkbox]{width:auto}
+  .df-row.is-disabled{opacity:.5}
+  .df-actions{display:flex;align-items:center;margin:4px 0}
+  .df-err{color:var(--err,#e5484d)}
+  .modal--dailies{max-width:560px}
+  .av-detail{font-size:13px;line-height:1.7;color:var(--muted);margin-bottom:10px}
+  .av-steps{margin:6px 0}
+  .av-steps summary{cursor:pointer;font-size:13px;color:var(--fg)}
+  .av-steps .hint{margin:6px 0 2px}
+  #av-sha{font-family:Consolas,'Courier New',monospace;font-size:12px}

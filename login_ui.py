@@ -460,6 +460,45 @@ def _serialized_write(func):
     return wrapper
 
 
+#: 出厂占位昵称。这几款游戏的绑定流程早期只写 token，没回填真实昵称，
+#: config 里一直是这些默认值——气泡/提示里直接念出来像是玩家的真名
+#: （「已关闭提醒：博士」），2026-11-09 用户实测指出。读出时一律降级成游戏名。
+PLACEHOLDER_NICKNAMES = frozenset({"博士", "管理员", "舰长", "指挥官", "漂泊者"})
+
+#: 尾部的「#1234」标签（明日方舟昵称格式 Name#0642）。用户裁决：
+#: 界面上只留名字，编号是平台内部的区分后缀，念出来/看起来都像噪音。
+_NICK_TAG_RE = re.compile(r"\s*#\d+\s*$")
+
+
+def clean_nickname(nick: Any) -> str:
+    """去掉昵称尾部的 #数字 标签（KiloDusk#0642 -> KiloDusk）。"""
+    return _NICK_TAG_RE.sub("", str(nick or "")).strip()
+
+
+def _display_nickname(node: Dict[str, Any], game: str,
+                      names: Optional[Dict[str, str]] = None) -> str:
+    """账号行的可读称呼：真实昵称 > 游戏显示名（占位昵称不算真名）。"""
+    nick = clean_nickname((node or {}).get("nickname"))
+    if nick and nick not in PLACEHOLDER_NICKNAMES:
+        return nick
+    table = names if names is not None else {}
+    return table.get(game, game)
+
+
+def _toggle_label(node: Dict[str, Any], game: str,
+                  names: Optional[Dict[str, str]] = None) -> str:
+    """开关监控气泡里的称呼：游戏名在前，真实昵称括注。
+
+    2026-11-11 用户实测指出：只念昵称（KiloDusk）看不出切的是哪款游戏，
+    游戏标识必须出现。占位昵称/空昵称时括注省略，只报游戏名。
+    """
+    game_name = (names or {}).get(game, game)
+    nick = _display_nickname(node, game, names)
+    if nick == game_name:
+        return game_name
+    return f"{game_name}（{nick}）"
+
+
 @_serialized_write
 def set_account_enabled(games: List[str], enabled: bool) -> Dict[str, Any]:
     """把指定游戏写进/移出每日巡检（config accounts[].enabled）。
@@ -476,20 +515,25 @@ def set_account_enabled(games: List[str], enabled: bool) -> Dict[str, Any]:
         if isinstance(a, dict)
     }
     changed: List[str] = []
+    game_names: List[str] = []
     for game in games:
         node = present.get(game)
         if node is None:
             continue
         node["enabled"] = bool(enabled)
-        changed.append(str(node.get("nickname") or names.get(game, game)))
+        changed.append(_toggle_label(node, game, names))
+        game_names.append(names.get(game, game))
     if not changed:
         raise ValueError("config.json 里找不到这些游戏节点")
     save_raw_config(raw)
+    # 批量开关（≥3 款，只有「全选/取消全选」走得到）：逐款带昵称括注太长，
+    # 气泡降成纯游戏名清单——单款/双款仍保持「游戏名（昵称）」明细
+    labels = game_names if len(changed) >= 3 else changed
     if enabled:
-        message = "已开启提醒：" + "、".join(changed)
+        message = "已开启提醒：" + "、".join(labels)
     else:
-        message = "已关闭提醒：" + "、".join(changed)
-    return {"ok": True, "enabled": bool(enabled), "games": changed, "message": message}
+        message = "已关闭提醒：" + "、".join(labels)
+    return {"ok": True, "enabled": bool(enabled), "games": labels, "message": message}
 
 
 # --------------------------------------------------------------------------- #
@@ -498,14 +542,16 @@ def set_account_enabled(games: List[str], enabled: bool) -> Dict[str, Any]:
 
 #: 前端字段名 -> (写到 config.app 的 JSON 键, 默认值)。跟 core/config 字段名保持一致。
 _THRESHOLD_FIELDS: Tuple[Tuple[str, str, int], ...] = (
+    # 顺序与 core.history.GAME_ORDER（平台分组序）一致：米哈游→鹰角→库街区，
+    # 与游戏概览/信息查询同口径（2026-11-11 用户裁决）
     ("genshin",   "genshin_resin_threshold",    160),
     ("starrail",  "starrail_stamina_threshold", 240),
     ("zzz",       "zzz_energy_threshold",       200),
+    ("bh3",       "bh3_stamina_threshold",       90),
     ("arknights", "arknights_ap_threshold",     135),
     ("endfield",  "endfield_sanity_threshold",  300),
     ("wuwa",      "wuwa_energy_threshold",      200),
     ("pgr",       "pgr_serum_threshold",        200),
-    ("bh3",       "bh3_stamina_threshold",       90),
 )
 
 
@@ -1252,6 +1298,8 @@ def schedule_status() -> Dict[str, Any]:
         "resource_alert_enabled": _normalize_bool(app.get("resource_alert_enabled"), True),
         "activity_alert_enabled": _normalize_bool(app.get("activity_alert_enabled"), True),
         "activity_alert_days": _normalize_alert_days(app.get("activity_alert_days")),
+        "activity_deadline_tiers": _normalize_deadline_tiers(
+            app.get("activity_deadline_tiers")),
         "next_run": target.strftime("%Y-%m-%d %H:%M") if target else "",
         "daemon": daemon_status(),
         # 页面上要列账号就取这里，避免把游戏清单写死在多份 HTML / JS 里
@@ -1416,24 +1464,156 @@ def save_catch_up(raw_minutes: Any, enabled: Any = None) -> Dict[str, Any]:
     return result
 
 
-@_serialized_write
-def save_activity_alert(enabled: Any = None, days: Any = None) -> Dict[str, Any]:
-    """活动结束提醒开关与提前天数（config.app.activity_alert_*）。
+def custom_dailies_status() -> Dict[str, Any]:
+    """手动打卡清单 + 今日完成态（抽屉/报表/托盘共用数据源）。"""
+    from core import dailies
 
-    enabled / days 任传其一或都传；只改一个字段时另一个保持原值。
+    raw = load_raw_config()
+    items = (raw.get("app") or {}).get("custom_dailies") or []
+    user_dir = CONFIG_PATH.parent
+    out = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        it = dict(it)
+        it.setdefault("reset", dailies.DEFAULT_RESET)
+        out.append({
+            "id": str(it.get("id") or ""),
+            "name": str(it.get("name") or ""),
+            "mode": str(it.get("mode") or "merged"),
+            "time": str(it.get("time") or ""),
+            "reset": it["reset"],
+            "template": str(it.get("template") or ""),
+            "enabled": bool(it.get("enabled", True)),
+            "done_today": dailies.is_done(it, user_dir),
+            "streak": dailies.streak_of(it, user_dir),
+            "push_text": dailies.render_message(it),
+        })
+    return {"ok": True, "items": out,
+            "default_template": dailies.DEFAULT_TEMPLATE}
+
+
+@_serialized_write
+def custom_dailies_update(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """手动打卡增删改/今日勾选（写 config + 完成账本，双写一致）。"""
+    import uuid as _uuid
+
+    from core import dailies
+
+    action = str(payload.get("action") or "")
+    user_dir = CONFIG_PATH.parent
+    raw = load_raw_config()
+    if not isinstance(raw.get("app"), dict):
+        raw["app"] = {}
+    items = [it for it in (raw["app"].get("custom_dailies") or [])
+             if isinstance(it, dict)]
+
+    if action == "toggle_done":
+        item_id = str(payload.get("id") or "")
+        hit = next((it for it in items if str(it.get("id")) == item_id), None)
+        if hit is None:
+            raise ValueError("项不存在")
+        hit = dict(hit)
+        hit.setdefault("reset", dailies.DEFAULT_RESET)
+        dailies.mark_done(hit, user_dir, undo=bool(payload.get("undo")))
+        result = custom_dailies_status()
+        result["message"] = ("已勾掉今日（次日 04:00 自动重开）"
+                             if not payload.get("undo") else "已恢复今日待办")
+        return result
+
+    if action == "del":
+        item_id = str(payload.get("id") or "")
+        items = [it for it in items if str(it.get("id")) != item_id]
+        dailies.forget(item_id, user_dir)
+        raw["app"]["custom_dailies"] = items
+        from core.config import parse_config
+
+        parse_config(raw, source=CONFIG_PATH)
+        save_raw_config(raw)
+        result = custom_dailies_status()
+        result["message"] = "已删除"
+        return result
+
+    name = str(payload.get("name") or "").strip()[:20]
+    if not name:
+        raise ValueError("名称不能为空")
+    mode = str(payload.get("mode") or "merged")
+    if mode not in ("merged", "standalone"):
+        mode = "merged"
+    time_s = str(payload.get("time") or "").strip()
+    if mode == "standalone" and not re.match(r"^\d{1,2}:\d{2}$", time_s):
+        raise ValueError("独立时刻需要有效的 HH:MM")
+    if mode == "merged":
+        time_s = ""
+    reset_s = str(payload.get("reset") or dailies.DEFAULT_RESET).strip()
+    if not re.match(r"^\d{1,2}:\d{2}$", reset_s):
+        reset_s = dailies.DEFAULT_RESET
+    template = str(payload.get("template") or "").strip()[:100]
+    enabled = bool(payload.get("enabled", True))
+
+    if action == "add":
+        items.append({"id": f"cd-{_uuid.uuid4().hex[:8]}", "name": name,
+                      "mode": mode, "time": time_s, "reset": reset_s,
+                      "template": template, "enabled": enabled})
+    elif action == "update":
+        item_id = str(payload.get("id") or "")
+        hit = next((it for it in items if str(it.get("id")) == item_id), None)
+        if hit is None:
+            raise ValueError("要编辑的项不存在")
+        hit.update({"name": name, "mode": mode, "time": time_s, "reset": reset_s,
+                    "template": template, "enabled": enabled})
+    else:
+        raise ValueError(f"未知 action：{action}")
+
+    raw["app"]["custom_dailies"] = items
+    from core.config import parse_config
+
+    parse_config(raw, source=CONFIG_PATH)
+    save_raw_config(raw)
+    result = custom_dailies_status()
+    result["message"] = "已添加" if action == "add" else "已保存"
+    return result
+
+
+def _normalize_deadline_tiers(raw: Any) -> List[int]:
+    """三段阈值的展示口径：非法/缺失回默认档（保存侧校验走 parse_config）。"""
+    from core.config import ACTIVITY_DEADLINE_TIERS_DEFAULT
+
+    try:
+        values = list(raw) if raw is not None else []
+        if len(values) != 3:
+            return list(ACTIVITY_DEADLINE_TIERS_DEFAULT)
+        out = [int(v) for v in values]
+        if any(v != -1 and not (1 <= v <= 2160) for v in out):
+            return list(ACTIVITY_DEADLINE_TIERS_DEFAULT)
+        return out
+    except Exception:  # noqa: BLE001
+        return list(ACTIVITY_DEADLINE_TIERS_DEFAULT)
+
+
+@_serialized_write
+def save_activity_alert(enabled: Any = None, days: Any = None,
+                        tiers: Any = None) -> Dict[str, Any]:
+    """活动结束提醒开关/提前天数/三段阈值（config.app.activity_alert_*）。
+
+    enabled / days / tiers 任传其一或都传；只改部分字段时其余保持原值。
+    tiers = [档1, 档2, 档3]（小时，-1 = 该档关闭）；非法值由 parse_config 报错。
     """
     raw = load_raw_config()
     if not isinstance(raw.get("app"), dict):
         raw["app"] = {}
     changed_switch = enabled is not None
     changed_days = days is not None and str(days).strip() != ""
-    if not changed_switch and not changed_days:
+    changed_tiers = tiers is not None
+    if not changed_switch and not changed_days and not changed_tiers:
         raise ValueError("没有要保存的内容")
 
     if changed_switch:
         raw["app"]["activity_alert_enabled"] = _normalize_bool(enabled, True)
     if changed_days:
         raw["app"]["activity_alert_days"] = _normalize_alert_days(days)
+    if changed_tiers:
+        raw["app"]["activity_deadline_tiers"] = tiers  # 合法性由 parse_config 把关
     value = _normalize_alert_days(raw["app"].get("activity_alert_days"))
     switch_on = _normalize_bool(raw["app"].get("activity_alert_enabled"), True)
 
@@ -1441,9 +1621,18 @@ def save_activity_alert(enabled: Any = None, days: Any = None) -> Dict[str, Any]
 
     parse_config(raw, source=CONFIG_PATH)
     save_raw_config(raw)
-    logger.info("活动结束提醒：开关=%s，提前 %d 天", "开" if switch_on else "关", value)
+    tiers_now = _normalize_deadline_tiers(raw["app"].get("activity_deadline_tiers"))
+    logger.info(
+        "活动提醒：开关=%s，徽章提前 %d 天，三段=%s",
+        "开" if switch_on else "关", value, tiers_now,
+    )
     result = schedule_status()
-    if changed_days:
+    if changed_tiers:
+        result["message"] = (
+            f"结束推送三段已保存：{tiers_now[0]}h/{tiers_now[1]}h/{tiers_now[2]}h"
+            "（-1 = 关闭）"
+        )
+    elif changed_days:
         result["message"] = f"活动结束前 {value} 天开始提醒"
     elif switch_on:
         result["message"] = f"已开启活动结束提醒（结束前 {value} 天开始提醒）"
@@ -1938,7 +2127,11 @@ def write_mihoyo(
 
 @_serialized_write
 def write_skland(target: str, token: str) -> str:
-    """只更新目标游戏的 token，不动另一款。"""
+    """只更新目标游戏的 token，不动另一款。
+
+    2026-11-09：顺手回填真实昵称与角色 ID——此前只写 token，config 里昵称
+    一直停在出厂占位（博士/管理员），用户看到的气泡就成了「已开启提醒：博士」。
+    """
     raw = load_raw_config()
     hit = False
     for account in raw.get("accounts", []):
@@ -1951,6 +2144,21 @@ def write_skland(target: str, token: str) -> str:
     if not hit:
         raise RuntimeError(f"config.json 里没有 {target} 账号节点")
 
+    # 真实身份（尽力而为：拉不到不影响绑定成功，只是昵称停回退到游戏名）
+    identity = _skland_identity(target, token)
+    if identity:
+        for account in raw.get("accounts", []):
+            if account.get("game") != target:
+                continue
+            cred = account.setdefault("credential", {})
+            if identity.get("uid"):
+                cred["uid"] = identity["uid"]
+            if identity.get("server"):
+                cred["server"] = identity["server"]
+            if identity.get("nickname"):
+                account["nickname"] = identity["nickname"]
+            break
+
     query = raw.setdefault("query", {})
     if str(query.get("provider", "")).strip().lower() == "mock":
         query["provider"] = "miyoushe"
@@ -1959,6 +2167,78 @@ def write_skland(target: str, token: str) -> str:
     # 清掉旧 cred 缓存，强制下次用新 token 重新换取
     (USER_DIR / "logs" / f"skland_cred_{target}.json").unlink(missing_ok=True)
     return SKLAND_TARGETS.get(target, target)
+
+
+def _skland_identity(target: str, token: str) -> Dict[str, str]:
+    """从森空岛绑定列表里取该游戏的真实昵称 + 角色 ID。
+
+    返回 {} 表示拿不到（接口异常 / 没绑角色）——调用方按"没读到"处理。
+    明日方舟的 ID 是绑定里的 uid；终末地是角色 roleId（serverId 一并存，
+    查询层要用 roleId+serverId 拼 sk-game-role 头）。
+    """
+    try:
+        from core.skland_api import get_skland_credentials, list_players
+
+        cred = get_skland_credentials({"token": token}, game=target)
+        payload = list_players(cred["cred"], cred["token"])
+    except Exception as exc:  # noqa: BLE001 - 回填失败绝不能挡住绑定
+        logger.info("森空岛 %s 昵称回填失败（不影响绑定）：%s", target, exc)
+        return {}
+
+    game_code = {"arknights": "arknights", "endfield": "endfield"}.get(target, target)
+    for item in (payload.get("list") or []):
+        if not isinstance(item, dict) or item.get("appCode") != game_code:
+            continue
+        bindings = [b for b in (item.get("bindingList") or []) if isinstance(b, dict)]
+        if not bindings:
+            return {}
+        binding = bindings[0]
+        role = binding.get("defaultRole")
+        role = role if isinstance(role, dict) else {}
+        if target == "endfield":
+            # 终末地昵称在角色上（binding.nickName 常为空串），ID 用 roleId
+            nick = clean_nickname(role.get("nickname") or binding.get("nickName"))
+            return {
+                "nickname": nick,
+                "uid": str(role.get("roleId") or "").strip(),
+                "server": str(role.get("serverId") or "").strip(),
+            }
+        return {
+            "nickname": clean_nickname(binding.get("nickName")),
+            "uid": str(binding.get("uid") or "").strip(),
+        }
+    return {}
+
+
+def _kuro_identities(token: str) -> Dict[str, Dict[str, str]]:
+    """库街区 token -> {game: {uid: roleId, nickname: roleName}}。
+
+    一个 token 覆盖鸣潮(gameId=3)与战双(gameId=2)，两款角色各自独立。
+    任何一款拉不到就跳过那款，绝不影响绑定（绑定的核心是写 token）。
+    """
+    out: Dict[str, Dict[str, str]] = {}
+    try:
+        from core.kuro_api import list_roles
+    except Exception:  # noqa: BLE001
+        return out
+    for game, game_id in (("wuwa", 3), ("pgr", 2)):
+        try:
+            roles = list_roles(token, game_id)
+        except Exception as exc:  # noqa: BLE001 - 单款失败不挡绑定
+            logger.info("库街区 %s 角色信息拉取失败（不影响绑定）：%s", game, exc)
+            continue
+        for role in roles or []:
+            if not isinstance(role, dict):
+                continue
+            role_id = str(role.get("roleId") or "").strip()
+            if not role_id:
+                continue
+            out[game] = {
+                "uid": role_id,
+                "nickname": clean_nickname(role.get("roleName")),
+            }
+            break
+    return out
 
 
 @_serialized_write
@@ -1972,6 +2252,9 @@ def write_kuro(token: str, nickname: str = "", games: Optional[List[str]] = None
     """
     raw = load_raw_config()
     now_text = datetime.now().strftime("%Y-%m-%d %H:%M")
+    # 库街区角色身份（game -> {uid, nickname}）：一个 token 两款游戏各有角色，
+    # 此前只写 token，config 里昵称停在占位（指挥官/漂泊者）。
+    identities = _kuro_identities(token)
 
     def _upsert(game: str, nickname_default: str, enabled: bool) -> str:
         hit = None
@@ -1991,7 +2274,13 @@ def write_kuro(token: str, nickname: str = "", games: Optional[List[str]] = None
         cred = hit.setdefault("credential", {})
         cred["token"] = token
         cred["updated_at"] = now_text
-        if nickname:
+        identity = identities.get(game) or {}
+        if identity.get("uid"):
+            cred["uid"] = identity["uid"]          # 库街区角色 ID（roleId）
+        real_name = str(identity.get("nickname") or "").strip()
+        if real_name:
+            hit["nickname"] = real_name            # 真实角色名优先于传入/占位
+        elif nickname:
             hit["nickname"] = nickname
         if enabled and not hit.get("enabled", True):
             hit["enabled"] = True   # 绑定了就参与巡检；不想查可以再关开关
@@ -2326,6 +2615,444 @@ def _api_toasts() -> Dict[str, Any]:
     return {"ok": True, "items": take_unread()}
 
 
+#: 托盘一行一字简称（2026-11-11 用户裁定：崩原星绝舟终鸣战 ↔ 八游戏）
+TRAY_GAME_SHORT = {
+    "bh3": "崩", "genshin": "原", "starrail": "星", "zzz": "绝",
+    "arknights": "舟", "endfield": "终", "wuwa": "鸣", "pgr": "战",
+}
+
+
+def tray_summary_status() -> Dict[str, Any]:
+    """托盘摘要（2026-11-11 第一队列 #2）：C# 壳托盘菜单与角标的数据源。
+
+    语义全部在 Python 侧算好，壳只渲染不做计算——「约 Xh 满」的倒计时
+    起点只认 Python 端（心跳纪律），壳侧零时间推算。只读 live_cache 磁盘
+    快照，绝不现场查询：托盘菜单要秒开，也绝不因看一眼托盘给游戏接口
+    添请求（风控安全）。未绑定/无账号的游戏直接不渲染——微软托盘指南：
+    不适用项移除而非置灰。text 用 \\n 分行，壳侧 split 即用。
+
+    v2（2026-11-11 用户反馈三连）：①待办在标题里点名——不开控制台就知
+    道待办是什么；②游戏名换一字简称（崩原星绝舟终鸣战，用户映射）；
+    ③行统一为「简 值/上限」对齐。
+    """
+    lines: List[str] = []
+    pending_descs: List[str] = []
+    disk = _live_disk_read()
+    try:
+        import daemon as daemon_mod
+
+        daemon_ok = bool((daemon_mod.status() or {}).get("running"))
+    except Exception:  # noqa: BLE001 - 守护状态读不到按未运行渲染（琥珀提醒）
+        daemon_ok = False
+    if not daemon_ok:
+        pending_descs.append("守护未运行")
+
+    # 手动打卡：待办点名 + 托盘可勾行数据源（id|name|done 单行编码，C# 拆分）
+    manual_rows: List[str] = []
+    raw = load_raw_config()
+    try:
+        from core import dailies as _dl
+
+        _items = (raw.get("app") or {}).get("custom_dailies") or []
+        for _it in _items:
+            if not isinstance(_it, dict) or not _it.get("enabled", True):
+                continue
+            _id = str(_it.get("id") or "")
+            _name = str(_it.get("name") or "?").replace("|", " ").replace("\n", " ")
+            _itd = dict(_it)
+            _itd.setdefault("reset", _dl.DEFAULT_RESET)
+            _done = _dl.is_done(_itd, CONFIG_PATH.parent)
+            manual_rows.append(f"{_id}|{_name}|{1 if _done else 0}")
+            if not _done:
+                pending_descs.append(f"{_name} 未清")
+    except Exception:  # noqa: BLE001 - 手动打卡读不到不影响托盘主面
+        pass
+
+    # 启用集过滤（2026-11-12 实锤：live 缓存可能含已停用游戏的旧数据——
+    # 崩3 已停用仍泄漏进托盘；缓存缺失的启用游戏也要有行——方舟/终末地隐身实锤）
+    enabled_games = {str(a.get("game")) for a in (raw.get("accounts") or [])
+                     if a.get("enabled")}
+    cached_games: Dict[str, Dict[str, Any]] = {}
+    if disk and disk.get("games"):
+        for g in disk.get("games") or []:
+            if isinstance(g, dict) and g.get("game"):
+                cached_games[str(g["game"])] = g
+
+    if disk and disk.get("games"):
+        try:
+            gen = datetime.strptime(
+                str(disk.get("generated_at") or ""), "%Y-%m-%d %H:%M:%S")
+            age = max(0, int((datetime.now() - gen).total_seconds()))
+        except ValueError:
+            age = None
+        stale_tag = ""
+        if age is not None and age >= 7200:
+            stale_tag = f"（数据 {age // 3600}h 前）"
+        from core.history import GAME_ORDER as _GAME_ORDER
+        ordered_ids = ([g for g in _GAME_ORDER
+                        if g in cached_games or g in enabled_games]
+                       + [g for g in cached_games if g not in _GAME_ORDER])
+        for gid in ordered_ids:
+            g = cached_games.get(gid)
+            if g is None:
+                # 启用但缓存缺失（刚勾选还没查过）：占位行，等下次巡检/刷新进缓存
+                short = TRAY_GAME_SHORT.get(gid) or gid[:1]
+                lines.append(f"{short}　  —/  — · 待巡检")
+                continue
+            if not g.get("enabled", True) or gid not in enabled_games:
+                continue  # 已停用：不渲染（移除而非置灰）
+            if g.get("no_account"):
+                continue  # 未绑定：不渲染（移除而非置灰）
+            key = str(g.get("game") or "")
+            short = TRAY_GAME_SHORT.get(key) or str(g.get("game_name") or "?")[:1]
+            if g.get("error"):
+                lines.append(f"{short}　查询失败：{str(g.get('error'))[:18]}")
+                continue
+            res = g.get("resource") or {}
+            cur, mx = res.get("current"), res.get("maximum")
+            if not isinstance(cur, int) or not isinstance(mx, int) or mx <= 0:
+                continue
+            if cur >= mx:
+                pending_descs.append(f"{short} 已满")
+                # 排版纪律（2026-11-11 用户反馈：托盘行要排列整齐）：定宽三段式——
+                # 简称 + 全角空格（2026-11-12 用户反馈：名字与数据再拉开）+
+                # 值/上限各右对齐 3 位 + 「 · 」+ 12 半角宽尾列。
+                # 2026-11-12 再裁（用户）：尾列「约 X 满」与「已满」同尾字，真已满
+                # 不显眼——已满行加 ★ 前缀成为唯一带符号的行，未满行去「满」尾字。
+                lines.append(f"{short}　{cur:>3}/{mx:>3} · ★ 已满，可清{stale_tag}")
+                continue
+            recover = res.get("recover")
+            tail = ""
+            if isinstance(recover, (int, float)) and recover > 0:
+                eff = max(0, int(recover) - (age or 0))
+                if eff > 0:
+                    h, m = eff // 3600, (eff % 3600) // 60
+                    # 「剩」字每行重复=零信息填充（2026-11-12 用户裁），裸排时间；
+                    # 列位固定（「 · 」后必是回满倒计时），扫读习惯一次建立
+                    tail = f"{min(h, 99):>2}h{m:02d}"
+                    if eff <= 7200:
+                        hm = f"{h}h{m:02d}m" if h else f"{m}m"
+                        pending_descs.append(f"{short} 将满({hm})")
+            if tail:
+                lines.append(f"{short}　{cur:>3}/{mx:>3} · {tail}{stale_tag}")
+            else:
+                lines.append(f"{short}　{cur:>3}/{mx:>3}{stale_tag}")
+
+    if pending_descs:
+        shown = " · ".join(pending_descs[:3])
+        more = len(pending_descs) - 3
+        headline = (
+            f"{len(pending_descs)} 项待办：{shown}"
+            + (f" 等共{len(pending_descs)}项" if more > 0 else "")
+        )
+    elif not lines:
+        headline = "尚无巡检数据"
+    else:
+        headline = "全部正常"
+    if len(headline) > 50:  # NotifyIcon.Text 上限 63 字符，标题留余量
+        headline = headline[:49] + "…"
+    return {
+        "ok": True,
+        "headline": headline,
+        "pending": bool(pending_descs),
+        "daemon_ok": daemon_ok,
+        "manual": "\n".join(manual_rows),
+        "text": "\n".join(lines[:12]),
+        "generated_at": str((disk or {}).get("generated_at") or ""),
+    }
+
+
+def _diag_collect_secrets() -> List[str]:
+    """从真实配置提取敏感值清单（口径对齐 _build_release.collect_secrets）。
+
+    刻意用「真实值扫描」而不是模式猜测：打包门禁已实证这套清单能拦住
+    带密文件出库。诊断包导出前拿它做 fail-closed 终检。
+    """
+    found: set = set()
+
+    def _add(value: object) -> None:
+        text = str(value or "").strip()
+        if len(text) >= 8:
+            found.add(text)
+
+    try:
+        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - 配置读不到就没什么可扫的，空清单
+        data = {}
+    for node in (data.get("push") or {}).values():
+        if isinstance(node, dict):
+            for field in ("key", "sendkey", "device_key", "webhook", "secret"):
+                _add(node.get(field))
+    for account in data.get("accounts") or []:
+        cred = account.get("credential") or {}
+        _add(cred.get("uid"))
+        _add(cred.get("token"))
+        for part in str(cred.get("cookie") or "").replace(";", " ").split():
+            if "=" in part:
+                _add(part.split("=", 1)[1])
+    return [t for t in found if t]
+
+
+def diag_export() -> Dict[str, Any]:
+    """一键导出脱敏诊断包（2026-11-11 第一队列 #3）。
+
+    模仿 sosreport/must-gather 的「收集-脱敏-附单」三段式 + CouchMode 的
+    内容透明化（MANIFEST 逐文件说明）+ AppProfileSafe 的时间戳命名。
+    安全三闸：配置值脱敏 → 真实密钥值全量扫描（命中即中止，fail-closed，
+    打包门禁同款）→ 逐文件非空自检（hyperwhisper 0 字节事故教训）。
+    落桌面，绝不静默上传。
+    """
+    import zipfile
+    import platform
+    import sys as _sys
+    from datetime import timedelta as _td
+
+    install_root = Path(__file__).resolve().parent.parent
+    banned = _diag_collect_secrets()
+    entries: List[List[Any]] = []  # [zip内名, 文本, manifest说明]
+    warnings: List[str] = []
+
+    # 1) 环境元数据
+    env_rows = [
+        f"导出时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"HopOn 版本: {_try_current_version()}",
+        f"Python: {_sys.version.split()[0]}",
+        f"系统: {platform.platform()}",
+        f"数据根: {USER_DIR}",
+        f"安装根: {install_root}",
+    ]
+    try:
+        import daemon as daemon_mod
+
+        st = daemon_mod.status() or {}
+        env_rows.append(
+            f"守护进程: pid={st.get('pid')} running={st.get('running')}"
+            f" heartbeat={st.get('heartbeat_age')}")
+    except Exception as exc:  # noqa: BLE001
+        env_rows.append(f"守护进程: 状态读取失败（{exc}）")
+    disk = _live_disk_read()
+    env_rows.append(f"live 快照: {str((disk or {}).get('generated_at') or '无')}")
+    entries.append(["env.txt", "\n".join(env_rows) + "\n", "版本/系统/守护进程状态"])
+
+    # 2) 近 7 天日志（时间窗裁剪，不是全量）
+    cutoff = (datetime.now() - _td(days=7)).strftime("%Y-%m-%d")
+    log_targets = [
+        ("dailycheck.log", USER_DIR / "logs" / "dailycheck.log", "引擎巡检日志"),
+        ("shell.log", install_root / "logs" / "shell.log", "C# 壳日志"),
+        ("engine.log", install_root / "logs" / "engine.log", "引擎启动日志"),
+    ]
+    for arc_name, path, desc in log_targets:
+        text = ""
+        try:
+            if path.exists():
+                rows = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+                keep: List[str] = []
+                in_window = False
+                for row in rows:
+                    if len(row) >= 19 and row[:4].isdigit() and row[4] == "-":
+                        in_window = row[:10] >= cutoff
+                    if in_window:
+                        keep.append(row)
+                text = "\n".join(keep[-1200:])
+        except OSError as exc:
+            text = f"[读取失败: {exc}]"
+        if not text:
+            warnings.append(f"{arc_name}: 窗口内无内容")
+        entries.append([f"logs/{arc_name}", text + ("\n" if text else ""),
+                        f"{desc}（近 7 天，最多 1200 行）"])
+
+    # 3) 配置快照（值脱敏）
+    def _mask(node: Any) -> Any:
+        if isinstance(node, dict):
+            out = {}
+            for k, v in node.items():
+                if re.search(r"key|token|secret|cookie|password|webhook|cred",
+                             str(k), re.IGNORECASE) and v:
+                    out[k] = "***MASKED***"
+                else:
+                    out[k] = _mask(v)
+            return out
+        if isinstance(node, list):
+            return [_mask(x) for x in node]
+        return node
+
+    cfg_text = ""
+    try:
+        cfg_text = json.dumps(_mask(json.loads(
+            CONFIG_PATH.read_text(encoding="utf-8"))), ensure_ascii=False, indent=1)
+    except Exception as exc:  # noqa: BLE001
+        cfg_text = f"[配置读取失败: {exc}]"
+    entries.append(["config_sanitized.json", cfg_text + "\n",
+                    "配置快照（敏感字段已置 MASKED，结构保留）"])
+
+    # 4) 数据摘要（只摘要不打包全量）
+    data_dir = USER_DIR / "data"
+    sum_rows = [f"数据目录: {data_dir}", ""]
+    try:
+        for f in sorted(data_dir.glob("*.json")):
+            note = ""
+            try:
+                blob = json.loads(f.read_text(encoding="utf-8"))
+                if isinstance(blob, list):
+                    note = f"{len(blob)} 条"
+                elif isinstance(blob, dict):
+                    note = "键: " + ", ".join(list(blob.keys())[:8])
+            except Exception:  # noqa: BLE001
+                note = "（非 JSON 或读取失败）"
+            sum_rows.append(f"{f.name}  {f.stat().st_size} 字节  {note}")
+    except OSError as exc:
+        sum_rows.append(f"数据目录读取失败: {exc}")
+    entries.append(["data_summary.txt", "\n".join(sum_rows) + "\n",
+                    "数据文件名/大小/条数摘要（不含内容）"])
+
+    # 安全终检 ①：真实密钥值扫描（fail-closed）
+    for arc_name, text, _desc in entries:
+        for token in banned:
+            if token in text:
+                logger.warning("诊断包导出中止：%s 命中敏感值（不记录值本身）", arc_name)
+                return {"ok": False,
+                        "message": "检测到敏感值泄漏风险，已中止导出。请反馈给开发者排查脱敏清单。"}
+    # 安全终检 ②：掩码后仍出现长 token 形状 = 脱敏清单有漏
+    for arc_name, text, _desc in entries:
+        if re.search(r"eyJ[A-Za-z0-9_-]{20,}", text):
+            return {"ok": False, "message": "检测到疑似令牌形状的内容，已中止导出。"}
+
+    # MANIFEST（透明化：逐文件说明 + 行数）
+    man_rows = ["HopOn 诊断包内容清单", ""]
+    for arc_name, text, desc in entries:
+        man_rows.append(f"  {arc_name}  {len(text)} 字符  — {desc}")
+    if warnings:
+        man_rows.append("")
+        man_rows.append("警告: " + "; ".join(warnings))
+    entries.insert(0, ["MANIFEST.txt", "\n".join(man_rows) + "\n", "本包内容清单"])
+
+    # 逐文件非空自检（MANIFEST 除外）
+    empty = [name for name, text, _d in entries
+             if name != "MANIFEST.txt" and len(text.strip()) == 0]
+    if len(empty) == len([e for e in entries if e[0] != "MANIFEST.txt"]):
+        return {"ok": False, "message": "诊断包内容全为空，已中止导出（请检查日志目录）。"}
+
+    # 落盘：桌面优先，异常回退数据目录
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    target_dir = Path.home() / "Desktop"
+    if not target_dir.is_dir():
+        target_dir = USER_DIR / "diagnostics"
+        target_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = target_dir / f"HopOn_Diagnostics_{stamp}.zip"
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for arc_name, text, _desc in entries:
+                zf.writestr(arc_name, text.encode("utf-8"))
+    except OSError as exc:
+        return {"ok": False, "message": f"诊断包写入失败：{exc}"}
+    logger.info("诊断包已导出：%s（%d 个文件，%d 字节）",
+                zip_path, len(entries), zip_path.stat().st_size)
+    return {"ok": True, "path": str(zip_path), "files": [e[0] for e in entries],
+            "empty": empty, "warnings": warnings,
+            "message": f"诊断包已导出：{zip_path}"}
+
+
+def _try_current_version() -> str:
+    try:
+        from core.update import current_version
+
+        return current_version()
+    except Exception:  # noqa: BLE001 - 版本读不到不挡导出
+        return "?"
+
+
+def av_check() -> Dict[str, Any]:
+    """杀软拦截自检（2026-11-11 第一队列 #4）：判「是不是被杀软办了」。
+
+    三信号（案例模仿：文件消失=业界通用第一信号；Defender 检测记录=
+    MSFT_MpThreatDetection 的 Resources 字段含被隔离路径；心跳=行为信号）：
+      A 关键文件存在性——被隔离 = 文件从磁盘消失（零权限、跨杀软通用）
+      B Defender 检测记录——WMI 非提权尝试，读不到就如实说，绝不装懂
+      C 守护心跳——文件都在但守护未运行 → 只能标「疑似」
+    绝不自动改杀软设置（只读自检）；处置步骤与上报入口由前端静态指引承载。
+    """
+    import hashlib
+    import subprocess as _sp
+
+    _NOWIN = 0x08000000 if os.name == "nt" else 0
+    install_root = Path(__file__).resolve().parent.parent
+    targets = [
+        ("HopOn.exe", install_root / "HopOn.exe"),
+        ("engine\\python\\pythonw.exe",
+         install_root / "engine" / "python" / "pythonw.exe"),
+        ("engine\\daemon.py", install_root / "engine" / "daemon.py"),
+        ("engine\\app.py", install_root / "engine" / "app.py"),
+    ]
+    missing = [name for name, p in targets if not p.exists()]
+
+    defender_hits: List[str] = []
+    defender_note = "未读取到与 HopOn 相关的检测记录"
+    try:
+        proc = _sp.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-CimInstance -Namespace root\\Microsoft\\Windows\\Defender "
+             "-ClassName MSFT_MpThreatDetection | "
+             "Select-Object -ExpandProperty Resources"],
+            capture_output=True, timeout=10,
+            creationflags=_NOWIN,
+        )
+        text = proc.stdout.decode("utf-8", errors="ignore")
+        root_low = str(install_root).lower()
+        for row in text.splitlines():
+            row = row.strip()
+            if row and ("hopon" in row.lower() or root_low in row.lower()):
+                defender_hits.append(row[:120])
+    except Exception as exc:  # noqa: BLE001 - 无 Defender / 权限拒绝 / 超时
+        defender_note = f"无法读取检测记录（{exc.__class__.__name__}，可能非 Defender 或权限不足）"
+
+    sha = ""
+    exe = install_root / "HopOn.exe"
+    if exe.exists():
+        try:
+            h = hashlib.sha256()
+            with open(exe, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    h.update(chunk)
+            sha = h.hexdigest()
+        except OSError:
+            sha = ""
+
+    daemon_running = False
+    try:
+        import daemon as daemon_mod
+
+        daemon_running = bool((daemon_mod.status() or {}).get("running"))
+    except Exception:  # noqa: BLE001
+        daemon_running = False
+
+    if missing or defender_hits:
+        verdict = "blocked"
+        parts = []
+        if missing:
+            parts.append(f"缺失 {len(missing)} 个关键文件（{'、'.join(missing)}）")
+        if defender_hits:
+            parts.append("Defender 检测记录命中 HopOn 路径")
+        message = "疑似被杀软拦截：" + "；".join(parts) + "。按下方步骤加白名单/恢复。"
+    elif not daemon_running:
+        verdict = "suspect"
+        message = "关键文件都在，但守护进程未运行——可能是被拦截，也可能是其他原因（看运行日志）。"
+    else:
+        verdict = "clear"
+        message = "未发现拦截迹象。本检查只覆盖能读到的信号，仅供参考。"
+    return {
+        "ok": True,
+        "verdict": verdict,
+        "message": message,
+        "missing": missing,
+        "defender_hits": defender_hits,
+        "defender_note": defender_note,
+        "daemon_running": daemon_running,
+        "sha256": sha,
+        "install_root": str(install_root),
+        "releases_url": "https://github.com/QianYiXi0723/HopOn/releases",
+    }
+
+
 _GET_SIMPLE_ROUTES: Dict[str, Any] = {
     "/api/accounts": accounts_status,
     "/api/env": push_status,
@@ -2335,6 +3062,10 @@ _GET_SIMPLE_ROUTES: Dict[str, Any] = {
     "/api/schedule": schedule_status,
     "/api/settings": thresholds_status,
     "/api/autostart": _api_autostart,
+    "/api/tray_summary": tray_summary_status,
+    "/api/diag_export": diag_export,
+    "/api/av_check": av_check,
+    "/api/custom_dailies": custom_dailies_status,
 }
 
 
@@ -2553,7 +3284,12 @@ class Handler(BaseHTTPRequestHandler):
                         (raw_cfg.get("app") or {}).get("activity_alert_days"))
                 except Exception:  # noqa: BLE001 - 读不到配置按默认窗口
                     days = _normalize_alert_days(None)
-                payload = activities.summary(window_hours=days * 24)
+                try:
+                    tiers = _normalize_deadline_tiers(
+                        (raw_cfg.get("app") or {}).get("activity_deadline_tiers"))
+                except Exception:  # noqa: BLE001 - 读不到配置按默认档
+                    tiers = _normalize_deadline_tiers(None)
+                payload = activities.summary(window_hours=days * 24, tiers=tiers)
                 # 未勾选的游戏：活动卡与「暂不支持」提示也从所有展示面消失
                 # （活动缓存仍全量抓取，重新勾选即恢复；过滤只影响本响应）
                 enabled = set(_enabled_game_ids())
@@ -2757,11 +3493,24 @@ class Handler(BaseHTTPRequestHandler):
             if payload is not None:
                 try:
                     self._json(save_activity_alert(
-                        payload.get("enabled"), payload.get("days")))
+                        payload.get("enabled"), payload.get("days"),
+                        payload.get("tiers")))
                 except ValueError as exc:
                     self._json({"ok": False, "message": str(exc)}, 400)
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("保存活动提醒开关失败")
+                    self._json({"ok": False, "message": f"保存失败：{exc}"}, 500)
+            return
+
+        if path == "/api/custom_dailies":
+            payload = self._read_json_body()
+            if payload is not None:
+                try:
+                    self._json(custom_dailies_update(payload))
+                except ValueError as exc:
+                    self._json({"ok": False, "message": str(exc)}, 400)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("保存手动打卡失败")
                     self._json({"ok": False, "message": f"保存失败：{exc}"}, 500)
             return
 
