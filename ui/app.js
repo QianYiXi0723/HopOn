@@ -1640,8 +1640,11 @@ function renderManualGroup(){
         '" style="--gc:var(--brand)" data-id="' + escHtml(it.id) +
         '" data-tip="' + escHtml(tip) + '" title="点击勾掉/恢复今日打卡">' +
       '<div class="gcard-head">' +
-        '<span class="gcard-ico ph">' + (done ? '✓' : escHtml(first)) + '</span>' +
+        '<span class="gcard-ico ph">' + escHtml(first) + '</span>' +
         '<div class="gcard-name"><b>' + escHtml(it.name) + '</b></div>' +
+        '<button type="button" class="dl-toggle' + (done ? ' done' : '') +
+        '" data-id="' + escHtml(it.id) + '" title="点击勾掉/恢复今日">' +
+        (done ? '✓ 已打卡' : '打卡') + '</button>' +
         '<div class="gcard-streak"><b class="value">' + Number(it.streak || 0) +
         '</b><small>连续天数</small></div>' +
       '</div>' +
@@ -1732,8 +1735,8 @@ document.getElementById('dailies-list').addEventListener('click', function(e){
 const manualGroupEl = document.getElementById('manual-group');
 if (manualGroupEl) {
   manualGroupEl.addEventListener('click', function(e){
-    const card = e.target.closest('.dl-gcard');
-    if (card) toggleDailiesDone(card.dataset.id, !card.classList.contains('is-done'), null);
+    const btn = e.target.closest('.dl-toggle');   // 勾选只走看得见的按钮，整卡隐藏点击已删
+    if (btn) toggleDailiesDone(btn.dataset.id, !btn.classList.contains('done'), null);
   });
 }
 const accDlEl = document.getElementById('acc-dailies');

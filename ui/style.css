@@ -1003,7 +1003,7 @@
      auto-fit 折叠空轨道，N 张卡摊满整行，宽度由列数吸收（满幅纪律）；
      420px 下限保证卡内进度条不失真。 */
   .gcards{display:grid;
-          grid-template-columns:repeat(auto-fit, minmax(420px, 1fr));
+          grid-template-columns:repeat(auto-fill, minmax(420px, 1fr));
           gap:16px;align-content:start}
   .gcard{border-radius:8px;padding:16px 16px;min-width:0;
          display:flex;flex-direction:column;gap:8px;
@@ -1178,6 +1178,7 @@
        缩号塞进标题行（概览 24 / 实时 22），卡片高度不变。
        例外：本周汇总 chips 行 8 款连排太挤，小窗不显示图标 */
     .gcard-ico{width:24px;height:24px;border-radius:6px}
+    #manual-group .gcard-ico.ph{font-size:14px}
     .live-card-head .gcard-ico.gcard-ico{width:22px;height:22px}
     .week-chip .gcard-ico{display:none}
     /* 小窗实时体力两列（与概览同口径）：minmax 420→300；
@@ -1189,7 +1190,7 @@
     .gcard{padding:10px 12px}
     /* 小窗两列（2026-11-09 用户裁决）：minmax 收到 300 让 auto-fit 排下两列，
        极窄（内容 <620px）时 auto-fit 自然回落单列 */
-    .gcards{grid-template-columns:repeat(auto-fit, minmax(300px, 1fr))}
+    .gcards{grid-template-columns:repeat(auto-fill, minmax(300px, 1fr))}
     .gcard-tasks .tp-item{font-size:12px}
     .hm-row{min-height:32px}
   }
@@ -1412,13 +1413,16 @@
 @media (max-width:1099px){
   #manual-group .gcards{grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));margin-top:16px}}
   /* 首字占位框：复用 gcard-ico 尺寸（40px），无图标游戏的兜底也顺带受益 */
-  .gcard-ico.ph{display:inline-grid;place-items:center;background:var(--subtle);
-    font-size:18px;font-weight:700;color:var(--fg)}
-  .dl-gcard{cursor:pointer}
-  .dl-gcard.is-done{opacity:.72}
-  .dl-gcard.is-done .gcard-ico.ph{
-    background:color-mix(in srgb, var(--ok,#46a758) 18%, transparent);
+  .gcard-ico.ph{display:grid;place-items:center;background:var(--subtle);
+    font-size:18px;font-weight:700;color:var(--fg);line-height:1;padding:0;
+    text-align:center}
+  .dl-toggle{flex:none;border:none;border-radius:999px;padding:4px 12px;
+    font-size:12px;font-weight:600;cursor:pointer;line-height:1.4;
+    background:color-mix(in srgb, var(--brand) 16%, transparent);color:var(--brand)}
+  .dl-toggle.done{background:color-mix(in srgb, var(--ok,#46a758) 18%, transparent);
     color:var(--ok,#46a758)}
+  .dl-toggle:hover{filter:brightness(1.15)}
+  .dl-gcard.is-done{opacity:.72}
   .dl-row{display:flex;align-items:center;gap:8px;padding:7px 0;
     border-bottom:1px solid var(--border)}
   .dl-row:last-child{border-bottom:none}
