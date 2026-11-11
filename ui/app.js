@@ -3609,6 +3609,8 @@ async function exportDiagnostics(btn){
 document.getElementById('btn-diag-export').addEventListener('click', function(){
   exportDiagnostics(this);
 });
+const logDiagBtn = document.getElementById('btn-log-diag');
+if (logDiagBtn) logDiagBtn.addEventListener('click', function(){ exportDiagnostics(this); });
 
 /* 杀软拦截自检（#4）：状态驱动渲染——健康=一行绿字，其余信息只在
    疑似/被拦时出现（减法收尾：没必要的东西不占健康态的版面） */
