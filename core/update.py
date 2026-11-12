@@ -162,14 +162,14 @@ def check(*, force: bool = False) -> UpdateInfo:
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001 - 断网/限流都算"查不到"
         info.error = str(exc)[:200]
-        info.message = "暂时查不到更新（不影响使用）"
+        info.message = "检查失败：连不上 GitHub（不影响使用，稍后再点版本号重试）"
         logger.debug("[update] 检查失败：%s", exc)
         return info
 
     latest = str(payload.get("tag_name") or "").lstrip("vV")
     if not latest:
         info.error = "返回里没有 tag_name"
-        info.message = "暂时查不到更新（不影响使用）"
+        info.message = "检查失败：连不上 GitHub（不影响使用，稍后再点版本号重试）"
         return info
 
     assets = [
