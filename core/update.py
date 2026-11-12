@@ -31,8 +31,10 @@ logger = logging.getLogger(__name__)
 
 #: 仓库（与 core/__init__ 的版本号一起决定"有没有新版"）
 REPO = "QianYiXi0723/HopOn"
-#: Releases API
+#: Releases API：GitHub 主渠道 + Gitee 国内备用（2026-11-13 用户裁决：
+#: GitHub 连不上就走 Gitee 镜像，两通道都断才报失败）
 RELEASES_API = "https://api.github.com/repos/%s/releases/latest" % REPO
+GITEE_RELEASES_API = "https://gitee.com/api/v5/repos/qianyixi/HopOn/releases/latest"
 #: 请求超时：查更新不值得等太久
 TIMEOUT = 6
 #: 结果缓存时长（秒）：6 小时
@@ -154,22 +156,39 @@ def check(*, force: bool = False) -> UpdateInfo:
     if token:
         headers["Authorization"] = "Bearer " + token
 
-    try:
-        import urllib.request
+    import urllib.request
 
+    gh_err: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
+    channel = "github"
+    try:
         req = urllib.request.Request(RELEASES_API, headers=headers)
         with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
-    except Exception as exc:  # noqa: BLE001 - 断网/限流都算"查不到"
-        info.error = str(exc)[:200]
-        info.message = "检查失败：连不上 GitHub（不影响使用，稍后再点版本号重试）"
-        logger.debug("[update] 检查失败：%s", exc)
-        return info
+    except Exception as exc:  # noqa: BLE001 - 主渠道断网/限流走备用
+        gh_err = str(exc)[:200]
+        logger.debug("[update] GitHub 检查失败，转 Gitee 备用：%s", exc)
+
+    gitee_err: Optional[str] = None
+    if payload is None:
+        try:
+            req = urllib.request.Request(
+                GITEE_RELEASES_API,
+                headers={"User-Agent": "HopOn/%s" % cur})
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            channel = "gitee"
+        except Exception as exc:  # noqa: BLE001 - 两通道都断才算失败
+            gitee_err = str(exc)[:200]
+            info.error = ("github: %s; gitee: %s" % (gh_err, gitee_err))[:300]
+            info.message = "检查更新失败：GitHub 与 Gitee 都连不上，可稍后重试"
+            logger.debug("[update] 双通道均失败：%s / %s", gh_err, gitee_err)
+            return info
 
     latest = str(payload.get("tag_name") or "").lstrip("vV")
     if not latest:
         info.error = "返回里没有 tag_name"
-        info.message = "检查失败：连不上 GitHub（不影响使用，稍后再点版本号重试）"
+        info.message = "检查更新失败：接口返回异常，可稍后重试"
         return info
 
     assets = [
@@ -189,11 +208,16 @@ def check(*, force: bool = False) -> UpdateInfo:
     info.notes = _strip_notes(str(payload.get("body") or ""))
     info.assets = assets
     info.published_at = str(payload.get("published_at") or "")
-    info.message = (
-        "发现新版本 %s（当前 %s）" % (latest, cur)
-        if info.has_update
-        else "已是最新版本（%s）" % cur
-    )
+    if info.has_update:
+        info.message = "发现新版本 %s（当前 %s）" % (latest, cur)
+    elif channel == "gitee":
+        # 备用通道数据可能落后（release 传漏时 Gitee 停在旧版）——此时不能
+        # 替 GitHub 下「已是最新」的结论，如实说无法判断
+        info.message = ("GitHub 暂不可达；Gitee 备用通道最新 %s 不高于当前 %s"
+                        "——备用通道数据落后，是否有更新无法确认，可稍后重试"
+                        % (latest, cur))
+    else:
+        info.message = "已是最新版本（%s）" % cur
 
     _save_cache(
         {

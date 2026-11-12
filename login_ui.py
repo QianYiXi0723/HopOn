@@ -3275,7 +3275,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(cached or _update.check().to_dict())
             except Exception as exc:  # noqa: BLE001 - 查更新失败不该 500
                 logger.debug("检查更新失败：%s", exc)
-                self._json({"ok": False, "message": "检查失败：连不上 GitHub（不影响使用，稍后再点版本号重试）"})
+                self._json({"ok": False, "message": "检查更新失败：可稍后重试"})
             return
 
         if parsed.path == "/api/logtail":

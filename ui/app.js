@@ -608,7 +608,9 @@ function checkUpdate(){
         toast('发现新版本 v' + d.latest + '！当前 v' + d.current + '，打开下载页', false);
         if (d.url) window.open(d.url, '_blank');
       } else {
-        toast('已是最新版本（v' + d.current + '）');
+        /* 文案以服务端为准（2026-11-13）：Gitee 备用通道数据落后时是
+           「无法确认」而不是「已最新」，不能在前端硬编码掩盖 */
+        toast(d.message || ('已是最新版本（v' + d.current + '）'));
       }
     })
     .catch(function(e){ toast('检查失败：' + e, true); })
