@@ -1766,12 +1766,21 @@ def _filter_live_games(payload: Dict[str, Any], enabled: Optional[set]) -> Dict[
     if enabled is None:
         return payload
     out = dict(payload)
-    games = [g for g in (payload.get("games") or [])
-             if isinstance(g, dict) and g.get("game") in enabled]
+    names = _game_display_map()
+    games = []
+    for g in (payload.get("games") or []):
+        if not isinstance(g, dict):
+            continue
+        g = dict(g)
+        # 展示名唯一权威=KNOWN_GAMES（2026-11-13 用户裁决）：live 缓存烙印
+        # 的旧名（改名前的快照）不回放，未登记游戏才回落缓存名
+        if g.get("game"):
+            g["game_name"] = names.get(g["game"], g.get("game_name") or g["game"])
+        if g.get("game") in enabled:
+            games.append(g)
     present = {g.get("game") for g in games}
     missing = enabled - present
     if missing:
-        names = _game_display_map()
         for gid in sorted(missing):
             games.append({
                 "game": gid,

@@ -1681,6 +1681,13 @@ def summary(
     age = _cache_age_hours(fetched_at)
     _acts = ongoing()
     activities = [act.to_dict() for act in _acts]
+    # 展示名唯一权威=KNOWN_GAMES（2026-11-13 用户裁决）：活动缓存烙印的
+    # 旧名（改名前抓取的 game_name）不再泄漏，未登记游戏维持缓存名
+    from core.config import KNOWN_GAMES as _KG
+
+    for item in activities:
+        item["game_name"] = _KG.get(item.get("game") or "",
+                                    item.get("game_name") or item.get("game") or "")
     # 三段与英雄卡关联（2026-11-11 用户裁定）：每张卡带 tiers_set（已设档位）
     # 与 tiers_fired（已推档位），前端据此渲染段位标记与打勾
     raw_fired = cache.get("tier_fired")
