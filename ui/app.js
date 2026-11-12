@@ -1605,6 +1605,33 @@ async function loadDailies(){
   }
 }
 
+/* 周计划摘要：days=七元布尔（索引 0=周一…6=周日），全真=每天 */
+function freqTxt(days){
+  if (!Array.isArray(days) || days.length !== 7 || days.every(Boolean)) return '每天';
+  const names = ['一','二','三','四','五','六','日'];
+  const on = days.map(function(v,i){ return v ? names[i] : null; })
+    .filter(function(x){ return !!x; });
+  return on.length ? ('每周' + on.join('、')) : '未选日';
+}
+
+function collectDays(){
+  const out = new Array(7).fill(false);
+  document.querySelectorAll('#df-days .wd-chip').forEach(function(b){
+    const wd = Number(b.dataset.wd);
+    if (wd >= 0 && wd < 7) out[wd] = b.classList.contains('on');
+  });
+  return out;
+}
+
+function setDays(days){
+  const arr = (Array.isArray(days) && days.length === 7)
+    ? days : new Array(7).fill(true);   // 缺省=每天
+  document.querySelectorAll('#df-days .wd-chip').forEach(function(b){
+    const wd = Number(b.dataset.wd);
+    b.classList.toggle('on', wd >= 0 && wd < 7 ? !!arr[wd] : false);
+  });
+}
+
 function renderDailiesList(){
   const box = document.getElementById('dailies-list');
   if (!box) return;
@@ -1617,7 +1644,8 @@ function renderDailiesList(){
       const done = !!it.done_today;
       const resetTxt = (it.reset && it.reset !== '04:00') ? (' · 重置 ' + it.reset) : '';
       const modeTxt = it.mode === 'standalone'
-        ? ('每日 · 独立 ' + (it.time || '--:--')) : '每日 · 随巡检推送';
+        ? (freqTxt(it.days) + ' · 独立 ' + (it.time || '--:--'))
+        : (freqTxt(it.days) + ' · 随巡检推送');
       /* 行首勾选框 = 启用/停用（管理面职责）；今日完成去概览卡/托盘勾 */
       return '<div class="dl-row' + (!enabled ? ' is-off' : '') + '">' +
         '<input type="checkbox" class="dl-enable" data-id="' + escHtml(it.id) + '"' +
@@ -1645,7 +1673,9 @@ function renderManualGroup(){
   box.innerHTML = '<div class="gcards">' + items.map(function(it){
     const done = !!it.done_today;
     const first = (it.name || '?').trim().charAt(0) || '?';
-    const modeTxt = it.mode === 'standalone' ? ('独立 ' + (it.time || '--:--')) : '随巡检推送';
+    const modeTxt = it.mode === 'standalone'
+      ? (freqTxt(it.days) + ' · 独立 ' + (it.time || '--:--'))
+      : (freqTxt(it.days) + ' · 随巡检推送');
     const tip = '点击勾掉/恢复今日 ｜ 推送效果：' + (it.push_text || '');
     return '<div class="card gcard dl-gcard' + (done ? ' is-done' : '') +
         '" style="--gc:var(--brand)" data-id="' + escHtml(it.id) +
@@ -1674,6 +1704,7 @@ async function toggleDailiesEnable(id, enabled, box){
       action: 'update', id: id, name: it.name, mode: it.mode,
       time: it.time || '', reset: it.reset || '04:00',
       template: it.template || '', enabled: enabled,
+      days: Array.isArray(it.days) ? it.days : undefined,   // 缺省=每天（后端兜底）
     });
     if (!d.ok) toast(d.message || '操作失败', true);
     await loadDailies();   // 停用后托盘/概览/推送同源跟进
@@ -1736,6 +1767,7 @@ function openDailiesModal(id){
   setDailiesMode(it.mode || 'merged');
   document.getElementById('df-time').value = it.time || '20:00';
   document.getElementById('df-reset').value = it.reset || '04:00';
+  setDays(it.days);
   document.getElementById('df-enabled').checked = it.enabled !== false;
   document.getElementById('df-template').value = it.template || '';
   document.getElementById('df-err').hidden = true;
@@ -1776,6 +1808,10 @@ document.getElementById('df-mode').addEventListener('click', function(e){
   const b = e.target.closest('button[data-mode]');
   if (b) setDailiesMode(b.dataset.mode);
 });
+document.getElementById('df-days').addEventListener('click', function(e){
+  const chip = e.target.closest('.wd-chip');
+  if (chip) chip.classList.toggle('on');   // 多选，全不选在保存时拦截
+});
 ['df-name', 'df-time', 'df-template'].forEach(function(id){
   document.getElementById(id).addEventListener('input', updateDailiesPreview);
 });
@@ -1814,6 +1850,10 @@ document.getElementById('df-save').addEventListener('click', function(){
   if (mode === 'standalone' && !time) {
     err.textContent = '独立时刻需要选择时间'; err.hidden = false; return;
   }
+  const days = collectDays();
+  if (!days.some(Boolean)) {
+    err.textContent = '至少勾选一个重复日'; err.hidden = false; return;
+  }
   err.hidden = true;
   btn.disabled = true;
   const payload = {
@@ -1822,6 +1862,7 @@ document.getElementById('df-save').addEventListener('click', function(){
     reset: document.getElementById('df-reset').value || '04:00',
     template: document.getElementById('df-template').value.trim(),
     enabled: document.getElementById('df-enabled').checked,
+    days: days,
   };
   if (dlEditingId) payload.id = dlEditingId;
   postJSON('/api/custom_dailies', payload)

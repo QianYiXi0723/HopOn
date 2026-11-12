@@ -1477,6 +1477,10 @@ def custom_dailies_status() -> Dict[str, Any]:
             continue
         it = dict(it)
         it.setdefault("reset", dailies.DEFAULT_RESET)
+        days_raw = it.get("days")
+        if (not isinstance(days_raw, list) or len(days_raw) != 7
+                or not all(isinstance(x, bool) for x in days_raw)):
+            days_raw = [True] * 7
         out.append({
             "id": str(it.get("id") or ""),
             "name": str(it.get("name") or ""),
@@ -1485,6 +1489,7 @@ def custom_dailies_status() -> Dict[str, Any]:
             "reset": it["reset"],
             "template": str(it.get("template") or ""),
             "enabled": bool(it.get("enabled", True)),
+            "days": list(days_raw),
             "done_today": dailies.is_done(it, user_dir),
             "streak": dailies.streak_of(it, user_dir),
             "push_text": dailies.render_message(it),
@@ -1550,18 +1555,25 @@ def custom_dailies_update(payload: Dict[str, Any]) -> Dict[str, Any]:
         reset_s = dailies.DEFAULT_RESET
     template = str(payload.get("template") or "").strip()[:100]
     enabled = bool(payload.get("enabled", True))
+    days_raw = payload.get("days")
+    if (not isinstance(days_raw, list) or len(days_raw) != 7
+            or not all(isinstance(x, bool) for x in days_raw)):
+        days_raw = [True] * 7   # 缺省 = 每天
+    days = [bool(x) for x in days_raw]
+    if not any(days):
+        raise ValueError("至少勾选一个重复日")
 
     if action == "add":
         items.append({"id": f"cd-{_uuid.uuid4().hex[:8]}", "name": name,
                       "mode": mode, "time": time_s, "reset": reset_s,
-                      "template": template, "enabled": enabled})
+                      "template": template, "enabled": enabled, "days": days})
     elif action == "update":
         item_id = str(payload.get("id") or "")
         hit = next((it for it in items if str(it.get("id")) == item_id), None)
         if hit is None:
             raise ValueError("要编辑的项不存在")
         hit.update({"name": name, "mode": mode, "time": time_s, "reset": reset_s,
-                    "template": template, "enabled": enabled})
+                    "template": template, "enabled": enabled, "days": days})
     else:
         raise ValueError(f"未知 action：{action}")
 
@@ -2663,7 +2675,10 @@ def tray_summary_status() -> Dict[str, Any]:
             _itd.setdefault("reset", _dl.DEFAULT_RESET)
             _done = _dl.is_done(_itd, CONFIG_PATH.parent)
             manual_rows.append(f"{_id}|{_name}|{1 if _done else 0}")
-            if not _done:
+            # 非计划日不算待办（行仍显示可提前打卡）；_planned_weekday 对
+            # 缺 days 的旧数据回落 True，行为不变
+            _planned = _dl._planned_weekday(_itd, _dl._period_date(_itd))
+            if not _done and _planned:
                 pending_descs.append(f"{_name} 未清")
     except Exception:  # noqa: BLE001 - 手动打卡读不到不影响托盘主面
         pass

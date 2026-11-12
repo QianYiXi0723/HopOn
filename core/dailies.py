@@ -48,6 +48,25 @@ def _period_key(item: Dict[str, Any], now: Optional[datetime] = None) -> str:
     return shifted.strftime("%Y-%m-%d")
 
 
+def _period_date(item: Dict[str, Any], now: Optional[datetime] = None):
+    """当前周期的日期对象（供周计划判定 weekday）。"""
+    now = now or datetime.now()
+    return (now - timedelta(minutes=_reset_minutes(item))).date()
+
+
+def _planned_weekday(item: Dict[str, Any], day_date) -> bool:
+    """周计划判定：day_date（date）是否在该项的提醒日里。
+
+    days = [一,二,三,四,五,六,日] 七元布尔（索引 0=周一，Python weekday 口径）；
+    缺失/格式不对 = 每天（向后兼容旧数据）。
+    """
+    days = item.get("days")
+    if not isinstance(days, list) or len(days) != 7:
+        return True
+    wd = day_date.weekday()   # 0=周一 … 6=周日
+    return bool(days[wd])
+
+
 def _load_state(user_dir: Path) -> Dict[str, Any]:
     try:
         data = json.loads(_state_path(user_dir).read_text(encoding="utf-8"))
@@ -156,7 +175,10 @@ def streak_of(item: Dict[str, Any], user_dir: Path,
     start_k = 0 if shifted.strftime("%Y-%m-%d") in periods else 1
     streak = 0
     for k in range(start_k, _KEEP_DAYS + 1):
-        key = (shifted - timedelta(days=k)).strftime("%Y-%m-%d")
+        day = (shifted - timedelta(days=k)).date()
+        key = day.strftime("%Y-%m-%d")
+        if not _planned_weekday(item, day):
+            continue   # 非计划日：不打卡不断签，跳过继续往回数
         if key in periods:
             streak += 1
         else:
@@ -166,9 +188,17 @@ def streak_of(item: Dict[str, Any], user_dir: Path,
 
 def undone_today(items: List[Dict[str, Any]], user_dir: Path,
                  *, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
-    """启用且当前周期未勾掉的项（merged 班次推送用）。"""
-    return [it for it in items
-            if it.get("enabled", True) and not is_done(it, user_dir, now=now)]
+    """启用、今天在周计划内且当前周期未勾掉的项（merged 班次推送用）。"""
+    out: List[Dict[str, Any]] = []
+    for it in items:
+        if not it.get("enabled", True):
+            continue
+        if not _planned_weekday(it, _period_date(it, now)):
+            continue
+        if is_done(it, user_dir, now=now):
+            continue
+        out.append(it)
+    return out
 
 
 def standalone_due(items: List[Dict[str, Any]], user_dir: Path,
@@ -183,6 +213,8 @@ def standalone_due(items: List[Dict[str, Any]], user_dir: Path,
     for it in items:
         if not it.get("enabled", True) or it.get("mode") != "standalone":
             continue
+        if not _planned_weekday(it, _period_date(it, now)):
+            continue   # 非计划日：不提醒（手动打卡不受限）
         target = str(it.get("time") or "")
         if not re.match(r"^\d{1,2}:\d{2}$", target):
             continue

@@ -932,7 +932,8 @@ def run_once(config: AppConfig, dry_run: bool = False, quiet_push: bool = False)
             user_dir = config.config_path.parent
             enabled_items = [
                 dict(id=d.id, name=d.name, mode=d.mode, time=d.time,
-                     template=d.template, enabled=d.enabled)
+                     reset=d.reset, template=d.template, enabled=d.enabled,
+                     days=list(d.days))
                 for d in config.custom_dailies
                 if d.enabled and d.mode == "merged"   # standalone 有自己的独立时刻
             ]
