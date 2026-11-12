@@ -4015,6 +4015,28 @@ if (themeBtn) {
   });
 }
 
+/* 官方交流群：点击复制群号（本地常量，无外链） */
+const groupBtn = document.getElementById('btn-official-group');
+if (groupBtn) {
+  groupBtn.addEventListener('click', function () {
+    const num = '1135683779';
+    const done = function () { toast('群号已复制：' + num + '（打开 QQ 搜索入群）'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(num).then(done).catch(function () {
+        // 本地 HTTP 页面 clipboard API 可能被拒：退回 execCommand
+        const ta = document.createElement('textarea');
+        ta.value = num; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); }
+        catch (e) { toast('复制失败，群号：' + num, true); }
+        document.body.removeChild(ta);
+      });
+    } else {
+      toast('官方 QQ 群：' + num, true);
+    }
+  });
+}
+
 /* ========================= 推送预览 ========================= */
 /* 文案与手机实发同源：标题/正文一律来自 GET /api/push_preview
    （后端 core/analyzer.py 的 to_push_payload 同一条组装路径），
