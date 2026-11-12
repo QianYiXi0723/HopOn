@@ -1531,6 +1531,9 @@ def custom_dailies_status() -> Dict[str, Any]:
                 or not all(isinstance(x, bool) for x in days_raw)):
             days_raw = [True] * 7
         _done = dailies.is_done(it, user_dir)
+        # 今日是否在周计划内（2026-11-13 用户裁决：非计划日的概览卡不显示）
+        # 逐项 reset 时刻口径由后端统一算——前端不自己按 Date.now 猜星期
+        _planned = dailies._planned_weekday(it, dailies._period_date(it))
         # 推送效果诚实口径（2026-11-13）：未完成=[未完成] 行；已完成=并入
         # [已完成] 汇总行（不独立成行）——预览与实发同语义
         if _done:
@@ -1538,6 +1541,7 @@ def custom_dailies_status() -> Dict[str, Any]:
         else:
             _push_text = dailies.render_message(it)
         out.append({
+            "planned_today": _planned,
             "id": str(it.get("id") or ""),
             "name": str(it.get("name") or ""),
             "mode": str(it.get("mode") or "merged"),
@@ -2770,12 +2774,14 @@ def tray_summary_status() -> Dict[str, Any]:
             _name = str(_it.get("name") or "?").replace("|", " ").replace("\n", " ")
             _itd = dict(_it)
             _itd.setdefault("reset", _dl.DEFAULT_RESET)
+            # 非计划日的项整个不显示（2026-11-13 用户裁决：与概览卡同口径，
+            # 还没到星期四就不显示）——也不进待办点名
+            _planned = _dl._planned_weekday(_itd, _dl._period_date(_itd))
+            if not _planned:
+                continue
             _done = _dl.is_done(_itd, CONFIG_PATH.parent)
             manual_rows.append(f"{_id}|{_name}|{1 if _done else 0}")
-            # 非计划日不算待办（行仍显示可提前打卡）；_planned_weekday 对
-            # 缺 days 的旧数据回落 True，行为不变
-            _planned = _dl._planned_weekday(_itd, _dl._period_date(_itd))
-            if not _done and _planned:
+            if not _done:
                 pending_descs.append(f"{_name} 未清")
     except Exception:  # noqa: BLE001 - 手动打卡读不到不影响托盘主面
         pass

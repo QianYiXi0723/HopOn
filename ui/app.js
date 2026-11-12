@@ -1859,9 +1859,12 @@ function renderManualGroup(){
   const box = document.getElementById('manual-group');
   if (!box) return;
   const items = dlState.items || [];
-  if (!items.length) { box.hidden = true; box.innerHTML = ''; return; }
+  /* 非计划日（周计划没勾今天）的项不进概览卡（2026-11-13 用户裁决：
+     还没到星期四就不显示）；planned_today 由后端按逐项 reset 时刻算好 */
+  const shown = items.filter(function(it){ return it.planned_today !== false; });
+  if (!shown.length) { box.hidden = true; box.innerHTML = ''; return; }
   box.hidden = false;
-  box.innerHTML = '<div class="gcards">' + items.map(function(it){
+  box.innerHTML = '<div class="gcards">' + shown.map(function(it){
     const done = !!it.done_today;
     const first = (it.name || '?').trim().charAt(0) || '?';
     const modeTxt = it.mode === 'standalone'
