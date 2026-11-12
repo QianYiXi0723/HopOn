@@ -47,7 +47,7 @@ KNOWN_GAMES: Dict[str, str] = {
     "starrail": "崩坏：星穹铁道",
     "zzz": "绝区零",
     "arknights": "明日方舟",
-    "endfield": "终末地",
+    "endfield": "明日方舟：终末地",
     "wuwa": "鸣潮",
     "pgr": "战双帕弥什",
     "bh3": "崩坏3",
