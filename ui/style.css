@@ -250,6 +250,9 @@
   .btn:hover{background:var(--btn-hover)}
   .btn.primary{background:var(--brand);color:#fff}
   .btn.primary:hover{background:var(--brand-hover)}
+  .btn.btn-danger{background:var(--err,#e06055);border-color:var(--err,#e06055);color:#fff}
+  .btn.btn-danger:hover{filter:brightness(1.1)}
+  .btn.btn-danger:disabled{opacity:.5;cursor:not-allowed}
   .btn.sm{height:30px;padding:0 12px;font-size:12px}
   .btn:disabled{opacity:.45;cursor:not-allowed}
   .mini{padding:4px 10px;font-size:12px;border-radius:4px;border:none;
