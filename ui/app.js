@@ -2279,7 +2279,7 @@ function rlSelect(t){
   const input = document.getElementById('d-new-time');
   if (input) input.value = t;
   rlPaintSel();
-  toast('已选中 ' + t + '：▲▼ 微调 1 分钟，或左右拖动圆点');
+  toast('已选中 ' + t + '：点箭头微调 1 分钟，或左右拖动圆点');
 }
 
 /* 拖动圆点改时间。24 小时铺在 ~600px 上，1px≈2.4 分钟，不做吸附就会每个像素乱跳，

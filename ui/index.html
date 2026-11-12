@@ -19,6 +19,7 @@
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3.2 1.9"/></symbol>
   <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 10.5h16"/></symbol>
   <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M5.5 9l6.5 6.5L18.5 9" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2.5L5.5 13.5H11l-1 8 7.5-11H12l1-8z"/></symbol>
   <symbol id="i-gift" viewBox="0 0 24 24"><rect x="4" y="11.5" width="16" height="8.5" rx="1.5"/><path d="M3.5 8h17v3.5h-17z"/><path d="M12 8v12"/><path d="M12 8c-4.2 0-5-4-2.4-4C11.5 4 12 8 12 8zm0 0c4.2 0 5-4 2.4-4C12.5 4 12 8 12 8z"/></symbol>
   <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="16" r="4"/><path d="M11 13L20 4M16 8l3 3M13.5 10.5l1.8 1.8"/></symbol>
@@ -559,8 +560,8 @@
         <div class="row3 has-spin">
           <input type="time" id="d-new-time" value="22:00" step="60">
           <div class="spin">
-            <button type="button" class="spin-btn" id="btn-time-up" title="+1 分钟">▲</button>
-            <button type="button" class="spin-btn" id="btn-time-down" title="-1 分钟">▼</button>
+            <button type="button" class="spin-btn" id="btn-time-up" title="+1 分钟"><svg class="ico spin-ico up"><use href="#i-chev"/></svg></button>
+            <button type="button" class="spin-btn" id="btn-time-down" title="-1 分钟"><svg class="ico spin-ico"><use href="#i-chev"/></svg></button>
           </div>
           <button id="btn-add-time" class="btn">添加</button>
         </div>
@@ -938,12 +939,12 @@
     </div>
     <div class="addtime-body">
       <div class="addtime-stepper">
-        <button type="button" class="spin-btn big" id="addtime-down" title="-1 分钟">▼</button>
+        <button type="button" class="spin-btn big" id="addtime-down" title="-1 分钟"><svg class="ico spin-ico"><use href="#i-chev"/></svg></button>
         <input type="time" id="addtime-val" class="addtime-val" value="22:00" step="60"
                aria-label="提醒时间">
-        <button type="button" class="spin-btn big" id="addtime-up" title="+1 分钟">▲</button>
+        <button type="button" class="spin-btn big" id="addtime-up" title="+1 分钟"><svg class="ico spin-ico up"><use href="#i-chev"/></svg></button>
       </div>
-      <div class="hint" id="addtime-hint">可直接输入时间；点 ▲▼ 调 1 分钟，长按连续调整（10 分钟 / 1 小时）</div>
+      <div class="hint" id="addtime-hint">可直接输入时间；点箭头调 1 分钟，长按连续调整（10 分钟 / 1 小时）</div>
     </div>
     <div class="toolbar" style="justify-content:flex-end">
       <button class="btn" id="addtime-cancel">取消</button>
