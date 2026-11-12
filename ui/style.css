@@ -1493,6 +1493,7 @@
   .bgr-unit{flex:none;color:var(--muted);font-size:13px}
   /* 后台刷新·风险弹窗 */
   .modal--bgrisk{max-width:480px}
+  .modal--bgrisk .row3{grid-template-columns:1fr 1fr}   /* 取消/确认平分 */
   .bgrisk-body p{margin:6px 0}
   .bgrisk-body ul{margin:6px 0 2px;padding-left:18px;display:flex;
     flex-direction:column;gap:6px;color:var(--fg)}

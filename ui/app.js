@@ -1308,10 +1308,12 @@ const BGR_ORDER = ['genshin', 'starrail', 'zzz', 'arknights', 'endfield', 'wuwa'
 const BGR_DEFAULT = { genshin: 60, starrail: 60, zzz: 60, bh3: 60,
   wuwa: 60, pgr: 60, arknights: 180, endfield: 180 };
 let bgrOverrides = {};
+let bgrLastPayload = null;   // 最近一次服务端渲染载荷（取消时还原行状态用）
 
 function renderBgRefresh(d){
   const enabled = (d && d.bg_refresh_enabled !== false);
   bgrOverrides = (d && d.bg_refresh_overrides) || {};
+  if (d) bgrLastPayload = d;
   const box = document.getElementById('bg-refresh-toggle');
   if (box) box.checked = enabled;
   const item = document.getElementById('acc-bgrefresh');
@@ -1357,74 +1359,78 @@ async function toggleBgRefresh(){
 }
 document.getElementById('bg-refresh-toggle').addEventListener('change', toggleBgRefresh);
 
-/* 每款设置：行内改动只暂存，点保存才提交——提交前弹风险告知（5 秒阅读门） */
+/* 每款设置：行内拨开关/改数字=试图更改 → 立即弹风险告知（5 秒阅读门）；
+   确认=落盘该款，取消=还原行状态（2026-11-13 用户裁决：不要保存按钮） */
 document.getElementById('bg-refresh-grid').addEventListener('change', function(e){
   const row = e.target.closest('.bgr-row');
   if (!row) return;
-  const on = row.querySelector('.bgr-on');
-  const min = row.querySelector('.bgr-min');
-  if (e.target === on) {
-    row.classList.toggle('is-off', !on.checked);
-    min.disabled = !on.checked;
-  }
-  if (e.target === min) {
-    let v = parseInt(min.value, 10);
+  const gid = e.target.dataset.game;
+  if (!gid) return;
+  if (e.target.classList.contains('bgr-on')) {
+    row.classList.toggle('is-off', !e.target.checked);
+    row.querySelector('.bgr-min').disabled = !e.target.checked;
+  } else if (e.target.classList.contains('bgr-min')) {
+    let v = parseInt(e.target.value, 10);
     if (isNaN(v) || v < 5) v = 5;
     if (v > 1440) v = 1440;
-    min.value = v;
+    e.target.value = v;
+  } else {
+    return;
   }
+  const merged = mergedOverrides(gid, {
+    enabled: row.querySelector('.bgr-on').checked,
+    interval: clampBgrMin(row.querySelector('.bgr-min').value),
+  });
+  askBgrisk(merged);
 });
+
+function clampBgrMin(v){
+  let n = parseInt(v, 10);
+  if (isNaN(n) || n < 5) n = 5;
+  if (n > 1440) n = 1440;
+  return n;
+}
+
+function mergedOverrides(gid, change){
+  const out = {};
+  Object.keys(bgrOverrides).forEach(function(g){
+    out[g] = Object.assign({}, bgrOverrides[g]);
+  });
+  out[gid] = Object.assign({}, out[gid] || {}, change);
+  return out;
+}
 
 let bgrPending = null;   // 待保存的 overrides（弹窗确认后提交）
 let bgrLeft = 0;         // 阅读门倒计时（>0 期间弹窗不可关）
 
-function openBgriskModal(pending){
-  bgrPending = pending;
+function askBgrisk(merged){
+  bgrPending = merged;
   bgrLeft = 5;
   document.getElementById('bgrisk-modal').hidden = false;
   const cancel = document.getElementById('bgrisk-cancel');
   const ok = document.getElementById('bgrisk-ok');
   const x = document.getElementById('bgrisk-x');
   cancel.disabled = ok.disabled = x.disabled = true;
-  cancel.textContent = '取消（5s）'; ok.textContent = '确认保存（5s）';
+  cancel.textContent = '取消（5s）'; ok.textContent = '确认修改（5s）';
   const timer = setInterval(function(){
     bgrLeft -= 1;
     if (bgrLeft > 0) {
       cancel.textContent = '取消（' + bgrLeft + 's）';
-      ok.textContent = '确认保存（' + bgrLeft + 's）';
+      ok.textContent = '确认修改（' + bgrLeft + 's）';
       return;
     }
     clearInterval(timer);
     cancel.disabled = ok.disabled = x.disabled = false;
-    cancel.textContent = '取消'; ok.textContent = '确认保存';
+    cancel.textContent = '取消'; ok.textContent = '确认修改';
   }, 1000);
 }
 
-function closeBgriskModal(){
+function closeBgriskModal(revert){
   bgrLeft = 0;
   document.getElementById('bgrisk-modal').hidden = true;
   bgrPending = null;
+  if (revert) renderBgRefresh(bgrLastPayload || {});   // 取消=还原行状态
 }
-
-document.getElementById('btn-bgrefresh-save').addEventListener('click', function(){
-  const staged = {};
-  document.querySelectorAll('#bg-refresh-grid .bgr-row').forEach(function(row){
-    const gid = row.querySelector('.bgr-on').dataset.game;
-    let v = parseInt(row.querySelector('.bgr-min').value, 10);
-    if (isNaN(v) || v < 5) v = 5;
-    if (v > 1440) v = 1440;
-    staged[gid] = { enabled: row.querySelector('.bgr-on').checked, interval: v };
-  });
-  const changed = BGR_ORDER.some(function(gid){
-    if (!staged[gid]) return false;   // 未启用游戏没有行，不参与对比
-    const cur = bgrOverrides[gid] || {};
-    const curOn = cur.enabled !== false;
-    const curMin = cur.interval || BGR_DEFAULT[gid] || 60;
-    return staged[gid].enabled !== curOn || staged[gid].interval !== curMin;
-  });
-  if (!changed) { toast('没有改动'); return; }
-  openBgriskModal(staged);
-});
 
 document.getElementById('bgrisk-ok').addEventListener('click', async function(){
   if (bgrLeft > 0 || !bgrPending) return;
@@ -1436,7 +1442,7 @@ document.getElementById('bgrisk-ok').addEventListener('click', async function(){
       overrides: bgrPending,
     });
     if (!d.ok) { toast(d.message || '保存失败', true); return; }
-    closeBgriskModal();
+    closeBgriskModal(false);
     renderBgRefresh(d);
     toast('已保存');
   } catch (e) {
@@ -1447,18 +1453,18 @@ document.getElementById('bgrisk-ok').addEventListener('click', async function(){
 });
 document.getElementById('bgrisk-cancel').addEventListener('click', function(){
   if (bgrLeft > 0) return;   // 阅读门内不可关
-  closeBgriskModal();
+  closeBgriskModal(true);
 });
 document.getElementById('bgrisk-x').addEventListener('click', function(){
   if (bgrLeft > 0) return;
-  closeBgriskModal();
+  closeBgriskModal(true);
 });
 document.getElementById('bgrisk-modal').addEventListener('click', function(e){
-  if (e.target === this && bgrLeft <= 0) closeBgriskModal();   // 点遮罩关闭（阅读门内不行）
+  if (e.target === this && bgrLeft <= 0) closeBgriskModal(true);   // 点遮罩关闭（阅读门内不行）
 });
 document.addEventListener('keydown', function(e){
   if (e.key === 'Escape' && !document.getElementById('bgrisk-modal').hidden
-      && bgrLeft <= 0) closeBgriskModal();
+      && bgrLeft <= 0) closeBgriskModal(true);
 });
 
 /* 活动结束提醒：config.app.activity_alert_enabled / activity_alert_days /
