@@ -419,10 +419,11 @@ def _game_meta(
 
     def put(game: str, name: str = "", nickname: str = "") -> None:
         item = meta.setdefault(
-            game, {"game_name": KNOWN_GAMES.get(game, game), "nickname": ""}
+            game, {"game_name": KNOWN_GAMES.get(game, name or game), "nickname": ""}
         )
-        if name:
-            item["game_name"] = name
+        # 展示名唯一权威=KNOWN_GAMES（2026-11-13 用户裁决）：历史节点里烙印
+        # 的旧名（改名前巡检的快照）不得覆盖登记表；未登记游戏才回落烙印名
+        item["game_name"] = KNOWN_GAMES.get(game) or (name or item["game_name"] or game)
         if nickname:
             item["nickname"] = nickname
 

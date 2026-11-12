@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from .models import GameStatus, ResourceAlert, TaskItem
+from .config import KNOWN_GAMES
 
 LINE = "-" * 52
 
@@ -463,6 +464,11 @@ def report_from_snapshot(snap: Any) -> Optional[DailyReport]:
     if not statuses:
         return None
 
+    # 展示名唯一权威=KNOWN_GAMES（2026-11-13 用户裁决）：快照烙印的旧名
+    # （改名前巡检写入的 game_name）不回放；未登记游戏维持快照名
+    for st in statuses:
+        st.game_name = KNOWN_GAMES.get(st.game_id, st.game_name)
+
     resource_alerts = [
         ResourceAlert(
             game_id=str(a.get("game_id") or ""),
@@ -476,6 +482,8 @@ def report_from_snapshot(snap: Any) -> Optional[DailyReport]:
         for a in (snap.get("resource_alerts") or [])
         if isinstance(a, dict)
     ]
+    for ra in resource_alerts:
+        ra.game_name = KNOWN_GAMES.get(ra.game_id, ra.game_name)
     activity_alerts = [
         _SnapshotAlert(str(a.get("warn") or ""))
         for a in (snap.get("activity_alerts") or [])
