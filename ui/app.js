@@ -2411,6 +2411,7 @@ if (proxySave && !proxySave.dataset.bound) {
 /* ========================= 信息查询 ========================= */
 let liveLoaded = false;    // 本次会话已经发起过实时请求
 let liveRendered = false;  // 页面上已有可展示的数据（缓存或实时），占位符不再覆盖
+let liveRetryTimer = null; // 本地服务空窗期的自动重连定时器（4 秒一探）
 /* 每日报表数据自动轮询（2026-10-31）：守护进程在后台定时写入历史，
    打开着的页面原来永远不知道——概览"一直显示不了"的根因之一。
    页签激活时每 60 秒拉一次（loadHistory 走 GET 不触发巡检；
@@ -2511,9 +2512,11 @@ function renderLive(d){
   const hint = document.getElementById('live-hint');
   if (!box) return;
   if (!d || d.ok === false) {
-    /* 已有数据在展示时，失败的刷新静默忽略，不把页面打成空态 */
+    /* 引擎可达但返回业务错误（如实时查询内部失败）——才叫「查询失败」；
+       本地服务本身不通走下面的 catch 分支，两种语义彻底分开 */
     if (!liveRendered) {
-      box.innerHTML = '<div class="emptybox">' + escHtml((d && d.message) || '查询失败，请重试') + '</div>';
+      box.innerHTML = '<div class="emptybox">' +
+        escHtml((d && d.message) || '游戏查询失败，请点「刷新」重试或查看运行日志') + '</div>';
       if (hint) hint.textContent = '';
     }
     return;
@@ -2649,7 +2652,13 @@ function loadLive(force){
       if (d && d.ok !== false) cacheSet('live', d);   // 落缓存，下次秒开
     })
     .catch(function(){
-      if (box && !liveRendered) box.innerHTML = '<div class="emptybox">查询失败，请稍后重试。</div>';
+      /* 本地服务不通（换装/引擎重启空窗）——不是游戏查询失败，别再误导用户 */
+      if (box && !liveRendered) {
+        box.innerHTML = '<div class="emptybox">本地服务未就绪，正在自动重连…<br>' +
+          '<span style="font-size:12px;color:var(--muted)">（若刚更新过程序，等几秒即可恢复）</span></div>';
+        if (typeof liveRetryTimer !== 'undefined') clearTimeout(liveRetryTimer);
+        liveRetryTimer = setTimeout(function(){ loadLive(false); }, 4000);
+      }
     })
     .then(function(){
       kpiBusy(false);
