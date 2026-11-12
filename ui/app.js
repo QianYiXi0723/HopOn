@@ -1403,9 +1403,12 @@ function mergedOverrides(gid, change){
 let bgrPending = null;   // 待保存的 overrides（弹窗确认后提交）
 let bgrLeft = 0;         // 阅读门倒计时（>0 期间弹窗不可关）
 
+let bgrTimer = null;
+
 function askBgrisk(merged){
   bgrPending = merged;
   bgrLeft = 5;
+  if (bgrTimer) clearInterval(bgrTimer);
   document.getElementById('bgrisk-modal').hidden = false;
   const ok = document.getElementById('bgrisk-ok');
   /* 5s 阅读门只锁「确认修改」；取消/✕/遮罩随时可关（2026-11-13 用户裁决） */
@@ -1418,12 +1421,15 @@ function askBgrisk(merged){
       return;
     }
     clearInterval(timer);
+    bgrTimer = null;
     ok.disabled = false;
     ok.textContent = '确认修改';
   }, 1000);
+  bgrTimer = timer;
 }
 
 function closeBgriskModal(revert){
+  if (bgrTimer) { clearInterval(bgrTimer); bgrTimer = null; }
   bgrLeft = 0;
   document.getElementById('bgrisk-modal').hidden = true;
   bgrPending = null;
