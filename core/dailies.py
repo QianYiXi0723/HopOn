@@ -21,7 +21,7 @@ from core.ipc_lock import blocking as _ipc_blocking
 
 logger = logging.getLogger("dailycheck.dailies")
 
-DEFAULT_TEMPLATE = "📌 {name} 还没做"
+DEFAULT_TEMPLATE = "[未完成] {name}：今日进度（{progress}）"
 DEFAULT_RESET = "04:00"
 STANDALONE_TITLE = "⏰ 自定义提醒"
 
@@ -125,14 +125,28 @@ def _prune(state: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, A
     return out
 
 
-def render_message(item: Dict[str, Any]) -> str:
-    """模板渲染（{name}/{time}），空模板回落默认；未知花括号占位清掉。"""
+def render_message(item: Dict[str, Any], *, done: bool = False) -> str:
+    """模板渲染（{name}/{time}/{status}/{progress}），空模板回落默认；未知花括号清掉。
+
+    merged 推送只渲染未完成行（已完成项由 analyzer 并入 [已完成] 游戏汇总行，
+    2026-11-13 用户裁决）；{status} 变量保留给自定义模板（实态传入）。
+    """
     name = str(item.get("name") or "")
+    status = "[已完成]" if done else "[未完成]"
+    progress = "1/1" if done else "0/1"
     tpl = str(item.get("template") or "").strip() or DEFAULT_TEMPLATE
-    out = tpl.replace("{name}", name).replace("{time}", str(item.get("time") or ""))
+    out = (tpl.replace("{name}", name)
+              .replace("{time}", str(item.get("time") or ""))
+              .replace("{status}", status)
+              .replace("{progress}", progress))
     out = re.sub(r"\{[a-zA-Z_]+\}", "", out)
     out = re.sub(r"  +", " ", out).strip()
-    return out or DEFAULT_TEMPLATE.replace("{name}", name).replace("{time}", "")
+    if out:
+        return out
+    return (DEFAULT_TEMPLATE.replace("{name}", name)
+            .replace("{time}", str(item.get("time") or ""))
+            .replace("{status}", status)
+            .replace("{progress}", progress))
 
 
 def is_done(item: Dict[str, Any], user_dir: Path,
@@ -199,6 +213,27 @@ def undone_today(items: List[Dict[str, Any]], user_dir: Path,
             continue
         out.append(it)
     return out
+
+
+def merged_push_parts(items: List[Dict[str, Any]], user_dir: Path,
+                      *, now: Optional[datetime] = None):
+    """merged 班次手动项单源（推送/预览共用）：(未完成行, 已完成显示名)。
+
+    未完成 → render_message 行（[未完成] 名称：今日进度（0/1））；
+    已完成 → 只出显示名，由 analyzer 并入游戏日常 [已完成] 汇总行。
+    """
+    undone: List[str] = []
+    done_names: List[str] = []
+    for it in items:
+        if not it.get("enabled", True) or it.get("mode") != "merged":
+            continue
+        if not _planned_weekday(it, _period_date(it, now)):
+            continue
+        if is_done(it, user_dir, now=now):
+            done_names.append(str(it.get("name") or ""))
+        else:
+            undone.append(render_message(it))
+    return undone, done_names
 
 
 def standalone_due(items: List[Dict[str, Any]], user_dir: Path,

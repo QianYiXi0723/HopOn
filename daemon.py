@@ -1028,7 +1028,7 @@ def _check_manual_dailies() -> None:
     if not items:
         return
     for it in dailies.standalone_due(items, USER_DIR):
-        body = dailies.render_message(it)
+        body = dailies.render_message(it, done=False)   # 到期必未完成（已勾项被过滤）
         try:
             from core.notifier import build_notifiers, push_all
 

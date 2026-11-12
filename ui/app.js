@@ -1739,10 +1739,12 @@ function updateDailiesPreview(){
   const name = document.getElementById('df-name').value.trim() || '（名称）';
   const tpl = document.getElementById('df-template').value.trim()
     || dlState.default_template
-    || '📌 {name} 还没做';
+    || '{status} {name}：今日进度（{progress}）';
   const timeVal = currentDailiesMode() === 'standalone'
     ? (document.getElementById('df-time').value || '--:--') : '';
+  /* 预览按未完成态示意（推送发生在未完成时）；{status}/{progress} 由后端按实态渲染 */
   const txt = tpl.replace(/\{name\}/g, name).replace(/\{time\}/g, timeVal)
+    .replace(/\{status\}/g, '[未完成]').replace(/\{progress\}/g, '0/1')
     .replace(/\{[a-zA-Z_]+\}/g, '');
   document.getElementById('df-preview').textContent = '推送效果：' + txt;
 }

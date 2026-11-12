@@ -31,6 +31,8 @@ class DailyReport:
     activity_start_alerts: List[Any] = field(default_factory=list)
     #: 手动打卡未完成行（已渲染好模板文案，2026-11-12）
     manual_lines: List[str] = field(default_factory=list)
+    #: 手动打卡已完成项显示名（并入 [已完成] 游戏汇总行，2026-11-13）
+    manual_finished: List[str] = field(default_factory=list)
 
     # ---------------- 分组 ---------------- #
     @property
@@ -144,9 +146,11 @@ class DailyReport:
             lines.append(f"⚠️  {alert.warn_line()}")
         for alert in self.activity_alerts:
             lines.append(alert.warn_line())
-        # 手动打卡未完成行（2026-11-12）：日志与推送同口径
+        # 手动打卡：未完成行（与游戏日常同款前缀）+ 已完成并入完成汇总
         for row in self.manual_lines:
             lines.append(row)
+        if self.manual_finished:
+            lines.append("已完成手动项：" + "、".join(self.manual_finished))
 
         if self.unfinished:
             names = "、".join(item.game_name for item in self.unfinished)
@@ -200,15 +204,16 @@ class DailyReport:
         if not self.has_valid_data:
             lines.append("（本轮未获得有效账号数据：查询失败或快照过期；"
                          "以下提醒来自活动日历与资源预警，与日常完成度无关）")
-        # 溢出预警放最上面：这条最急，别被下面的完成清单盖住
-        for alert in self.resource_alerts:
-            lines.append(alert.warn_line())
+        # 2026-11-13 用户裁决：日常完成态块放最前（先看今天做完没），体力警告后移
         for item in self.unfinished:
             tasks = "、".join(task.describe() for task in item.unfinished_tasks)
             lines.append(f"[未完成] {item.game_name}：{tasks}")
 
-        if self.finished:
-            names = "、".join(item.game_name for item in self.finished)
+        # 已完成汇总：游戏 + 已完成手动项并列（2026-11-13 用户裁决：
+        # 手动项完成态不独立成行，与游戏同一行交代）
+        if self.finished or self.manual_finished:
+            names = "、".join(
+                [item.game_name for item in self.finished] + list(self.manual_finished))
             lines.append(f"[已完成] {names}")
 
         if self.failed:
@@ -224,6 +229,9 @@ class DailyReport:
             names = "、".join(item.game_name for item in self.no_accounts)
             lines.append(f"[未创建角色] {names}：这个账号下还没有这些游戏，建号后自动生效")
 
+        # 体力溢出预警（2026-11-13 起排在完成态块之后；尾句紧跟它走）
+        for alert in self.resource_alerts:
+            lines.append(alert.warn_line())
         if self.resource_alerts:
             lines.append("先去把体力花掉，别浪费了。")
         elif all_done:
@@ -249,7 +257,7 @@ class DailyReport:
                 lines.append(alert.warn_line())
             for alert in self.activity_start_alerts:
                 lines.append(alert.warn_line())
-        # 手动打卡未完成行（2026-11-12）：与游戏日常同列的「今天还差什么」
+        # 手动打卡行（2026-11-13 起含 [已完成] 态）：与游戏日常同款前缀格式
         if self.manual_lines:
             lines.append("")
             for row in self.manual_lines:
@@ -364,6 +372,7 @@ def build_report(
     activity_alerts: Optional[List[Any]] = None,
     activity_start_alerts: Optional[List[Any]] = None,
     manual_lines: Optional[List[str]] = None,
+    manual_finished: Optional[List[str]] = None,
 ) -> DailyReport:
     """入口函数：状态列表 -> 汇总报告。
 
@@ -371,7 +380,8 @@ def build_report(
     传了就顺带判定体力溢出，不传则不做（向后兼容旧调用）。
     ``activity_alerts`` 由 ``core.activities.pending_alerts()`` 提供，直接挂进报告。
     ``activity_start_alerts`` 由 ``pending_start_alerts()`` 提供（活动上新提醒）。
-    ``manual_lines`` 由 ``core.dailies`` 渲染的手动打卡未完成行（2026-11-12）。
+    ``manual_lines``/``manual_finished`` 由 ``core.dailies.merged_push_parts`` 提供
+    （未完成行 + 已完成显示名，2026-11-13）。
     """
     return DailyReport(
         statuses=list(statuses),
@@ -379,6 +389,7 @@ def build_report(
         activity_alerts=list(activity_alerts or []),
         activity_start_alerts=list(activity_start_alerts or []),
         manual_lines=list(manual_lines or []),
+        manual_finished=list(manual_finished or []),
     )
 
 
@@ -486,12 +497,15 @@ def report_from_snapshot(snap: Any) -> Optional[DailyReport]:
     )
 
 
-def push_preview_from_snapshot(snap: Any) -> Dict[str, Any]:
+def push_preview_from_snapshot(snap: Any, *, manual_undone: Optional[List[str]] = None,
+                               manual_finished: Optional[List[str]] = None) -> Dict[str, Any]:
     """/api/push_preview 的响应体：空态结构化，正常态与实发逐字同源。
 
     snap 为 None（没跑过巡检 / 快照缺失损坏）→ waiting_first_check；
     快照里没有任何当日有效数据（全失败/全 stale/全未建号）→ no_valid_records；
     其余 → to_push_payload 同一条组装路径（页面所见 = 手机所得）。
+    ``manual_undone``/``manual_finished``：手动项实态并入预览（2026-11-13），
+    由 login_ui 读 config + 账本调 ``merged_push_parts`` 提供，与实发同一单源。
     dry-run 性质：不联网、不推送、不写任何文件。
     """
     report = report_from_snapshot(snap)
@@ -513,6 +527,8 @@ def push_preview_from_snapshot(snap: Any) -> Dict[str, Any]:
             "title": NO_VALID_RECORDS_TITLE,
             "body": NO_VALID_RECORDS_BODY,
         }
+    report.manual_lines = [str(x) for x in (manual_undone or [])]
+    report.manual_finished = [str(x) for x in (manual_finished or [])]
     title, body = report.to_push_payload()
     return {
         "state": "ok",

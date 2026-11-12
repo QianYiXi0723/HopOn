@@ -45,11 +45,18 @@ def main() -> int:
 
     # ---- 1) 模板渲染 ----
     print("[1] render_message")
-    check(D.render_message(items[0]) == "📌 游戏A日常 还没做", "空模板回落默认")
+    check(D.render_message(items[0]) == "[未完成] 游戏A日常：今日进度（0/1）",
+          "空模板回落默认（未完成行）")
+    check(D.render_message({**items[0], "template": "{status} {name} 剩 {progress}"},
+                           done=True) == "[已完成] 游戏A日常 剩 1/1",
+          "done=True：{status}/{progress} 走实态（自定义模板）")
     check(D.render_message({**items[1], "template": "💪 {name} 时间到"}) == "💪 健身房 时间到",
           "自定义模板+{name}")
     check(D.render_message({**items[2], "template": "👉 {name}（{time} 前）"})
           == "👉 独立项（20:00 前）", "{time} 变量")
+    check(D.render_message({"id": "x", "name": "N",
+                            "template": "{status} {name} 剩 {progress}"})
+          == "[未完成] N 剩 0/1", "{status}/{progress} 变量")
     check(D.render_message({"id": "x", "name": "N", "template": "奇怪 {unknown} 字段"})
           == "奇怪 字段", "未知占位清理")
 
@@ -151,6 +158,28 @@ def main() -> int:
     check(D._planned_weekday({"id": "x"}, d_today) is True, "无 days=每天")
     check(D._planned_weekday({"days": [True] * 6}, d_today) is True, "长度不对的坏 days 回落=每天")
     check(D._planned_weekday({**it_np, "days": [True] * 7}, d_today) is True, "全选=每天")
+
+    # ---- 9) merged_push_parts 单源（未完成行 / 已完成名，2026-11-13） ----
+    print("[9] merged_push_parts")
+    tmp2 = Path(tempfile.mkdtemp(prefix="rl_test_dailies2_"))
+    m_items = [
+        {"id": "m1", "name": "甲", "mode": "merged", "reset": "04:00", "enabled": True},
+        {"id": "m2", "name": "乙", "mode": "merged", "reset": "04:00", "enabled": True},
+        {"id": "m3", "name": "丙", "mode": "standalone", "time": "20:00",
+         "reset": "04:00", "enabled": True},
+        {"id": "m4", "name": "丁", "mode": "merged", "reset": "04:00", "enabled": False},
+        {"id": "m5", "name": "戊", "mode": "merged", "reset": "04:00", "enabled": True,
+         "days": [True] * 7},
+    ]
+    D.mark_done(m_items[1], tmp2)          # 乙 已完成
+    undone, finished = D.merged_push_parts(m_items, tmp2)
+    check(undone == ["[未完成] 甲：今日进度（0/1）", "[未完成] 戊：今日进度（0/1）"],
+          "未完成=渲染行（standalone/停用排除）")
+    check(finished == ["乙"], "已完成=仅显示名（并入 [已完成] 汇总用）")
+    D.mark_done(m_items[0], tmp2)
+    undone2, finished2 = D.merged_push_parts(m_items, tmp2)
+    check(undone2 == ["[未完成] 戊：今日进度（0/1）"] and finished2 == ["甲", "乙"],
+          "勾掉后从未完成行转入已完成名（按 config 序）")
 
     print(f"rl_test_dailies: {PASS} 项断言全绿")
     return 0
