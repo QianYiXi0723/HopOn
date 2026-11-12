@@ -3226,7 +3226,9 @@ function renderActivities(d){
       groups.sort(function(a, b){ return a.mins - b.mins; });
 
       if (groups.length) {
-        html = (heroIt ? actCardHtml(heroIt, true, heroSlim) : '') + groups.map(function(g){
+        /* 英雄卡套进 act-grid 只占 2×2 轨道（2026-11-13 用户裁决：全屏下
+           裸卡通栏霸整排难看；≤660px 窄容器仍有 1/-1 回退） */
+        html = (heroIt ? '<div class="act-grid">' + actCardHtml(heroIt, true, heroSlim) + '</div>' : '') + groups.map(function(g){
           return '<div class="act-group">' +
             '<div class="act-group-head">' +
               '<span class="gdot" style="background:' + gameDotColor(g.gid) + '"></span>' +
@@ -3244,7 +3246,7 @@ function renderActivities(d){
       /* 英雄强制第一位（2026-11-09 用户需求）：dense 自动流会被更紧急的
          无内容卡挤到第二行——英雄出池通栏置顶，其余照紧迫序跟后排 */
       const pool = mergedOngoing.concat(upcoming).filter(function(x){ return x !== heroIt; }).sort(byUrgency);
-      html = (heroIt ? actCardHtml(heroIt, true, heroSlim) : '') +
+      html = (heroIt ? '<div class="act-grid">' + actCardHtml(heroIt, true, heroSlim) + '</div>' : '') +
         '<div class="act-grid">' +
         pool.map(function(x){ return actCardHtml(x, false); }).join('') +
         '</div>';
