@@ -1751,7 +1751,7 @@ function updateDailiesPreview(){
   /* 用户视角（2026-11-13）：不裸露模板变量——没填名称=引导话，
      填了名称=直接显示最终消息形态（模板框占位与推送效果行同口径） */
   if (!rawName) {
-    const msg = '填写名称后，这里显示推送效果';
+    const msg = '填写名称后显示推送效果';
     document.getElementById('df-preview').textContent = msg;
     if (!ta.value.trim()) ta.placeholder = msg;
     return;
