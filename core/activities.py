@@ -1594,14 +1594,15 @@ class ActivityTierAlert:
 
     def warn_line(self) -> str:
         left = self._left_text()
+        # 档位序号不进推送（2026-11-13 用户裁决）；行动语只在真正需要动手的
+        # 档保留——规划档批量出现时同款尾巴重复三遍很难读
         if self.tier == 1:
-            return (f"🗓️ 活动规划：{self.game_name}{self._shown()} 约 {left}后结束"
-                    f"（第 1 档·规划），安排好时间")
+            return f"🗓️ 活动规划：{self.game_name}{self._shown()} 约 {left}后结束"
         if self.tier == 2:
             return (f"⏳ 活动行动：{self.game_name}{self._shown()} 约 {left}后结束"
-                    f"（第 2 档·行动），今天该打了")
+                    f"，今天该打了")
         return (f"🔔 最后冲刺：{self.game_name}{self._shown()} 仅剩约 {left}"
-                f"（第 3 档·冲刺），想拿奖励抓紧了")
+                f"，想拿奖励抓紧了")
 
 
 def pending_deadline_alerts(
