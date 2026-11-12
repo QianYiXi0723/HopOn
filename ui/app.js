@@ -1736,8 +1736,10 @@ function currentDailiesMode(){
 }
 
 function updateDailiesPreview(){
-  const name = document.getElementById('df-name').value.trim() || '（名称）';
-  const tpl = document.getElementById('df-template').value.trim()
+  const ta = document.getElementById('df-template');
+  const rawName = document.getElementById('df-name').value.trim();
+  const name = rawName || '（名称）';
+  const tpl = ta.value.trim()
     || dlState.default_template
     || '{status} {name}：今日进度（{progress}）';
   const timeVal = currentDailiesMode() === 'standalone'
@@ -1746,7 +1748,16 @@ function updateDailiesPreview(){
   const txt = tpl.replace(/\{name\}/g, name).replace(/\{time\}/g, timeVal)
     .replace(/\{status\}/g, '[未完成]').replace(/\{progress\}/g, '0/1')
     .replace(/\{[a-zA-Z_]+\}/g, '');
+  /* 用户视角（2026-11-13）：不裸露模板变量——没填名称=引导话，
+     填了名称=直接显示最终消息形态（模板框占位与推送效果行同口径） */
+  if (!rawName) {
+    const msg = '填写名称后，这里显示推送效果';
+    document.getElementById('df-preview').textContent = msg;
+    if (!ta.value.trim()) ta.placeholder = msg;
+    return;
+  }
   document.getElementById('df-preview').textContent = '推送效果：' + txt;
+  if (!ta.value.trim()) ta.placeholder = txt;
 }
 
 function setDailiesMode(mode){
