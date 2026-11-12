@@ -1297,9 +1297,40 @@ function renderSchedule(d, force){
 
   renderCatchUp(d);
   renderDaemon(d.daemon || {});
+  renderBgRefresh(d);
   renderActivitySwitch(d.activity_alert_enabled, d.activity_alert_days,
                        d.activity_deadline_tiers);
 }
+
+/* 后台静默刷新：config.app.bg_refresh_enabled（总开关；间隔按游戏族固定
+   米游社/库街区 60 分、森空岛 180 分，2026-11-13 用户拍板） */
+function renderBgRefresh(d){
+  const enabled = (d && d.bg_refresh_enabled !== false);
+  const box = document.getElementById('bg-refresh-toggle');
+  if (box) box.checked = enabled;
+  const item = document.getElementById('acc-bgrefresh');
+  if (item) item.classList.toggle('is-off', !enabled);
+  setSum('bgrefresh', enabled ? '已开启' : '已关闭', '后台静默刷新');
+}
+
+async function toggleBgRefresh(){
+  const box = document.getElementById('bg-refresh-toggle');
+  if (!box) return;
+  const want = box.checked;
+  box.disabled = true;
+  try {
+    const d = await postJSON('/api/bg_refresh', { enabled: want });
+    if (!d.ok) { box.checked = !want; toast(d.message || '设置失败', true); return; }
+    renderBgRefresh(d);
+    toast(d.message || (want ? '已开启' : '已关闭'));
+  } catch (e) {
+    box.checked = !want;
+    toast('设置失败：' + e, true);
+  } finally {
+    box.disabled = false;
+  }
+}
+document.getElementById('bg-refresh-toggle').addEventListener('change', toggleBgRefresh);
 
 /* 活动结束提醒：config.app.activity_alert_enabled / activity_alert_days /
    activity_deadline_tiers（三段，2026-11-11 #9） */

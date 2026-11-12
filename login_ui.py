@@ -1313,6 +1313,7 @@ def schedule_status() -> Dict[str, Any]:
         "catch_up_minutes": _normalize_catch_up(app.get("catch_up_minutes")),
         "catch_up_enabled": _normalize_bool(app.get("catch_up_enabled"), True),
         "resource_alert_enabled": _normalize_bool(app.get("resource_alert_enabled"), True),
+        "bg_refresh_enabled": _normalize_bool(app.get("bg_refresh_enabled"), True),
         "activity_alert_enabled": _normalize_bool(app.get("activity_alert_enabled"), True),
         "activity_alert_days": _normalize_alert_days(app.get("activity_alert_days")),
         "activity_deadline_tiers": _normalize_deadline_tiers(
@@ -1478,6 +1479,25 @@ def save_catch_up(raw_minutes: Any, enabled: Any = None) -> Dict[str, Any]:
         result["message"] = "已关闭补发（补发窗口为 0）"
     else:
         result["message"] = f"错过时间点后 {value} 分钟内会补发"
+    return result
+
+
+@_serialized_write
+def save_bg_refresh(enabled: Any) -> Dict[str, Any]:
+    """保存后台静默刷新总开关（间隔按游戏族固定：米游社/库街区 60 分、森空岛 180 分）。"""
+    raw = load_raw_config()
+    if not isinstance(raw.get("app"), dict):
+        raw["app"] = {}
+    raw["app"]["bg_refresh_enabled"] = _normalize_bool(enabled, True)
+
+    from core.config import parse_config
+
+    parse_config(raw, source=CONFIG_PATH)
+    save_raw_config(raw)
+    logger.info("后台静默刷新已%s", "开启" if raw["app"].get("bg_refresh_enabled", True) else "关闭")
+    result = schedule_status()
+    result["message"] = ("已开启：米游社/库街区系每 60 分钟、森空岛系每 180 分钟自动更新"
+                         if result["bg_refresh_enabled"] else "已关闭")
     return result
 
 
@@ -1915,12 +1935,16 @@ def _annotate_live_cool(
     return out
 
 
-def live_status(force: bool = False) -> Dict[str, Any]:
+def live_status(force: bool = False, family: Optional[str] = None) -> Dict[str, Any]:
     """返回每款游戏的体力 / 理智看板。
 
     三级缓存：进程内 45 秒 → 磁盘 data/live_cache.json → 现场查询。
     默认（页面加载）只回缓存，绝不现场打接口 —— 秒开是铁律；
     真正的实时查询只发生在「刷新」按钮（force=1），日常数据由定时守护进程落盘。
+
+    family（2026-11-13 后台静默刷新）：mihoyo/kuro/skland——daemon 按游戏族
+    间隔只刷本族（森空岛系 180 分，不跟米游社 60 分走）。家族刷新走合并写：
+    本族条目替换、他族条目原样保留，缓存不因局部刷新丢数据。
 
     状态切换不漏旧数据：配置读取在最前 —— 演示模式（provider=mock）在所有
     缓存路径之前短路（切换后任何时代的旧缓存都不会漏出来）；缓存回放按
@@ -1988,6 +2012,23 @@ def live_status(force: bool = False) -> Dict[str, Any]:
 
     from core.config import RESOURCE_TASK_NAMES
     from main import collect_statuses
+
+    # 家族刷新（2026-11-13 后台静默刷新）：只查本族启用的游戏；该族没有
+    # 启用账号就不打任何接口（daemon 侧也有同款判断，这里是兜底）
+    family_games: Optional[set] = None
+    if family in ("mihoyo", "kuro", "skland"):
+        from core.config import MIHOYO_GAMES, KURO_GAMES, SKLAND_GAMES
+
+        fmap = {"mihoyo": MIHOYO_GAMES, "kuro": KURO_GAMES, "skland": SKLAND_GAMES}
+        family_games = set(fmap[family])
+        sub_accounts = [a for a in cfg.accounts
+                        if a.game in family_games and a.game in (enabled or set())]
+        if not sub_accounts:
+            return {"ok": True, "cached": True, "generated_at":
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "games": []}
+        from dataclasses import replace as _dc_replace
+
+        cfg = _dc_replace(cfg, accounts=sub_accounts)
 
     with _LIVE_LOCK:
         # 等锁期间别的线程可能刚完成刷新：二次判定进程缓存新鲜度，
@@ -2065,6 +2106,12 @@ def live_status(force: bool = False) -> Dict[str, Any]:
                 }
                 entry["cooled"] = True
                 games.append(entry)
+
+        # 家族刷新合并写：本族条目替换、他族条目原样保留——局部刷新不丢缓存
+        if family_games is not None:
+            disk = _live_disk_read() or {}
+            games.extend(g for g in (disk.get("games") or [])
+                         if isinstance(g, dict) and g.get("game") not in family_games)
 
         # 排序统一按 GAME_ORDER 平台分组序（与游戏概览/报表同口径）——
         # config 账号行是历史追加序（崩3/战双在尾部），不排两页会不一致
@@ -3372,7 +3419,8 @@ class Handler(BaseHTTPRequestHandler):
                          (datetime.now() - gen_dt).total_seconds()
                          > _LIVE_AUTO_REFRESH_MINUTES * 60)
             try:
-                self._json(live_status(force=force))
+                family = (query.get("family") or [""])[0].lower()
+                self._json(live_status(force=force, family=family or None))
             except Exception as exc:  # noqa: BLE001
                 logger.exception("实时查询失败")
                 self._json({"ok": False, "message": f"实时查询失败：{exc}", "games": []}, 500)
@@ -3521,6 +3569,16 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"ok": False, "message": str(exc)}, 400)
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("保存时间点失败")
+                    self._json({"ok": False, "message": f"保存失败：{exc}"}, 500)
+            return
+
+        if path == "/api/bg_refresh":
+            payload = self._read_json_body()
+            if payload is not None:
+                try:
+                    self._json(save_bg_refresh(payload.get("enabled")))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("保存后台刷新开关失败")
                     self._json({"ok": False, "message": f"保存失败：{exc}"}, 500)
             return
 

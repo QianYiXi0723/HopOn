@@ -55,6 +55,13 @@ KNOWN_GAMES: Dict[str, str] = {
 
 #: 米游社数据源覆盖的游戏（query.mihoyo_enabled=False 时跳过它们）
 MIHOYO_GAMES: Tuple[str, ...] = ("genshin", "starrail", "zzz", "bh3")
+#: 库街区系（鸣潮/战双，kurobbs API——风控容忍度三家里最高）
+KURO_GAMES: Tuple[str, ...] = ("wuwa", "pgr")
+#: 森空岛系（明日方舟/终末地，skland API——数美风控，高频轮询会致 token 失效）
+SKLAND_GAMES: Tuple[str, ...] = ("arknights", "endfield")
+#: 后台静默刷新间隔（分钟）：米游社/库街区 60（现役项目 1-2h 惯例的保守端），
+#: 森空岛 180（无先例档位，用户裁决+自停护栏兜底）
+BG_REFRESH_INTERVALS: Dict[str, int] = {"mihoyo": 60, "kuro": 60, "skland": 180}
 
 #: 错过时间点后的补发窗口（分钟）。0 = 关掉补发，最大 720 分钟（12 小时）。
 #: 例如 180：21:30 那轮因为休眠没跑到，只要在 23:59 前醒过来，就会立刻补跑一次。
@@ -718,6 +725,8 @@ class AppConfig:
     bh3_stamina_threshold: int = RESOURCE_THRESHOLD_DEFAULT["bh3"]
     # 体力溢出提醒总开关：false 时完全跳过判定（各阈值原样保留）
     resource_alert_enabled: bool = RESOURCE_ALERT_ENABLED_DEFAULT
+    # 后台静默刷新：定时巡查之外按游戏族间隔自动更新实时面板（不写巡检历史）
+    bg_refresh_enabled: bool = True
     # 活动结束提醒总开关：false 时不读活动缓存、不追加任何活动警告
     activity_alert_enabled: bool = ACTIVITY_ALERT_ENABLED_DEFAULT
     # 活动结束提前提醒天数：结束前 N 天开始提醒（1~30，默认 3）——
@@ -791,6 +800,7 @@ class AppConfig:
                 "catch_up_enabled": bool(self.catch_up_enabled),
                 "autostart_desired": bool(self.autostart_desired),
                 "resource_alert_enabled": bool(self.resource_alert_enabled),
+                "bg_refresh_enabled": bool(self.bg_refresh_enabled),
                 "activity_alert_enabled": bool(self.activity_alert_enabled),
                 "activity_alert_days": int(self.activity_alert_days),
                 "activity_deadline_tiers": list(self.activity_deadline_tiers),
@@ -1021,6 +1031,8 @@ def parse_config(data: Dict[str, Any], source: Optional[Path] = None) -> AppConf
         resource_alert_enabled=_parse_bool(
             app_section.get("resource_alert_enabled"), "resource_alert_enabled",
             RESOURCE_ALERT_ENABLED_DEFAULT),
+        bg_refresh_enabled=_parse_bool(
+            app_section.get("bg_refresh_enabled"), "bg_refresh_enabled", True),
         activity_alert_enabled=_parse_bool(
             app_section.get("activity_alert_enabled"), "activity_alert_enabled",
             ACTIVITY_ALERT_ENABLED_DEFAULT),
