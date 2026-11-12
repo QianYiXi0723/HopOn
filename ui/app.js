@@ -1302,15 +1302,40 @@ function renderSchedule(d, force){
                        d.activity_deadline_tiers);
 }
 
-/* 后台静默刷新：config.app.bg_refresh_enabled（总开关；间隔按游戏族固定
-   米游社/库街区 60 分、森空岛 180 分，2026-11-13 用户拍板） */
+/* 后台静默刷新：config.app.bg_refresh_enabled（总开关）+ bg_refresh_overrides
+   （每款覆盖 {enabled, interval}；未覆盖用族默认 米/库 60、森 180，2026-11-13） */
+const BGR_ORDER = ['genshin', 'starrail', 'zzz', 'arknights', 'endfield', 'wuwa', 'pgr', 'bh3'];
+const BGR_DEFAULT = { genshin: 60, starrail: 60, zzz: 60, bh3: 60,
+  wuwa: 60, pgr: 60, arknights: 180, endfield: 180 };
+let bgrOverrides = {};
+
 function renderBgRefresh(d){
   const enabled = (d && d.bg_refresh_enabled !== false);
+  bgrOverrides = (d && d.bg_refresh_overrides) || {};
   const box = document.getElementById('bg-refresh-toggle');
   if (box) box.checked = enabled;
   const item = document.getElementById('acc-bgrefresh');
   if (item) item.classList.toggle('is-off', !enabled);
   setSum('bgrefresh', enabled ? '已开启' : '已关闭', '后台静默刷新');
+  const enabledGames = new Set((d && d.enabled_games) || []);
+  const grid = document.getElementById('bg-refresh-grid');
+  if (grid) {
+    grid.innerHTML = BGR_ORDER.map(function(gid){
+      const ov = bgrOverrides[gid] || {};
+      const on = ov.enabled !== false;
+      const min = ov.interval || BGR_DEFAULT[gid] || 60;
+      const known = enabledGames.size ? enabledGames.has(gid) : true;
+      return '<div class="bgr-row' + (on ? '' : ' is-off') + '">' +
+        '<span class="bgr-name">' + escHtml(GAME_LABELS[gid] || gid) +
+          (known ? '' : ' <span class="dim">(未启用)</span>') + '</span>' +
+        '<label class="toggle"><input type="checkbox" class="bgr-on" data-game="' + gid + '"' +
+          (on ? ' checked' : '') + (known ? '' : ' disabled') + '><i></i></label>' +
+        '<input type="number" class="bgr-min" data-game="' + gid + '" min="5" max="1440" step="5"' +
+          ' value="' + min + '"' + (on && known ? '' : ' disabled') + '>' +
+        '<span class="bgr-unit">分钟</span>' +
+      '</div>';
+    }).join('');
+  }
 }
 
 async function toggleBgRefresh(){
@@ -1331,6 +1356,110 @@ async function toggleBgRefresh(){
   }
 }
 document.getElementById('bg-refresh-toggle').addEventListener('change', toggleBgRefresh);
+
+/* 每款设置：行内改动只暂存，点保存才提交——提交前弹风险告知（5 秒阅读门） */
+document.getElementById('bg-refresh-grid').addEventListener('change', function(e){
+  const row = e.target.closest('.bgr-row');
+  if (!row) return;
+  const on = row.querySelector('.bgr-on');
+  const min = row.querySelector('.bgr-min');
+  if (e.target === on) {
+    row.classList.toggle('is-off', !on.checked);
+    min.disabled = !on.checked;
+  }
+  if (e.target === min) {
+    let v = parseInt(min.value, 10);
+    if (isNaN(v) || v < 5) v = 5;
+    if (v > 1440) v = 1440;
+    min.value = v;
+  }
+});
+
+let bgrPending = null;   // 待保存的 overrides（弹窗确认后提交）
+let bgrLeft = 0;         // 阅读门倒计时（>0 期间弹窗不可关）
+
+function openBgriskModal(pending){
+  bgrPending = pending;
+  bgrLeft = 5;
+  document.getElementById('bgrisk-modal').hidden = false;
+  const cancel = document.getElementById('bgrisk-cancel');
+  const ok = document.getElementById('bgrisk-ok');
+  const x = document.getElementById('bgrisk-x');
+  cancel.disabled = ok.disabled = x.disabled = true;
+  cancel.textContent = '取消（5s）'; ok.textContent = '确认保存（5s）';
+  const timer = setInterval(function(){
+    bgrLeft -= 1;
+    if (bgrLeft > 0) {
+      cancel.textContent = '取消（' + bgrLeft + 's）';
+      ok.textContent = '确认保存（' + bgrLeft + 's）';
+      return;
+    }
+    clearInterval(timer);
+    cancel.disabled = ok.disabled = x.disabled = false;
+    cancel.textContent = '取消'; ok.textContent = '确认保存';
+  }, 1000);
+}
+
+function closeBgriskModal(){
+  bgrLeft = 0;
+  document.getElementById('bgrisk-modal').hidden = true;
+  bgrPending = null;
+}
+
+document.getElementById('btn-bgrefresh-save').addEventListener('click', function(){
+  const staged = {};
+  document.querySelectorAll('#bg-refresh-grid .bgr-row').forEach(function(row){
+    const gid = row.querySelector('.bgr-on').dataset.game;
+    let v = parseInt(row.querySelector('.bgr-min').value, 10);
+    if (isNaN(v) || v < 5) v = 5;
+    if (v > 1440) v = 1440;
+    staged[gid] = { enabled: row.querySelector('.bgr-on').checked, interval: v };
+  });
+  const changed = BGR_ORDER.some(function(gid){
+    if (!staged[gid]) return false;   // 未启用游戏没有行，不参与对比
+    const cur = bgrOverrides[gid] || {};
+    const curOn = cur.enabled !== false;
+    const curMin = cur.interval || BGR_DEFAULT[gid] || 60;
+    return staged[gid].enabled !== curOn || staged[gid].interval !== curMin;
+  });
+  if (!changed) { toast('没有改动'); return; }
+  openBgriskModal(staged);
+});
+
+document.getElementById('bgrisk-ok').addEventListener('click', async function(){
+  if (bgrLeft > 0 || !bgrPending) return;
+  const btn = this;
+  btn.disabled = true;
+  try {
+    const d = await postJSON('/api/bg_refresh', {
+      enabled: document.getElementById('bg-refresh-toggle').checked,
+      overrides: bgrPending,
+    });
+    if (!d.ok) { toast(d.message || '保存失败', true); return; }
+    closeBgriskModal();
+    renderBgRefresh(d);
+    toast('已保存');
+  } catch (e) {
+    toast('保存失败：' + e, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+document.getElementById('bgrisk-cancel').addEventListener('click', function(){
+  if (bgrLeft > 0) return;   // 阅读门内不可关
+  closeBgriskModal();
+});
+document.getElementById('bgrisk-x').addEventListener('click', function(){
+  if (bgrLeft > 0) return;
+  closeBgriskModal();
+});
+document.getElementById('bgrisk-modal').addEventListener('click', function(e){
+  if (e.target === this && bgrLeft <= 0) closeBgriskModal();   // 点遮罩关闭（阅读门内不行）
+});
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape' && !document.getElementById('bgrisk-modal').hidden
+      && bgrLeft <= 0) closeBgriskModal();
+});
 
 /* 活动结束提醒：config.app.activity_alert_enabled / activity_alert_days /
    activity_deadline_tiers（三段，2026-11-11 #9） */

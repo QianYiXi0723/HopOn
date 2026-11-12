@@ -1288,7 +1288,7 @@ def _normalize_bool(raw: Any, default: bool) -> bool:
 
 
 def schedule_status() -> Dict[str, Any]:
-    from core.config import next_check_time
+    from core.config import next_check_time, _parse_bg_refresh_overrides
 
     raw = load_raw_config()
     app = raw.get("app") if isinstance(raw.get("app"), dict) else {}
@@ -1314,6 +1314,8 @@ def schedule_status() -> Dict[str, Any]:
         "catch_up_enabled": _normalize_bool(app.get("catch_up_enabled"), True),
         "resource_alert_enabled": _normalize_bool(app.get("resource_alert_enabled"), True),
         "bg_refresh_enabled": _normalize_bool(app.get("bg_refresh_enabled"), True),
+        "bg_refresh_overrides": _parse_bg_refresh_overrides(
+            app.get("bg_refresh_overrides")),
         "activity_alert_enabled": _normalize_bool(app.get("activity_alert_enabled"), True),
         "activity_alert_days": _normalize_alert_days(app.get("activity_alert_days")),
         "activity_deadline_tiers": _normalize_deadline_tiers(
@@ -1483,21 +1485,31 @@ def save_catch_up(raw_minutes: Any, enabled: Any = None) -> Dict[str, Any]:
 
 
 @_serialized_write
-def save_bg_refresh(enabled: Any) -> Dict[str, Any]:
-    """保存后台静默刷新总开关（间隔按游戏族固定：米游社/库街区 60 分、森空岛 180 分）。"""
+def save_bg_refresh(enabled: Any = None, overrides: Any = None) -> Dict[str, Any]:
+    """保存后台静默刷新：总开关 + 每款游戏覆盖项（enabled/interval）。
+
+    overrides 经 _parse_bg_refresh_overrides 消毒后才落盘（未知游戏/越界
+    间隔整项丢弃）——弹窗警示在客户端做，服务端只认合法值。
+    """
     raw = load_raw_config()
     if not isinstance(raw.get("app"), dict):
         raw["app"] = {}
-    raw["app"]["bg_refresh_enabled"] = _normalize_bool(enabled, True)
+    if enabled is not None:
+        raw["app"]["bg_refresh_enabled"] = _normalize_bool(enabled, True)
+    if overrides is not None:
+        from core.config import _parse_bg_refresh_overrides
+
+        raw["app"]["bg_refresh_overrides"] = _parse_bg_refresh_overrides(overrides)
 
     from core.config import parse_config
 
     parse_config(raw, source=CONFIG_PATH)
     save_raw_config(raw)
-    logger.info("后台静默刷新已%s", "开启" if raw["app"].get("bg_refresh_enabled", True) else "关闭")
+    logger.info("后台静默刷新已保存（总开关=%s，覆盖 %d 款）",
+                "开" if raw["app"].get("bg_refresh_enabled", True) else "关",
+                len(raw["app"].get("bg_refresh_overrides") or {}))
     result = schedule_status()
-    result["message"] = ("已开启：米游社/库街区系每 60 分钟、森空岛系每 180 分钟自动更新"
-                         if result["bg_refresh_enabled"] else "已关闭")
+    result["message"] = "已保存"
     return result
 
 
@@ -1935,7 +1947,8 @@ def _annotate_live_cool(
     return out
 
 
-def live_status(force: bool = False, family: Optional[str] = None) -> Dict[str, Any]:
+def live_status(force: bool = False, family: Optional[str] = None,
+                only_games: Optional[List[str]] = None) -> Dict[str, Any]:
     """返回每款游戏的体力 / 理智看板。
 
     三级缓存：进程内 45 秒 → 磁盘 data/live_cache.json → 现场查询。
@@ -2013,16 +2026,20 @@ def live_status(force: bool = False, family: Optional[str] = None) -> Dict[str, 
     from core.config import RESOURCE_TASK_NAMES
     from main import collect_statuses
 
-    # 家族刷新（2026-11-13 后台静默刷新）：只查本族启用的游戏；该族没有
-    # 启用账号就不打任何接口（daemon 侧也有同款判断，这里是兜底）
-    family_games: Optional[set] = None
-    if family in ("mihoyo", "kuro", "skland"):
+    # 家族/点名刷新（2026-11-13 后台静默刷新）：只查指定集合内启用的游戏；
+    # 集合为空就不打任何接口（daemon 侧也有同款判断，这里是兜底）
+    target_games: Optional[set] = None
+    if only_games:
+        from core.config import KNOWN_GAMES as _KG
+
+        target_games = {g for g in only_games if g in _KG} & (enabled or set())
+    elif family in ("mihoyo", "kuro", "skland"):
         from core.config import MIHOYO_GAMES, KURO_GAMES, SKLAND_GAMES
 
         fmap = {"mihoyo": MIHOYO_GAMES, "kuro": KURO_GAMES, "skland": SKLAND_GAMES}
-        family_games = set(fmap[family])
-        sub_accounts = [a for a in cfg.accounts
-                        if a.game in family_games and a.game in (enabled or set())]
+        target_games = set(fmap[family]) & (enabled or set())
+    if target_games is not None:
+        sub_accounts = [a for a in cfg.accounts if a.game in target_games]
         if not sub_accounts:
             return {"ok": True, "cached": True, "generated_at":
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "games": []}
@@ -2107,11 +2124,11 @@ def live_status(force: bool = False, family: Optional[str] = None) -> Dict[str, 
                 entry["cooled"] = True
                 games.append(entry)
 
-        # 家族刷新合并写：本族条目替换、他族条目原样保留——局部刷新不丢缓存
-        if family_games is not None:
+        # 点名刷新合并写：集合内条目替换、集合外条目原样保留——局部刷新不丢缓存
+        if target_games is not None:
             disk = _live_disk_read() or {}
             games.extend(g for g in (disk.get("games") or [])
-                         if isinstance(g, dict) and g.get("game") not in family_games)
+                         if isinstance(g, dict) and g.get("game") not in target_games)
 
         # 排序统一按 GAME_ORDER 平台分组序（与游戏概览/报表同口径）——
         # config 账号行是历史追加序（崩3/战双在尾部），不排两页会不一致
@@ -3420,7 +3437,11 @@ class Handler(BaseHTTPRequestHandler):
                          > _LIVE_AUTO_REFRESH_MINUTES * 60)
             try:
                 family = (query.get("family") or [""])[0].lower()
-                self._json(live_status(force=force, family=family or None))
+                games_param = (query.get("games") or [""])[0]
+                game_ids = ([g.strip() for g in games_param.split(",") if g.strip()]
+                            if games_param else None)
+                self._json(live_status(force=force, family=family or None,
+                                       only_games=game_ids))
             except Exception as exc:  # noqa: BLE001
                 logger.exception("实时查询失败")
                 self._json({"ok": False, "message": f"实时查询失败：{exc}", "games": []}, 500)
@@ -3576,7 +3597,8 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._read_json_body()
             if payload is not None:
                 try:
-                    self._json(save_bg_refresh(payload.get("enabled")))
+                    self._json(save_bg_refresh(payload.get("enabled"),
+                                               payload.get("overrides")))
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("保存后台刷新开关失败")
                     self._json({"ok": False, "message": f"保存失败：{exc}"}, 500)

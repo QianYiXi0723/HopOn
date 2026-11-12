@@ -641,7 +641,9 @@
           <details class="set-item" id="acc-bgrefresh">
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-history"/></svg></i>
-                <span class="set-txt"><b>后台静默刷新</b></span>
+                <span class="set-txt"><b>后台静默刷新
+                  <span class="q" data-tip="定时巡查之外自动更新实时面板：默认米游社/库街区系每 60 分钟、森空岛系每 180 分钟，可对单款游戏覆盖。不写巡检历史，风控命中自动跳过"></span></b>
+                </span>
               </span>
               <span class="set-sum" id="sum-bgrefresh">读取中…</span>
               <span class="set-end">
@@ -649,7 +651,10 @@
               </span>
             </summary>
             <div class="set-body">
-              <div class="hint">定时巡查之外自动更新实时面板：米游社/库街区系每 60 分钟、森空岛系每 180 分钟；不写巡检历史，风控命中自动跳过。</div>
+              <div id="bg-refresh-grid" class="bgr-grid"></div>
+              <div class="row3" style="margin-top:10px">
+                <button type="button" class="btn" id="btn-bgrefresh-save">保存每款设置</button>
+              </div>
             </div>
           </details>
 
@@ -834,6 +839,28 @@
     <!-- ======== 月报下钻（2026-11-06）：徽章点击 → 整月月历 ======== -->
     <!-- ======== 月报下钻（2026-11-06）：徽章点击 → 整月月历 ======== -->
     <!-- 手动打卡：新增/编辑弹窗（必须放 .app / 所有 tabpanel 之外） -->
+    <div class="modal-mask" id="bgrisk-modal" hidden>
+      <div class="modal modal--bgrisk">
+        <div class="modal-head">
+          <b>修改刷新频率前请阅读</b>
+          <span class="spacer"></span>
+          <button type="button" class="modal-x" id="bgrisk-x" title="关闭" disabled>✕</button>
+        </div>
+        <div class="bgrisk-body">
+          <p>自动查询频率越高，向平台风控系统暴露的信号越多：</p>
+          <ul>
+            <li>米游社系（原神/星铁/绝区零/崩3）：可能触发人机验证或限流，一般数分钟到 6 小时自愈</li>
+            <li>森空岛系（明日方舟/终末地）：高频查询会导致登录凭证失效，需要重新扫码绑定</li>
+            <li>极端高频存在账号被限制使用的风险；HopOn 的护栏（自动冷却、失败不重试）只降低、不消除这些风险</li>
+          </ul>
+        </div>
+        <div class="row3">
+          <button type="button" class="btn" id="bgrisk-cancel" disabled>取消（5s）</button>
+          <button type="button" class="btn" id="bgrisk-ok" disabled>确认保存（5s）</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-mask" id="dailies-modal" hidden>
       <div class="modal modal--dailies">
         <div class="modal-head">
