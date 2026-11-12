@@ -79,6 +79,17 @@
         text-align:left;padding:4px 0;border:none;background:transparent;
         color:var(--muted);font-size:12px;cursor:pointer}
   .theme-btn:hover,.theme-btn:focus-visible{color:var(--fg)}
+  /* 侧栏底部三排（配色/版本/交流群）：同一行组件，等高、同图标位、同间距 */
+  .side-foot{display:flex;flex-direction:column;gap:2px}
+  .foot-row{display:flex;align-items:center;gap:8px;width:100%;height:27px;
+        padding:0 2px;border:none;border-radius:6px;background:transparent;
+        text-align:left;color:var(--muted);font-family:inherit;font-size:12px;
+        line-height:1;cursor:pointer;box-sizing:border-box}
+  .foot-row:hover,.foot-row:focus-visible{background:var(--hover);color:var(--fg)}
+  .foot-ico{flex:none;width:16px;height:16px;display:inline-flex;
+        align-items:center;justify-content:center;font-size:13px}
+  .foot-ico .ico{width:14px;height:14px}
+  .foot-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .main{flex:1;min-width:0;width:100%;padding:24px 32px;
         display:flex;flex-direction:column;min-height:0;overflow-y:auto}
   @media (max-width:760px){

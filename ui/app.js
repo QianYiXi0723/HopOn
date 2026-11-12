@@ -593,8 +593,9 @@ function checkUpdate(){
   if (_updateChecking) return;              // 防连点
   _updateChecking = true;
   const btn = document.getElementById('ver-line');
-  const old = btn ? btn.textContent : '';
-  if (btn) btn.textContent = '检查中…';
+  const label = btn ? btn.querySelector('.foot-txt') : null;
+  const old = label ? label.textContent : '';
+  if (label) label.textContent = '检查中…';
   fetch('/api/update?refresh=1')
     .then(function(r){ return r.json(); })
     .then(function(d){
@@ -613,7 +614,7 @@ function checkUpdate(){
     .catch(function(e){ toast('检查失败：' + e, true); })
     .finally(function(){
       _updateChecking = false;
-      if (btn) btn.textContent = old;
+      if (label) label.textContent = old;
     });
 }
 document.getElementById('ver-line').addEventListener('click', checkUpdate);
@@ -623,7 +624,8 @@ function refreshNotice(){
     /* 左下角版本号：以 /api/env 的 version 为准（HTML 里不再写死数字）。
        拿不到就保持"本地运行"，不显示一个可能是错的版本。 */
     const ver = document.getElementById('ver-line');
-    if (ver && d.version) ver.textContent = 'v' + d.version + ' · 本地运行';
+    const label = ver ? ver.querySelector('.foot-txt') : null;
+    if (label && d.version) label.textContent = 'v' + d.version + ' · 本地运行';
     /* 演示模式横幅：出厂 mock 配置时点亮，扫码切换真实数据源后自然消失 */
     const wb = document.getElementById('welcome');
     if (wb) wb.hidden = !d.demo_mode || welcomeDismissed;
