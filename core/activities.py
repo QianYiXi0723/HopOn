@@ -1599,8 +1599,7 @@ class ActivityTierAlert:
         if self.tier == 1:
             return f"🗓️ 活动规划：{self.game_name}{self._shown()} 约 {left}后结束"
         if self.tier == 2:
-            return (f"⏳ 活动行动：{self.game_name}{self._shown()} 约 {left}后结束"
-                    f"，今天该打了")
+            return f"⏳ 今日必打：{self.game_name}{self._shown()} 约 {left}后结束"
         return (f"🔔 最后冲刺：{self.game_name}{self._shown()} 仅剩约 {left}"
                 f"，想拿奖励抓紧了")
 
