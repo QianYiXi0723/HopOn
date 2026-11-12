@@ -1009,6 +1009,107 @@ def _check_resin_watch() -> None:
         pass  # 清理失败也不致命：pushed 标记仍挡重复推送
 
 
+def _bg_refresh_tick() -> None:
+    """后台静默刷新（2026-11-13 用户拍板）：按游戏族间隔自动更新实时面板。
+
+    米游社/库街区 60 分钟（现役项目 1-2h 惯例）、森空岛 180 分钟（无先例
+    档位+自停护栏：任一查询失败该族冷却 6 小时）。只刷实时缓存，不写巡检
+    历史、不推送；经 login_ui 的 /api/live?refresh=1&family=——风控冷却/
+    启用过滤/缓存合并写全复用（单写者纪律）。调用失败静默跳过，不轰炸。
+    """
+    import random as _random
+    import urllib.request as _uq
+
+    from core.config import (load_config, MIHOYO_GAMES, KURO_GAMES,
+                             SKLAND_GAMES, BG_REFRESH_INTERVALS)
+
+    try:
+        config = load_config(CONFIG_PATH)
+    except Exception:  # noqa: BLE001 - 配置读不出本 tick 直接跳过
+        return
+    if not config.bg_refresh_enabled:
+        return
+    enabled = {acc.game for acc in config.enabled_accounts}
+
+    # 巡检邻域（±3 分钟）不刷新：定时轮马上就会全量查，别双打接口
+    now = datetime.now()
+    now_min = now.hour * 60 + now.minute
+    for t in config.check_times:
+        try:
+            a, b = str(t).split(":")[:2]
+            t_min = int(a) * 60 + int(b)
+        except (ValueError, IndexError):
+            continue
+        if abs(now_min - t_min) <= 3:
+            return
+
+    state = _bg_state_read()
+    dirty = False
+    for family, games in {"mihoyo": MIHOYO_GAMES, "kuro": KURO_GAMES,
+                          "skland": SKLAND_GAMES}.items():
+        if not (enabled & set(games)):
+            continue
+        cooldown = float(state.get("cooldown_until", {}).get(family) or 0)
+        if now.timestamp() < cooldown:
+            continue
+        last = float(state.get("last", {}).get(family) or 0)
+        # 抖动 0~5 分钟打散整点规律性（社区共识：固定节奏喂风控模型）
+        due = last + BG_REFRESH_INTERVALS.get(family, 60) * 60 + _random.randint(0, 300)
+        if now.timestamp() < due:
+            continue
+        any_fail = False
+        try:
+            ok_resp, any_fail = _bg_refresh_call(family)
+            logger.info("后台刷新：%s 系实时数据已更新（响应 ok=%s）", family, ok_resp)
+        except Exception as exc:  # noqa: BLE001 - 控制台没起/网络抖动都算跳过
+            logger.debug("后台刷新 %s 系未完成（下个间隔再试）：%s", family, exc)
+        state.setdefault("last", {})[family] = now.timestamp()   # 调用即记账：成败都不连发
+        if family == "skland" and any_fail:
+            state.setdefault("cooldown_until", {})[family] = now.timestamp() + 6 * 3600
+            logger.warning("后台刷新：森空岛系查询失败，该族冷却 6 小时（护栏自动停）")
+        dirty = True
+    if dirty:
+        _bg_state_write(state)
+
+
+def _bg_refresh_call(family: str):
+    """调 login_ui 家族刷新（风控/过滤/合并写全复用单写者）。
+
+    返回 (响应 ok, 本族是否有游戏查询失败)——后者供森空岛自停护栏判断。"""
+    import urllib.request as _uq
+
+    req = _uq.Request(f"{CONSOLE_URL}api/live?refresh=1&family={family}")
+    with _uq.urlopen(req, timeout=150) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    games_out = data.get("games") or []
+    any_fail = bool(games_out) and any(
+        not g.get("ok") for g in games_out if isinstance(g, dict))
+    return bool(data.get("ok")), any_fail
+
+
+def _bg_state_path() -> Path:
+    return Path(USER_DIR) / "data" / "bg_refresh_state.json"
+
+
+def _bg_state_read() -> Dict[str, Any]:
+    try:
+        data = json.loads(_bg_state_path().read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
+    except Exception:  # noqa: BLE001 - 不存在/损坏 = 空账本（首次运行即触发首轮）
+        pass
+    return {"last": {}, "cooldown_until": {}}
+
+
+def _bg_state_write(state: Dict[str, Any]) -> None:
+    path = _bg_state_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    except OSError as exc:
+        logger.debug("[bg_refresh] 状态写盘失败（忽略）：%s", exc)
+
+
 def _check_manual_dailies() -> None:
     """手动打卡·独立时刻提醒（2026-11-12）：到点即推、当日一次、做完跳过。
 
@@ -1070,6 +1171,10 @@ def _loop(stop_event: threading.Event) -> None:
             # 2026-11-05 实证：watcher 一抛 NameError 整个 check-loop 线程无声
             # 死掉（pythonw 无 stderr），心跳停在启动那一笔、巡检永远停摆。
             logger.exception("体力回满 watcher 异常（已忽略，继续运行）")
+        try:
+            _bg_refresh_tick()   # 后台静默刷新（按游戏族间隔，总开关在定时页）
+        except Exception:  # noqa: BLE001 - 刷新炸了不许弄死轮询线程
+            logger.exception("后台静默刷新异常（已忽略，继续运行）")
         signal = _wait(TICK_SECONDS, stop_event)
         if signal == "quiet-run":
             # 关机前落盘：照常查询并写历史、不推送；旗标在检查完成后删除，
