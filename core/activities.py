@@ -1056,7 +1056,7 @@ def fetch_endfield_activities() -> List[Dict[str, Any]]:
             if isinstance(tags, list) and tags:
                 tag = _clean_text(str(tags[0]))
         result.append({
-            "game": "endfield", "game_name": "终末地", "kind": "act", "title": title,
+            "game": "endfield", "game_name": "明日方舟：终末地", "kind": "act", "title": title,
             "start": start.strftime("%Y-%m-%d %H:%M:%S"),
             "end": end.strftime("%Y-%m-%d %H:%M:%S") if end else "",
             "status": "", "progress": "", "icon": "",

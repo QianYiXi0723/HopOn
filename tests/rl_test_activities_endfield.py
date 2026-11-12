@@ -122,7 +122,7 @@ check("C2b 按结束时间升序（排序键=end，非插入序）",
       titles == ["予众魂的新光影", "星河共我签到", "百趣演武"], titles)
 first = items[0]
 check("C2c 字段契约：game/kind/remote_id",
-      first["game"] == "endfield" and first["game_name"] == "终末地"
+      first["game"] == "endfield" and first["game_name"] == "明日方舟：终末地"
       and first["kind"] == "act" and first["remote_id"] == "web_activity_ghost",
       first)
 check("C2d end 可被管线解析（_parse_time 不返 None）",

@@ -81,7 +81,7 @@ check("T1d 绝区零 漏 4", by["zzz"]["missed_days"] == 4, str(by.get("zzz")))
 check("T1e 终末地 完 3", by["endfield"]["done_days"] == 3, str(by.get("endfield")))
 check("T1f 方舟整周无记录不出现", "arknights" not in by, str(sorted(by)))
 check("T1g 游戏中文名来自 KNOWN_GAMES",
-      by["genshin"]["name"] == "原神" and by["endfield"]["name"] == "终末地",
+      by["genshin"]["name"] == "原神" and by["endfield"]["name"] == "明日方舟：终末地",
       str(by["genshin"]["name"]))
 
 # ---------------------------------------------------------------- T2 文案
