@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -116,6 +116,41 @@ def main() -> int:
     D2 = [dict(i, enabled=(i["id"] != "a2")) for i in items]
     ids = [i["id"] for i in D.undone_today(D2, tmp, now=now)]
     check("a2" not in ids, "停用项不进未完成清单")
+
+    # ---- 8) 周计划（days 七元布尔，0=周一…6=周日；2026-11-12=周四） ----
+    print("[8] 周计划")
+    d_today = D._period_date(items[0], now)            # 2026-11-12 周四
+    it_np = {"id": "d1", "name": "周计划项", "mode": "merged",
+             "reset": "04:00", "enabled": True,
+             "days": [i == d_today.weekday() for i in range(7)]}
+    check([i["id"] for i in D.undone_today([it_np], tmp, now=now)] == ["d1"],
+          "计划日进未完成清单")
+    it_off = {**it_np, "days": [i != d_today.weekday() for i in range(7)]}
+    check([i["id"] for i in D.undone_today([it_off], tmp, now=now)] == [],
+          "非计划日不进未完成清单")
+    # streak 判别式：周三+周四计划，账本 11-04/05（上周四三）+11-11/12（本周四三）
+    # 全勾，中间 11-06~11-10 全是非计划日 → 跳过不断签 = 4（无 days 逻辑会断在 3）
+    plan_wed = [i in (2, 3) for i in range(7)]
+    it_wed = {**items[0], "days": plan_wed}
+    state = json.loads(D._state_path(tmp).read_text(encoding="utf-8"))
+    state["done"].setdefault("a1", {}).update({
+        "2026-11-05": "10:00", "2026-11-04": "10:00"})
+    D._save_state(tmp, state)
+    check(D.streak_of(it_wed, tmp, now=now) == 4,
+          "非计划日跳过不断签（两周周三周四=4）")
+    check([i["id"] for i in D.undone_today([it_wed], tmp, now=now)] == [],
+          "计划日且已勾不进清单")
+    # standalone：非计划日不触发，计划日照常
+    a3_off = {**a3, "days": [i != d_today.weekday() for i in range(7)]}
+    check([i["id"] for i in D.standalone_due([a3_off], tmp, now=now_due)] == [],
+          "非计划日独立项不触发")
+    a3_on = {**a3, "days": [i == d_today.weekday() for i in range(7)]}
+    check([i["id"] for i in D.standalone_due([a3_on], tmp, now=now_due)] == ["a3"],
+          "计划日独立项照常触发")
+    # 兼容：无 days / 坏 days = 每天（不崩、不误判）
+    check(D._planned_weekday({"id": "x"}, d_today) is True, "无 days=每天")
+    check(D._planned_weekday({"days": [True] * 6}, d_today) is True, "长度不对的坏 days 回落=每天")
+    check(D._planned_weekday({**it_np, "days": [True] * 7}, d_today) is True, "全选=每天")
 
     print(f"rl_test_dailies: {PASS} 项断言全绿")
     return 0

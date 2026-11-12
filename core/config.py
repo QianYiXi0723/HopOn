@@ -697,6 +697,8 @@ class CustomDaily:
     reset: str = "04:00"
     template: str = ""
     enabled: bool = True
+    #: 周计划：七元布尔 [一,二,三,四,五,六,日]（索引 0=周一），全 True=每天
+    days: List[bool] = field(default_factory=lambda: [True] * 7)
 
 
 @dataclass
@@ -794,7 +796,8 @@ class AppConfig:
                 "activity_deadline_tiers": list(self.activity_deadline_tiers),
                 "custom_dailies": [
                     dict(id=d.id, name=d.name, mode=d.mode, time=d.time,
-                         reset=d.reset, template=d.template, enabled=bool(d.enabled))
+                         reset=d.reset, template=d.template, enabled=bool(d.enabled),
+                         days=[bool(x) for x in d.days])
                     for d in self.custom_dailies
                 ],
                 "genshin_resin_threshold": int(self.genshin_resin_threshold),
@@ -930,10 +933,14 @@ def _parse_custom_dailies(raw: Any) -> List["CustomDaily"]:
         if not re.match(r"^\d{1,2}:\d{2}$", reset):
             reset = "04:00"
         template = str(node.get("template") or "").strip()[:CUSTOM_DAILY_TEMPLATE_MAX]
+        days_raw = node.get("days")
+        if (not isinstance(days_raw, list) or len(days_raw) != 7
+                or not all(isinstance(x, bool) for x in days_raw)):
+            days_raw = [True] * 7   # 缺失/坏格式 = 每天（向后兼容旧数据）
         out.append(CustomDaily(
             id=str(node.get("id") or f"cd-{_uuid.uuid4().hex[:8]}"),
             name=name, mode=mode, time=time_s, reset=reset, template=template,
-            enabled=bool(node.get("enabled", True)),
+            enabled=bool(node.get("enabled", True)), days=list(days_raw),
         ))
     return out
 

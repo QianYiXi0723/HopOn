@@ -1463,6 +1463,14 @@
   .df-row textarea{resize:vertical}
   .df-row input[type=checkbox]{width:auto}
   .df-row.is-disabled{opacity:.5}
+  /* 周计划七日 chip（多选，data-wd=0周日…6周六；全选=每天） */
+  .wd-picker{display:flex;gap:4px;flex:1;min-width:0}
+  .wd-chip{flex:1;min-width:0;height:30px;border:1px solid var(--border);
+    background:var(--subtle);color:var(--muted);border-radius:8px;
+    font-family:inherit;font-size:13px;cursor:pointer;padding:0}
+  .wd-chip:hover{color:var(--fg)}
+  .wd-chip.on{background:var(--brand);border-color:var(--brand);
+    color:#fff;font-weight:600}
   .df-actions{display:flex;align-items:center;margin:4px 0}
   .df-err{color:var(--err,#e5484d)}
   .modal--dailies{max-width:560px}
