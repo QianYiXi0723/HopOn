@@ -1748,16 +1748,22 @@ function updateDailiesPreview(){
   const txt = tpl.replace(/\{name\}/g, name).replace(/\{time\}/g, timeVal)
     .replace(/\{status\}/g, '[未完成]').replace(/\{progress\}/g, '0/1')
     .replace(/\{[a-zA-Z_]+\}/g, '');
-  /* 用户视角（2026-11-13）：不裸露模板变量——没填名称=引导话，
-     填了名称=直接显示最终消息形态（模板框占位与推送效果行同口径） */
+  /* 用户视角（2026-11-13）：不裸露模板变量——没填名称=引导话，填了名称=
+     模板框占位直显最终消息形态；此时占位本身就是预览，下方推送效果行
+     去冗余只在自定义模板（框内是变量文本）时出现 */
+  const preview = document.getElementById('df-preview');
   if (!rawName) {
-    const msg = '填写名称后显示推送效果';
-    document.getElementById('df-preview').textContent = msg;
-    if (!ta.value.trim()) ta.placeholder = msg;
+    if (!ta.value.trim()) ta.placeholder = '填写名称后显示推送效果';
+    preview.hidden = true;
     return;
   }
-  document.getElementById('df-preview').textContent = '推送效果：' + txt;
-  if (!ta.value.trim()) ta.placeholder = txt;
+  if (!ta.value.trim()) {
+    ta.placeholder = '[默认] ' + txt;
+    preview.hidden = true;
+  } else {
+    preview.hidden = false;
+    preview.textContent = '推送效果：' + txt;
+  }
 }
 
 function setDailiesMode(mode){
