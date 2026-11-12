@@ -273,10 +273,14 @@
   /* 心跳数据等宽字体，数字宽度稳定不跳 */
   #d-since,#d-heart,#k-next-sub{font-family:ui-monospace,Consolas,"Courier New",monospace;
     font-variant-numeric:tabular-nums}
+  /* 问号气泡随标题文字垂直居中（2026-11-13 用户裁决：vertical-align:-3px
+     的静态补偿在小窗/字体场景下漂移，改 flex 居中一劳永逸） */
+  .set-txt b{display:inline-flex;align-items:center;gap:4px}
+  .set-txt b .q{transform:translateY(-2px)}   /* 实测校正：基线对齐压低 2.2px */
   .q{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;
      background:var(--muted);color:#fff;font-size:12px;font-weight:700;line-height:1;
      cursor:help;flex:none;user-select:none;font-family:Consolas,monospace;
-     vertical-align:-3px;transition:background .15s ease}
+     transition:background .15s ease}
   .q::before{content:"?"}
   .q:hover{background:var(--brand)}
   /* 全局 Tooltip 气泡：JS 定位的单个悬浮层，深底白字、瞬间显示 0.2s 淡入 */
@@ -1476,6 +1480,21 @@
   .wd-chip:hover{color:var(--fg)}
   .wd-chip.on{background:var(--brand);border-color:var(--brand);
     color:#fff;font-weight:600}
+  /* 后台静默刷新·每款设置行（开关+间隔分钟） */
+  .bgr-grid{display:flex;flex-direction:column;gap:6px}
+  .bgr-row{display:flex;align-items:center;gap:8px;font-size:14px}
+  .bgr-row.is-off .bgr-min,.bgr-row.is-off .bgr-unit{opacity:.4}
+  .bgr-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bgr-min{width:72px;flex:none;background:var(--subtle);border:1px solid var(--border);
+    border-radius:8px;padding:6px 8px;color:var(--fg);font-family:inherit;font-size:14px}
+  .bgr-unit{flex:none;color:var(--muted);font-size:13px}
+  /* 后台刷新·风险弹窗 */
+  .modal--bgrisk{max-width:480px}
+  .bgrisk-body p{margin:6px 0}
+  .bgrisk-body ul{margin:6px 0 2px;padding-left:18px;display:flex;
+    flex-direction:column;gap:6px;color:var(--fg)}
+  .bgrisk-body li::marker{color:var(--muted)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
   .df-actions{display:flex;align-items:center;margin:4px 0}
   .df-err{color:var(--err,#e5484d)}
   .modal--dailies{max-width:560px}

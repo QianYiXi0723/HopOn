@@ -727,6 +727,9 @@ class AppConfig:
     resource_alert_enabled: bool = RESOURCE_ALERT_ENABLED_DEFAULT
     # 后台静默刷新：定时巡查之外按游戏族间隔自动更新实时面板（不写巡检历史）
     bg_refresh_enabled: bool = True
+    # 每款游戏的覆盖项 {game_id: {enabled: bool, interval: 分钟}}；
+    # 未覆盖的游戏用游戏族默认档（米/库 60、森 180）
+    bg_refresh_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     # 活动结束提醒总开关：false 时不读活动缓存、不追加任何活动警告
     activity_alert_enabled: bool = ACTIVITY_ALERT_ENABLED_DEFAULT
     # 活动结束提前提醒天数：结束前 N 天开始提醒（1~30，默认 3）——
@@ -801,6 +804,8 @@ class AppConfig:
                 "autostart_desired": bool(self.autostart_desired),
                 "resource_alert_enabled": bool(self.resource_alert_enabled),
                 "bg_refresh_enabled": bool(self.bg_refresh_enabled),
+                "bg_refresh_overrides": {
+                    k: dict(v) for k, v in self.bg_refresh_overrides.items()},
                 "activity_alert_enabled": bool(self.activity_alert_enabled),
                 "activity_alert_days": int(self.activity_alert_days),
                 "activity_deadline_tiers": list(self.activity_deadline_tiers),
@@ -955,6 +960,39 @@ def _parse_custom_dailies(raw: Any) -> List["CustomDaily"]:
     return out
 
 
+#: 后台刷新单款覆盖的间隔上下限（分钟）：5 分钟是风控安全底线，1440=一天一次
+BG_REFRESH_INTERVAL_MIN = 5
+BG_REFRESH_INTERVAL_MAX = 1440
+
+
+def _parse_bg_refresh_overrides(raw: Any) -> Dict[str, Dict[str, Any]]:
+    """解析每款游戏的刷新覆盖 {game_id: {enabled, interval}}。
+
+    坏项/未知游戏/越界间隔整项丢弃（回落游戏族默认档），不致命不报错——
+    这是锦上添花的覆盖层，不能因为它坏掉把整个配置搞挂。
+    """
+    if not isinstance(raw, dict):
+        return {}
+    known = set(KNOWN_GAMES)
+    out: Dict[str, Dict[str, Any]] = {}
+    for gid, node in raw.items():
+        if not isinstance(gid, str) or gid not in known or not isinstance(node, dict):
+            continue
+        item: Dict[str, Any] = {}
+        if "enabled" in node:
+            item["enabled"] = bool(node.get("enabled"))
+        if "interval" in node:
+            try:
+                iv = int(node.get("interval"))
+            except (TypeError, ValueError):
+                continue
+            if BG_REFRESH_INTERVAL_MIN <= iv <= BG_REFRESH_INTERVAL_MAX:
+                item["interval"] = iv
+        if item:
+            out[gid] = item
+    return out
+
+
 def _parse_deadline_tiers(raw: Any) -> List[int]:
     """解析结束推送三段（小时）：每段 -1（关闭）或 1~2160；缺省 = 默认档。"""
     if raw is None:
@@ -1033,6 +1071,8 @@ def parse_config(data: Dict[str, Any], source: Optional[Path] = None) -> AppConf
             RESOURCE_ALERT_ENABLED_DEFAULT),
         bg_refresh_enabled=_parse_bool(
             app_section.get("bg_refresh_enabled"), "bg_refresh_enabled", True),
+        bg_refresh_overrides=_parse_bg_refresh_overrides(
+            app_section.get("bg_refresh_overrides")),
         activity_alert_enabled=_parse_bool(
             app_section.get("activity_alert_enabled"), "activity_alert_enabled",
             ACTIVITY_ALERT_ENABLED_DEFAULT),

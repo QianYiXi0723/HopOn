@@ -1044,47 +1044,62 @@ def _bg_refresh_tick() -> None:
             return
 
     state = _bg_state_read()
-    dirty = False
-    for family, games in {"mihoyo": MIHOYO_GAMES, "kuro": KURO_GAMES,
-                          "skland": SKLAND_GAMES}.items():
-        if not (enabled & set(games)):
+    last_map = dict(state.get("last") or {})
+    skland_cooldown = float((state.get("cooldown_until") or {}).get("skland") or 0)
+    # 每款游戏的有效档位：覆盖项（用户单独设的开关/间隔）优先，未覆盖用游戏族默认
+    fam_of: Dict[str, str] = {}
+    for fam, gl in {"mihoyo": MIHOYO_GAMES, "kuro": KURO_GAMES,
+                    "skland": SKLAND_GAMES}.items():
+        for gid in gl:
+            fam_of[gid] = fam
+    overrides = config.bg_refresh_overrides or {}
+    due: List[str] = []
+    for gid in sorted(enabled):
+        fam = fam_of.get(gid)
+        if not fam:
             continue
-        cooldown = float(state.get("cooldown_until", {}).get(family) or 0)
-        if now.timestamp() < cooldown:
-            continue
-        last = float(state.get("last", {}).get(family) or 0)
+        ov = overrides.get(gid) or {}
+        if ov.get("enabled") is False:
+            continue   # 用户单独关掉这款的后台刷新
+        interval = int(ov.get("interval") or BG_REFRESH_INTERVALS.get(fam, 60)) * 60
+        if fam == "skland" and now.timestamp() < skland_cooldown:
+            continue   # 自停护栏期内，森空岛系整族跳过
         # 抖动 0~5 分钟打散整点规律性（社区共识：固定节奏喂风控模型）
-        due = last + BG_REFRESH_INTERVALS.get(family, 60) * 60 + _random.randint(0, 300)
-        if now.timestamp() < due:
+        due_limit = float(last_map.get(gid) or 0) + interval + _random.randint(0, 300)
+        if now.timestamp() < due_limit:
             continue
-        any_fail = False
-        try:
-            ok_resp, any_fail = _bg_refresh_call(family)
-            logger.info("后台刷新：%s 系实时数据已更新（响应 ok=%s）", family, ok_resp)
-        except Exception as exc:  # noqa: BLE001 - 控制台没起/网络抖动都算跳过
-            logger.debug("后台刷新 %s 系未完成（下个间隔再试）：%s", family, exc)
-        state.setdefault("last", {})[family] = now.timestamp()   # 调用即记账：成败都不连发
-        if family == "skland" and any_fail:
-            state.setdefault("cooldown_until", {})[family] = now.timestamp() + 6 * 3600
-            logger.warning("后台刷新：森空岛系查询失败，该族冷却 6 小时（护栏自动停）")
-        dirty = True
-    if dirty:
-        _bg_state_write(state)
+        due.append(gid)
+    if not due:
+        return
+    failed: Optional[set] = set()
+    try:
+        ok_resp, failed = _bg_refresh_call(due)
+        logger.info("后台刷新：已更新 %s（响应 ok=%s）", "、".join(due), ok_resp)
+    except Exception as exc:  # noqa: BLE001 - 控制台没起/网络抖动都算跳过
+        logger.debug("后台刷新未完成（下个间隔再试）：%s", exc)
+    # 调用即记账（成败都 stamp 本轮 due 游戏；失败的森空岛游戏走族冷却）
+    for gid in due:
+        last_map[gid] = now.timestamp()
+    if failed and any(fam_of.get(g) == "skland" for g in failed):
+        state.setdefault("cooldown_until", {})["skland"] = now.timestamp() + 6 * 3600
+        logger.warning("后台刷新：森空岛系查询失败，该族冷却 6 小时（护栏自动停）")
+    state["last"] = last_map
+    _bg_state_write(state)
 
 
-def _bg_refresh_call(family: str):
-    """调 login_ui 家族刷新（风控/过滤/合并写全复用单写者）。
+def _bg_refresh_call(games: List[str]):
+    """调 login_ui 点名刷新（风控/过滤/合并写全复用单写者）。
 
-    返回 (响应 ok, 本族是否有游戏查询失败)——后者供森空岛自停护栏判断。"""
+    返回 (响应 ok, 查询失败的游戏 id 集合)——后者供森空岛自停护栏判断。"""
     import urllib.request as _uq
 
-    req = _uq.Request(f"{CONSOLE_URL}api/live?refresh=1&family={family}")
+    req = _uq.Request(f"{CONSOLE_URL}api/live?refresh=1&games={','.join(games)}")
     with _uq.urlopen(req, timeout=150) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     games_out = data.get("games") or []
-    any_fail = bool(games_out) and any(
-        not g.get("ok") for g in games_out if isinstance(g, dict))
-    return bool(data.get("ok")), any_fail
+    failed = {str(g.get("game")) for g in games_out
+              if isinstance(g, dict) and not g.get("ok")}
+    return bool(data.get("ok")), failed
 
 
 def _bg_state_path() -> Path:
