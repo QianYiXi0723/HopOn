@@ -642,7 +642,7 @@
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-history"/></svg></i>
                 <span class="set-txt"><b>后台静默刷新
-                  <span class="q" data-tip="定时巡查之外自动更新实时面板：默认米游社/库街区系每 60 分钟、森空岛系每 180 分钟，可对单款游戏覆盖。不写巡检历史，风控命中自动跳过"></span></b>
+                  <span class="q" data-tip="不用打开软件，自动帮你更新体力面板：默认米游社/库街区系每 60 分钟、森空岛系每 180 分钟，也可以给某一款单独设。自动刷新只更新面板数字，不会影响日常完成记录和报表；哪款游戏弹出人机验证或拒绝查询，就自动停几小时不去碰它"></span></b>
                 </span>
               </span>
               <span class="set-sum" id="sum-bgrefresh">读取中…</span>
@@ -847,11 +847,11 @@
           <button type="button" class="modal-x" id="bgrisk-x" title="关闭" disabled>✕</button>
         </div>
         <div class="bgrisk-body">
-          <p>自动查询频率越高，向平台风控系统暴露的信号越多：</p>
+          <p>查得越勤，游戏平台就越容易起疑心：</p>
           <ul>
-            <li>米游社系（原神/星铁/绝区零/崩3）：可能触发人机验证或限流，一般数分钟到 6 小时自愈</li>
-            <li>森空岛系（明日方舟/终末地）：高频查询会导致登录凭证失效，需要重新扫码绑定</li>
-            <li>极端高频存在账号被限制使用的风险；HopOn 的护栏（自动冷却、失败不重试）只降低、不消除这些风险</li>
+            <li>米游社系（原神/星铁/绝区零/崩3）：可能弹人机验证或暂时拒绝查询，一般几分钟到 6 小时自己恢复</li>
+            <li>森空岛系（明日方舟/终末地）：查太勤会让登录凭证直接失效，得重新扫码绑定</li>
+            <li>极端高频有账号被限制使用的风险。HopOn 发现异常会自动停几小时不再查询——这能降低风险，但不能保证不出事</li>
           </ul>
         </div>
         <div class="row3">
