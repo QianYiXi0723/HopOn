@@ -1002,7 +1002,24 @@ def push_preview_payload() -> Dict[str, Any]:
         pass   # 还没跑过巡检：交给 analyzer 返回「等待第一次巡检」
     except Exception as exc:  # noqa: BLE001 - 快照坏了当没巡检过，页面不许 500
         logger.warning("读取巡检快照失败，预览降级为空态：%s", exc)
-    return {"ok": True, **push_preview_from_snapshot(snap)}
+    # 手动项实态并入预览（2026-11-13）：未完成行 + 已完成并入 [已完成] 汇总，
+    # 与实发 main.py 1.7 段同一单源（merged_push_parts）
+    manual_undone: List[str] = []
+    manual_finished: List[str] = []
+    try:
+        from core import dailies as _cd
+
+        _items = [it for it in ((load_raw_config().get("app") or {})
+                                .get("custom_dailies") or [])
+                  if isinstance(it, dict)]
+        for _it in _items:
+            _it.setdefault("reset", _cd.DEFAULT_RESET)
+        manual_undone, manual_finished = _cd.merged_push_parts(
+            _items, CONFIG_PATH.parent)
+    except Exception as exc:  # noqa: BLE001 - 手动项读不到不影响预览主面
+        logger.warning("推送预览并入手动项失败：%s", exc)
+    return {"ok": True, **push_preview_from_snapshot(
+        snap, manual_undone=manual_undone, manual_finished=manual_finished)}
 
 
 # --------------------------------------------------------------------------- #
@@ -1481,6 +1498,13 @@ def custom_dailies_status() -> Dict[str, Any]:
         if (not isinstance(days_raw, list) or len(days_raw) != 7
                 or not all(isinstance(x, bool) for x in days_raw)):
             days_raw = [True] * 7
+        _done = dailies.is_done(it, user_dir)
+        # 推送效果诚实口径（2026-11-13）：未完成=[未完成] 行；已完成=并入
+        # [已完成] 汇总行（不独立成行）——预览与实发同语义
+        if _done:
+            _push_text = f"[已完成] {it.get('name') or ''}（并入推送的完成汇总行）"
+        else:
+            _push_text = dailies.render_message(it)
         out.append({
             "id": str(it.get("id") or ""),
             "name": str(it.get("name") or ""),
@@ -1490,9 +1514,9 @@ def custom_dailies_status() -> Dict[str, Any]:
             "template": str(it.get("template") or ""),
             "enabled": bool(it.get("enabled", True)),
             "days": list(days_raw),
-            "done_today": dailies.is_done(it, user_dir),
+            "done_today": _done,
             "streak": dailies.streak_of(it, user_dir),
-            "push_text": dailies.render_message(it),
+            "push_text": _push_text,
         })
     return {"ok": True, "items": out,
             "default_template": dailies.DEFAULT_TEMPLATE}
