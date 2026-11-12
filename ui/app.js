@@ -1359,8 +1359,8 @@ async function toggleBgRefresh(){
 }
 document.getElementById('bg-refresh-toggle').addEventListener('change', toggleBgRefresh);
 
-/* 每款设置：行内拨开关/改数字=试图更改 → 立即弹风险告知（5 秒阅读门）；
-   确认=落盘该款，取消=还原行状态（2026-11-13 用户裁决：不要保存按钮） */
+/* 每款设置：开启或改间隔=增加查询 → 立即弹风险告知（5 秒门只锁确认）；
+   关闭=降低风险，直接落盘不弹窗（2026-11-13 用户裁决） */
 document.getElementById('bg-refresh-grid').addEventListener('change', function(e){
   const row = e.target.closest('.bgr-row');
   if (!row) return;
@@ -1369,20 +1369,40 @@ document.getElementById('bg-refresh-grid').addEventListener('change', function(e
   if (e.target.classList.contains('bgr-on')) {
     row.classList.toggle('is-off', !e.target.checked);
     row.querySelector('.bgr-min').disabled = !e.target.checked;
+    const merged = mergedOverrides(gid, {
+      enabled: e.target.checked,
+      interval: clampBgrMin(row.querySelector('.bgr-min').value),
+    });
+    if (e.target.checked) {
+      askBgrisk(merged);   // 开启=增加查询，弹窗
+    } else {
+      saveBgOverrides(merged);   // 关闭=降低风险，静默落盘
+    }
   } else if (e.target.classList.contains('bgr-min')) {
     let v = parseInt(e.target.value, 10);
     if (isNaN(v) || v < 5) v = 5;
     if (v > 1440) v = 1440;
     e.target.value = v;
-  } else {
-    return;
+    const merged = mergedOverrides(gid, {
+      enabled: row.querySelector('.bgr-on').checked,
+      interval: v,
+    });
+    askBgrisk(merged);   // 改间隔=改查询频率，弹窗
   }
-  const merged = mergedOverrides(gid, {
-    enabled: row.querySelector('.bgr-on').checked,
-    interval: clampBgrMin(row.querySelector('.bgr-min').value),
-  });
-  askBgrisk(merged);
 });
+
+async function saveBgOverrides(merged){
+  try {
+    const d = await postJSON('/api/bg_refresh', {
+      enabled: document.getElementById('bg-refresh-toggle').checked,
+      overrides: merged,
+    });
+    if (!d.ok) { toast(d.message || '保存失败', true); return; }
+    renderBgRefresh(d);
+  } catch (e) {
+    toast('保存失败：' + e, true);
+  }
+}
 
 function clampBgrMin(v){
   let n = parseInt(v, 10);
