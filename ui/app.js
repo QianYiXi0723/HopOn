@@ -1407,21 +1407,19 @@ function askBgrisk(merged){
   bgrPending = merged;
   bgrLeft = 5;
   document.getElementById('bgrisk-modal').hidden = false;
-  const cancel = document.getElementById('bgrisk-cancel');
   const ok = document.getElementById('bgrisk-ok');
-  const x = document.getElementById('bgrisk-x');
-  cancel.disabled = ok.disabled = x.disabled = true;
-  cancel.textContent = '取消（5s）'; ok.textContent = '确认修改（5s）';
+  /* 5s 阅读门只锁「确认修改」；取消/✕/遮罩随时可关（2026-11-13 用户裁决） */
+  ok.disabled = true;
+  ok.textContent = '确认修改（5s）';
   const timer = setInterval(function(){
     bgrLeft -= 1;
     if (bgrLeft > 0) {
-      cancel.textContent = '取消（' + bgrLeft + 's）';
       ok.textContent = '确认修改（' + bgrLeft + 's）';
       return;
     }
     clearInterval(timer);
-    cancel.disabled = ok.disabled = x.disabled = false;
-    cancel.textContent = '取消'; ok.textContent = '确认修改';
+    ok.disabled = false;
+    ok.textContent = '确认修改';
   }, 1000);
 }
 
@@ -1452,19 +1450,18 @@ document.getElementById('bgrisk-ok').addEventListener('click', async function(){
   }
 });
 document.getElementById('bgrisk-cancel').addEventListener('click', function(){
-  if (bgrLeft > 0) return;   // 阅读门内不可关
   closeBgriskModal(true);
 });
 document.getElementById('bgrisk-x').addEventListener('click', function(){
-  if (bgrLeft > 0) return;
   closeBgriskModal(true);
 });
 document.getElementById('bgrisk-modal').addEventListener('click', function(e){
-  if (e.target === this && bgrLeft <= 0) closeBgriskModal(true);   // 点遮罩关闭（阅读门内不行）
+  if (e.target === this) closeBgriskModal(true);
 });
 document.addEventListener('keydown', function(e){
-  if (e.key === 'Escape' && !document.getElementById('bgrisk-modal').hidden
-      && bgrLeft <= 0) closeBgriskModal(true);
+  if (e.key === 'Escape' && !document.getElementById('bgrisk-modal').hidden) {
+    closeBgriskModal(true);
+  }
 });
 
 /* 活动结束提醒：config.app.activity_alert_enabled / activity_alert_days /
