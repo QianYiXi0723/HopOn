@@ -3067,7 +3067,7 @@ function actCardHtml(it, isHero, heroSlim){
     : '';
   return '<div class="card acard' + (isHero && !heroSlim ? ' hero' : '') + '"' +
     actUrgencyAttr(it, isHero) + ' data-id="' + id + '"' + memberTip +
-    ' style="--gc:' + gameDotColor(it.game) + '">' +
+    ' style="--gc:' + (it.cross_game ? 'var(--brand)' : gameDotColor(it.game)) + '">' +
     '<div class="acard-top"><span class="act-game">' + actIconHtml(it) +
       '<span class="act-name">' + escHtml(it.game_name) + '</span></span>' +
       delBtn + '</div>' +
@@ -3114,8 +3114,13 @@ function buildMergedItem(members){
       if (t && rewards.indexOf(t) < 0) rewards.push(t);
     });
   });
+  var gameSet = [];
+  members.forEach(function(x){
+    if (x.game && gameSet.indexOf(x.game) < 0) gameSet.push(x.game);
+  });
   return Object.assign({}, first, {
     id: 'merged:' + members.map(function(x){ return x.id || ''; }).join('|'),
+    cross_game: gameSet.length > 1,
     title: (first.title || '') + ' 等 ' + members.length + ' 项',
     reward: rewards.join('、'),
     progress: '',
@@ -3177,12 +3182,21 @@ function renderActivities(d){
     const upcoming = items.filter(function(x){ return x.group === 'upcoming'; });
     const finished = items.filter(function(x){ return x.status === '已完成'; });
     const hlOf = function(x){ const h = +x.hours_left; return h > 0 ? h : Infinity; };
-    /* 显示排序 = 唯一裁决（2026-11-05 英雄卡三改）：hours_left 升序 →
-       平局「有内容可展示」的卡排前（英雄给谁一目了然，不再依赖后端返回序）
-       → 再平局标题 zh 序。英雄 = 排序后 pool 的第一张，最紧急 = 视觉第一。 */
+    /* 显示排序（2026-11-14 用户裁决改版）：
+       主键 = hours_left **向上取整到小时**——差 1 秒的两个活动显示粒度相同，
+       按秒决出英雄位等于掷硬币（用户实证：绝区零 03:59:59 vs 星铁 04:00:00）；
+       并列 → **未做完优先**（英雄卡=最该打的活动：进度打满的卡降位，
+       无进度的合并卡按未做对待）；再平 → 「有内容可展示」优先 → 标题 zh 序。 */
+    const hlCeil = function(x){ const h = +x.hours_left; return h > 0 ? Math.ceil(h) : Infinity; };
+    const isActDone = function(x){
+      const m = String(x.progress || '').match(/(\d+)\s*\/\s*(\d+)/);
+      return !!(m && +m[2] > 0 && +m[1] >= +m[2]);
+    };
     const byUrgency = function(a, b){
-      const diff = hlOf(a) - hlOf(b);
+      const diff = hlCeil(a) - hlCeil(b);
       if (diff) return diff;
+      const da = isActDone(a) ? 1 : 0, db = isActDone(b) ? 1 : 0;
+      if (da !== db) return da - db;
       const ra = actHasContent(a) ? 1 : 0, rb = actHasContent(b) ? 1 : 0;
       if (ra !== rb) return rb - ra;
       return String(a.title || '').localeCompare(String(b.title || ''), 'zh');
