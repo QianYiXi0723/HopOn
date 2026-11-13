@@ -3882,7 +3882,8 @@ function renderHeatmap(d){
   manualRows.forEach(function(m){
     html += '<div class="hm-row"><div class="hm-label">' +
       '<span class="gdot" style="background:var(--brand)"></span>' +
-      escHtml(m.name) + '</div>';
+      escHtml(m.name) +
+      '<span class="dim" style="font-weight:400">·长按格子可补录</span></div>';
     (m.days || []).forEach(function(cell, i){
       /* 非计划日整格不渲染（2026-11-14 用户裁决：还没到星期四就不显示，
          与概览卡同口径）——visibility:hidden 保列对齐但不画任何东西 */
