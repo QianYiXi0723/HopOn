@@ -66,6 +66,7 @@ MAX_TOKEN_LEN = 128
 #: 【多账号隔离】明日方舟和终末地可能在不同的鹰角通行证账号下，凭证缓存
 #: 必须按游戏分文件（skland_cred_arknights.json / skland_cred_endfield.json），
 #: 由 _cred_cache_path() 生成，绝不能共用一个文件互相覆盖。
+from core import netutil
 from core.paths import user_root
 
 _CRED_CACHE_DIR = user_root() / "logs"
@@ -172,11 +173,11 @@ def _grant_code(ark_token: str) -> str:
     body = {"type": 0, "token": token, "appCode": APP_CODE_SKLAND}
     logger.debug("[skland] grant 请求 token 长度=%d，前缀=%r", len(token), token[:8])
     try:
-        resp = requests.post(
-            ADDR_HYPERGRYPH + "/user/oauth2/v2/grant",
+        resp = netutil.http_post(ADDR_HYPERGRYPH + "/user/oauth2/v2/grant",
             json=body,
             headers={"User-Agent": USER_AGENT, "Content-Type": "application/json"},
             timeout=REQUEST_TIMEOUT,
+        requests_module=requests,
         )
         grant = resp.json()
     except Exception as exc:
@@ -221,11 +222,11 @@ def _exchange_cred(ark_token: str) -> Dict[str, str]:
 
     requests = _import_requests()
     try:
-        resp2 = requests.post(
-            ADDR_ZONAI + "/api/v1/user/auth/generate_cred_by_code",
+        resp2 = netutil.http_post(ADDR_ZONAI + "/api/v1/user/auth/generate_cred_by_code",
             json={"kind": 1, "code": code},
             headers={"User-Agent": USER_AGENT, "Content-Type": "application/json"},
             timeout=REQUEST_TIMEOUT,
+        requests_module=requests,
         )
         gen = resp2.json()
     except Exception as exc:
@@ -438,11 +439,9 @@ def request_skland(
     logger.debug("[skland] %s %s%s", method, path, ("?" + _urlencode(sorted((query or {}).items()))) if query else "")
 
     try:
-        response = requests.get(
-            url, params=query, headers=headers, timeout=REQUEST_TIMEOUT
-        ) if method.upper() == "GET" else requests.post(
-            url, json=body, headers=headers, timeout=REQUEST_TIMEOUT
-        )
+        response = netutil.http_get(url, params=query, headers=headers, timeout=REQUEST_TIMEOUT
+        , requests_module=requests) if method.upper() == "GET" else netutil.http_post(url, json=body, headers=headers, timeout=REQUEST_TIMEOUT
+        , requests_module=requests)
     except Exception as exc:
         raise SklandQueryError(f"网络请求失败：{exc}") from exc
 

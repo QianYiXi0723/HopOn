@@ -21,6 +21,8 @@ import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote as _quote
 
+from core import netutil
+
 logger = logging.getLogger("dailycheck.kuro")
 
 # --------------------------------------------------------------------------- #
@@ -130,7 +132,7 @@ def request_kuro(
 
     logger.debug("[kuro] POST %s body=%s", path, body or {})
     try:
-        response = requests.post(url, data=body or {}, headers=headers, timeout=timeout)
+        response = netutil.http_post(url, data=body or {}, headers=headers, timeout=timeout, requests_module=requests)
     except Exception as exc:
         raise KuroQueryError(f"库街区网络请求失败：{exc}") from exc
 
@@ -149,7 +151,7 @@ def request_kuro(
         # 库街区偶发瞬时 220（真机实测：连续查询时单次 220，稍后同 token 恢复），
         # 与真过期不可区分——等 2 秒重试一次再定论，避免一轮抖动触发凭证告警
         time.sleep(2)
-        retry = requests.post(url, data=body or {}, headers=headers, timeout=timeout)
+        retry = netutil.http_post(url, data=body or {}, headers=headers, timeout=timeout, requests_module=requests)
         try:
             payload = retry.json()
         except ValueError:
@@ -245,10 +247,11 @@ def send_sms_code(mobile: str, gee_test_data: str) -> None:
         "Content-Type": "application/x-www-form-urlencoded",
     }
     try:
-        resp = requests.post(
+        resp = netutil.http_post(
             _ADDR_SMS_H5,
             data={"mobile": str(mobile), "geeTestData": str(gee_test_data or "")},
             headers=headers, timeout=REQUEST_TIMEOUT,
+            requests_module=requests,
         )
         payload = resp.json()
     except Exception as exc:
@@ -286,7 +289,7 @@ def sdk_login(mobile: str, sms_code: str) -> Dict[str, Any]:
     url = (f"{_ADDR_SDK_LOGIN}?code={_quote(str(sms_code))}"
            f"&mobile={_quote(str(mobile))}&devCode={did}")
     try:
-        resp = requests.post(url, data="", headers=headers, timeout=REQUEST_TIMEOUT)
+        resp = netutil.http_post(url, data="", headers=headers, timeout=REQUEST_TIMEOUT, requests_module=requests)
         payload = resp.json()
     except Exception as exc:
         raise KuroSmsError(f"登录时网络异常：{exc}") from exc

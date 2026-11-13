@@ -27,6 +27,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from core import netutil
+
 logger = logging.getLogger(__name__)
 
 #: 仓库（与 core/__init__ 的版本号一起决定"有没有新版"）
@@ -163,7 +165,7 @@ def check(*, force: bool = False) -> UpdateInfo:
     channel = "github"
     try:
         req = urllib.request.Request(RELEASES_API, headers=headers)
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        with netutil.urlopen_with_fallback(req, timeout=TIMEOUT) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001 - 主渠道断网/限流走备用
         gh_err = str(exc)[:200]
@@ -175,7 +177,7 @@ def check(*, force: bool = False) -> UpdateInfo:
             req = urllib.request.Request(
                 GITEE_RELEASES_API,
                 headers={"User-Agent": "HopOn/%s" % cur})
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            with netutil.urlopen_with_fallback(req, timeout=TIMEOUT) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
             channel = "gitee"
         except Exception as exc:  # noqa: BLE001 - 两通道都断才算失败
