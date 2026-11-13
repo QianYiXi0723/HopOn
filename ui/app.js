@@ -3403,24 +3403,36 @@ async function refreshActivities(){
    toggle_done 带 date。范围：手动项格（ok/miss/今日 na）；游戏格是巡检
    事实记录不可改。 */
 let dlfixTimer = null, dlfixPending = null, dlfixPressing = false;
+/* dlfixTimer = { cell, t0 } 按住会话（非计时器 id）：松手按 held≥300ms 判定 */
 
 function dlfixOpen(cell) {
   if (cell) cell.classList.remove('dl-pressing');
-  const id = cell.getAttribute('data-dl-id');
+  const isGame = !cell.hasAttribute('data-dl-id');
+  const id = isGame ? cell.getAttribute('data-game') : cell.getAttribute('data-dl-id');
   const name = cell.getAttribute('data-dl-name');
   const date = cell.getAttribute('data-dl-date');
   const state = cell.getAttribute('data-dl-state');
+  const manual = cell.getAttribute('data-manual') === '1';
   if (!id || !date) return;
   const isToday = !lastHistory ? false :
     ((lastHistory.days || []).some(function(r) {
       return r.is_today && r.date === date; }));
   const undo = state === 'ok';
   const dLabel = date.slice(5).replace('-', '月') + '日';
-  const what = undo ? ('撤销：' + name + ' · ' + dLabel + ' 的打卡？')
-    : (state === 'miss' ? ('补录：' + name + ' · ' + dLabel + ' 标记为已完成？')
-    : ('打卡：' + name + ' · 今天已完成？'));
+  let what;
+  if (isGame) {
+    what = undo
+      ? (manual ? ('撤销补录：' + name + ' · ' + dLabel + '（恢复巡检记录）？')
+                : ('标记为未完成：' + name + ' · ' + dLabel + '？'))
+      : ('补录：' + name + ' · ' + dLabel + ' 标记为已完成？');
+  } else {
+    what = undo ? ('撤销：' + name + ' · ' + dLabel + ' 的打卡？')
+      : (state === 'miss' ? ('补录：' + name + ' · ' + dLabel + ' 标记为已完成？')
+      : ('打卡：' + name + ' · 今天已完成？'));
+  }
   document.getElementById('dlfix-text').textContent = what;
-  dlfixPending = { id: id, date: date, undo: undo, isToday: isToday };
+  dlfixPending = { kind: isGame ? 'game' : 'manual', id: id, date: date,
+                   undo: undo, isToday: isToday, manual: manual };
   document.getElementById('dlfix-modal').hidden = false;
 }
 function dlfixClose() {
@@ -3429,28 +3441,39 @@ function dlfixClose() {
 }
 function dlfixCell(cell) {
   return cell && cell.classList && cell.classList.contains('editable') &&
-    cell.hasAttribute('data-dl-id') ? cell : null;
+    (cell.hasAttribute('data-dl-id') || cell.hasAttribute('data-game')) ? cell : null;
 }
 document.addEventListener('pointerdown', function(e) {
-  const cell = dlfixCell(e.target.closest('.editable[data-dl-id]'));
+  const cell = dlfixCell(e.target.closest('.editable'));
   if (!cell) return;
   dlfixPressing = true;
-  cell.classList.add('dl-pressing');   // 按住压更深，松手果冻回弹
-  dlfixTimer = setTimeout(function() { dlfixTimer = null; dlfixOpen(cell); }, 500);
+  cell.classList.add('dl-pressing');   // 按住压更深
+  dlfixTimer = { cell: cell, t0: Date.now() };   // 不定时弹出——松手才算（用户裁决）
 });
 /* 结束清理只留 pointerup/pointercancel（2026-11-14 用户实证：果冻缩放
    会让格子从光标下「缩走」→ pointerleave 误清计时器 → 长按必失败）。
    语义改为「按住必有结果」：按住不动 500ms 必弹窗，短按早松手即取消，
    按住期间抖动/格子缩小都不取消。 */
-['pointerup', 'pointercancel'].forEach(function(ev) {
-  document.addEventListener(ev, function() {
-    dlfixPressing = false;
-    document.querySelectorAll('.dl-pressing').forEach(function(el) {
-      el.classList.remove('dl-pressing');
-    });
-    if (dlfixTimer) { clearTimeout(dlfixTimer); dlfixTimer = null; }
-  }, { passive: true });
-});
+document.addEventListener('pointerup', function() {
+  const pend = dlfixTimer;
+  dlfixPressing = false;
+  document.querySelectorAll('.dl-pressing').forEach(function(el) {
+    el.classList.remove('dl-pressing');   // 松手瞬间果冻回弹（overshoot 贝塞尔）
+  });
+  if (pend && Date.now() - pend.t0 >= 300) {
+    dlfixTimer = null;
+    dlfixOpen(pend.cell);                 // 松手才弹窗（用户裁决：不要定时弹）
+  } else {
+    dlfixTimer = null;                    // 短按/拖拽路过 = 不弹
+  }
+}, { passive: true });
+document.addEventListener('pointercancel', function() {
+  dlfixPressing = false;
+  document.querySelectorAll('.dl-pressing').forEach(function(el) {
+    el.classList.remove('dl-pressing');
+  });
+  dlfixTimer = null;
+}, { passive: true });
 /* 长按触发了弹窗时，抑制随后的 click 误触（弹窗遮罩已挡，双保险） */
 document.addEventListener('contextmenu', function(e) {
   if (dlfixCell(e.target.closest('.editable[data-dl-id]'))) e.preventDefault();
@@ -3465,12 +3488,23 @@ document.addEventListener('keydown', function(e) {
 });
 document.getElementById('dlfix-ok').addEventListener('click', function() {
   if (!dlfixPending) return;
-  const body = { action: 'toggle_done', id: dlfixPending.id,
-                 undo: dlfixPending.undo };
-  if (!dlfixPending.isToday) body.date = dlfixPending.date;
-  fetch('/api/custom_dailies', {
+  let req;
+  if (dlfixPending.kind === 'game') {
+    // 游戏行 = 巡检记录的报表修正（覆盖账本），不动 history.json 原文
+    req = { url: '/api/history_override',
+      body: { date: dlfixPending.date, game: dlfixPending.id,
+              action: dlfixPending.undo
+                ? (dlfixPending.manual ? 'clear' : 'undone')
+                : 'done' } };
+  } else {
+    const body = { action: 'toggle_done', id: dlfixPending.id,
+                   undo: dlfixPending.undo };
+    if (!dlfixPending.isToday) body.date = dlfixPending.date;
+    req = { url: '/api/custom_dailies', body: body };
+  }
+  fetch(req.url, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
+    body: JSON.stringify(req.body)
   }).then(function(r) { return r.json(); }).then(function(res) {
     dlfixClose();
     if (res.message) toast(res.message);
@@ -3869,10 +3903,20 @@ function renderHeatmap(d){
       /* 今日列合并实时查询（与游戏卡/KPI 同一「live 说了算」纪律）：
          live 报告已完成 → 今日格立即变绿，不等下一轮巡检；
          live 未覆盖/未完成 → 维持巡检事实或"等待中"，绝不提前画红叉 */
-      const lv = (row.is_today && window.__liveMap) ? window.__liveMap[gid] : null;
+      /* 补录覆盖优先于 live（2026-11-14 用户裁决：报表全行可长按修正）——
+         手动标记过的格以账本为准，不被实时查询打回 */
+      const lv = (row.is_today && window.__liveMap && !(c && c.manual))
+        ? window.__liveMap[gid] : null;
       const st = hmCellState(c, row, lv);
+      const manual = !!(c && c.manual);
+      const tip2 = '长按补录/撤销｜' + (manual ? (st.mark === '✓' ? '已补录' : '已标记未完成')
+        : st.tip);
       html += '<div class="hm-cell ' + st.cls + (row.is_today ? ' today' : '') +
-        '" title="' + escHtml(st.tip) + '">' + st.mark + '</div>';
+        ' editable" data-game="' + escHtml(gid) + '" data-dl-name="' +
+        escHtml(nameOf[gid] || gid) + '" data-dl-date="' + escHtml(row.date) +
+        '" data-dl-state="' + (st.mark === '✓' ? 'ok' : 'na') + '"' +
+        (manual ? ' data-manual="1"' : '') +
+        '" title="' + escHtml(tip2) + '">' + st.mark + '</div>';
     });
     html += '</div>';
   });
@@ -4286,15 +4330,19 @@ function renderMonthModal(d){
       const cls = mk === '✓' ? ' done' : mk === '✗' ? ' miss' : '';
       const isManual = cur.game.indexOf('cd:') === 0;
       const tip = (c.known
-        ? (c.finished ? '已完成' : '未完成 ' + (c.unfinished_tasks || 0) + ' 项')
+        ? (c.finished ? (c.manual ? '已补录' : '已完成') : '未完成 ' + (c.unfinished_tasks || 0) + ' 项')
         : ((c.checks || 0) > 0 && c.err) ? '检查失败：' + c.err
         : ((c.checks || 0) > 0) ? '查无数据（当日无有效记录）' : '当日未巡检');
-      const tip2 = isManual ? (row.future ? '还没到'
-        : (cls === 'done' || cls === 'miss' || row.is_today) ? '长按补录/撤销｜' + tip : tip) : tip;
-      const editable = isManual && !row.future && (cls === 'done' || cls === 'miss' || row.is_today);
+      const editable = !row.future && !!(row.games || {})[cur.game];
+      const stateAttr = cls === 'done' ? 'ok' : cls === 'miss' ? 'miss' : 'na';
+      const tip2 = editable ? '长按补录/撤销｜' + tip : tip;
+      const gameAttrs = isManual
+        ? '" data-dl-id="' + escHtml(cur.game.slice(3)) + '" data-dl-name="' + escHtml(cur.game_name)
+        : '" data-game="' + escHtml(cur.game) + '" data-dl-name="' + escHtml(cur.game_name) +
+          (c.manual ? '" data-manual="1' : '');
       html += '<div class="mc-day g' + cls + (row.is_today ? ' today' : '') +
         (editable ? ' editable' : '') +
-        (editable ? '" data-dl-id="' + escHtml(cur.game.slice(3)) + '" data-dl-name="' + escHtml(cur.game_name) + '" data-dl-date="' + escHtml(row.date) + '" data-dl-state="' + (cls === 'done' ? 'ok' : cls === 'miss' ? 'miss' : 'na') : '') +
+        (editable ? gameAttrs + '" data-dl-date="' + escHtml(row.date) + '" data-dl-state="' + stateAttr : '') +
         '" data-tip="' + escHtml(row.label + '｜' + tip2) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
     });
     for (let i = lead + d.days.length; i % 7 !== 0; i++) html += '<div class="mc-day blank"></div>';

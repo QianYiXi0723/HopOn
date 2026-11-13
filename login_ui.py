@@ -3761,6 +3761,35 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"ok": False, "message": f"刷新失败：{exc}"}, 500)
             return
 
+        if path == "/api/history_override":
+            payload = self._read_json_body()
+            try:
+                from core import history as _hist
+
+                date_key = str((payload or {}).get("date") or "")
+                game = str((payload or {}).get("game") or "")
+                action = str((payload or {}).get("action") or "")
+                if not date_key or not game or action not in ("done", "undone", "clear"):
+                    raise ValueError("参数不完整")
+                if game not in _hist.GAME_ORDER:
+                    raise ValueError("未知游戏：" + game)
+                if action == "done":
+                    _hist.set_override(date_key, game, True)
+                    msg = "已补录 " + game + " " + date_key + " 为完成"
+                elif action == "undone":
+                    _hist.set_override(date_key, game, False)
+                    msg = "已将 " + game + " " + date_key + " 标记为未完成"
+                else:
+                    _hist.clear_override(date_key, game)
+                    msg = "已撤销 " + game + " " + date_key + " 的补录（恢复巡检记录）"
+                self._json({"ok": True, "message": msg})
+            except ValueError as exc:
+                self._json({"ok": False, "message": str(exc)}, 400)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("保存报表补录失败")
+                self._json({"ok": False, "message": f"保存失败：{exc}"}, 500)
+            return
+
         if path == "/api/settings":
             payload = self._read_json_body()
             if payload is not None:
