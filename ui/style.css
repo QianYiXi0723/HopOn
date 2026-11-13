@@ -1094,13 +1094,17 @@
   .heatmap{display:flex;flex-direction:column;gap:8px;width:100%;
            flex:1 0 auto;min-height:min-content;
            background:var(--bg-sub);border-radius:8px;padding:10px}
+  /* 行多时纵向滚动（GitHub 范式：格子定尺寸不压缩）；表头吸顶 */
+  .hm-scroll{max-height:340px;overflow-y:auto;border-radius:8px}
+  .hm-scroll .heatmap{border-radius:0}
   .hm-row{display:grid;grid-template-columns:150px repeat(7,1fr);gap:8px;min-width:0;
-          flex:1 1 auto;min-height:38px}
-  .hm-row.hm-head{flex:0 0 auto}   /* 表头保持紧凑，不参与纵向拉伸 */
+          flex:0 0 auto;height:44px}   /* 行高固定 44px，不拉伸不压缩 */
+  .hm-row.hm-head{flex:0 0 auto;height:auto;position:sticky;top:0;z-index:2;
+          background:var(--bg-sub)}   /* 表头吸顶，滚动能看到今天是几号 */
   @media (max-width:760px){ .hm-row{grid-template-columns:96px repeat(7,1fr)} }
   .hm-label{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;
     min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .hm-cell{min-height:38px;border-radius:4px;display:flex;align-items:center;
+  .hm-cell{height:44px;border-radius:4px;display:flex;align-items:center;
     justify-content:center;font-size:12px;font-weight:600;min-width:0}
   .hm-head .hm-cell{background:transparent;min-height:22px;font-weight:400;
     font-size:12px;color:var(--muted)}

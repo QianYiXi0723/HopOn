@@ -303,6 +303,17 @@ def _attach_manual(payload: Dict[str, Any], *, month_mode: bool) -> None:
         from core import dailies as _dl
 
         items = (load_raw_config().get("app") or {}).get("custom_dailies") or []
+
+        def _is_daily(it: Dict[str, Any]) -> bool:
+            """报表只收「每天推送」的手动项（2026-11-14 用户裁决）：周计划
+            非全勾的项大部分日子是空白格，进报表只会占一行挤高度。"""
+            days = it.get("days") if (
+                isinstance(it.get("days"), list) and len(it.get("days")) == 7
+                and all(isinstance(x, bool) for x in it.get("days"))) else [True] * 7
+            return all(days)
+
+        items = [it for it in items
+                 if isinstance(it, dict) and it.get("enabled", True) and _is_daily(it)]
         date_keys = [str(row.get("date") or "")
                      for row in (payload.get("days") or []) if row.get("date")]
         rows = _dl.report_rows(items, CONFIG_PATH.parent, date_keys)

@@ -3840,7 +3840,7 @@ function renderHeatmap(d){
   (d.games || []).forEach(function(g){ nameOf[g.game] = g.game_name || g.game; });
   const manualRows = d.manual || [];
 
-  let html = '<div class="heatmap">';
+  let html = '<div class="hm-scroll"><div class="heatmap">';
   html += '<div class="hm-row hm-head"><div class="hm-label"></div>' +
     days.map(function(row){
       return '<div class="hm-cell' + (row.is_today ? ' today' : '') + '">' +
@@ -3895,7 +3895,7 @@ function renderHeatmap(d){
     html += '</div>';
   });
 
-  html += '</div>' +
+  html += '</div></div>' +
     '<div class="hm-legend">' +
     '<span class="hm-cell ok">✓</span>完成' +
     '<span class="hm-cell err">✗</span>未完成' +
