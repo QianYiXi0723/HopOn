@@ -101,6 +101,7 @@ APP_VERSION = "2.102.1"
 # 那会让所有用户共用同一台设备。现在 OAID 每次分配身份时随机生成，
 # device_oaid.txt 不再读取（留着也不会生效）。
 
+from core import netutil
 from core.paths import user_root
 
 #: logs/ 目录：设备身份、指纹缓存与真机档案都放这里，不进版本库
