@@ -317,6 +317,15 @@ def _attach_manual(payload: Dict[str, Any], *, month_mode: bool) -> None:
         date_keys = [str(row.get("date") or "")
                      for row in (payload.get("days") or []) if row.get("date")]
         rows = _dl.report_rows(items, CONFIG_PATH.parent, date_keys)
+        # KPI「今日完成」并入手动项（2026-11-14 用户裁决）：planned=今日计划数
+        # （每天项恒计、周计划项只在其计划日计），done=其中已打卡数
+        st = custom_dailies_status()
+        planned = sum(1 for it in st.get("items", [])
+                      if it.get("enabled", True) and it.get("planned_today"))
+        done = sum(1 for it in st.get("items", [])
+                   if it.get("enabled", True) and it.get("planned_today")
+                   and it.get("done_today"))
+        payload["manual_today"] = {"planned": planned, "done": done}
         if month_mode:
             for row in rows:
                 gid = "cd:" + (row["id"] or row["name"])

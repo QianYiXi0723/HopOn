@@ -4647,7 +4647,16 @@ function renderKpiToday(h){
     known++;
     if (c.finished) done++;
   });
-  const total = tracked.length;
+  let total = tracked.length;
+  /* 手动项并入（2026-11-14 用户裁决）：与推送标题「日常：X/Y」同一分数——
+     今日计划的手动项恒为已知（打卡账本本地可查），分母必计、分子按已完成 */
+  const mt = (h && h.manual_today) || {};
+  const manualPlanned = mt.planned || 0;
+  if (manualPlanned) {
+    total += manualPlanned;
+    known += manualPlanned;
+    done += (mt.done || 0);
+  }
   if (!total) {
     el.textContent = '–';
     el.className = 'kpi-value value';
@@ -4692,7 +4701,7 @@ function renderKpiToday(h){
   /* 0 完成 = critical；部分完成 = warn；全部完成 = 无紧迫（紧迫度只看合并结果，不碰统计） */
   setUrgency('k-today', done === total ? '' : (done > 0 ? 'warn' : 'critical'));
   refreshKpiKeep();
-  kpiSet('k-today-sub', done === total ? '今日全部完成' : (total - done) + ' 款未完成');
+  kpiSet('k-today-sub', done === total ? '今日全部完成' : (total - done) + ' 项未完成');
 }
 
 /* 凭证健康：已绑定凭证的账号 / 启用账号（口径=启用，与今日完成 KPI 同分母；
