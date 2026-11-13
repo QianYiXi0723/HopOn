@@ -1101,8 +1101,10 @@
   .heatmap{display:flex;flex-direction:column;gap:8px;width:100%;
            flex:1 0 auto;min-height:min-content;
            background:var(--bg-sub);border-radius:8px;padding:10px}
-  /* 行多时纵向滚动（GitHub 范式：格子定尺寸不压缩）；表头吸顶 */
-  .hm-scroll{max-height:340px;overflow-y:auto;border-radius:8px}
+  /* 行多时纵向滚动（GitHub 范式：格子定尺寸不压缩）；表头吸顶。
+     限高必须落在**行间隙**（10+22+6×44+6×8+10=346）：切在格子中间会造出
+     「视觉露 8px、hit-test 全在裁剪区外」的死格——长按/点击全穿透（实锤）。 */
+  .hm-scroll{max-height:346px;overflow-y:auto;border-radius:8px}
   .hm-scroll .heatmap{border-radius:0}
   .hm-row{display:grid;grid-template-columns:150px repeat(7,1fr);gap:8px;min-width:0;
           flex:0 0 auto;height:44px}   /* 行高固定 44px，不拉伸不压缩 */
@@ -1113,6 +1115,19 @@
     min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .hm-cell{height:44px;border-radius:4px;display:flex;align-items:center;
     justify-content:center;font-size:12px;font-weight:600;min-width:0}
+  /* 可长按补录的手动格：果冻 hover（Discord 图标三件套——缩放+圆角 morph
+     + overshoot 贝塞尔回弹），按住时压得更深；title 兜底触屏。
+     位置纪律：必须在全局区——曾误入 1099 媒体块导致最大化窗口整个无效 */
+  .hm-cell.editable,.mc-day.editable{cursor:pointer;
+    transition:transform .28s cubic-bezier(.175,.885,.32,1.275),
+               border-radius .28s cubic-bezier(.175,.885,.32,1.275),
+               filter .18s ease}
+  .hm-cell.editable:hover,.mc-day.editable:hover{
+    transform:scale(.92);border-radius:12px;filter:brightness(1.08)}
+  .hm-cell.editable:active,.mc-day.editable:active{transform:scale(.88)}
+  .hm-cell.dl-pressing,.mc-day.dl-pressing{
+    transform:scale(.85)!important;filter:brightness(1.2)}
+  .hm-cell.blank{visibility:hidden}   /* 非计划日：占位保对齐，整格隐形 */
   .hm-head .hm-cell{background:transparent;min-height:22px;font-weight:400;
     font-size:12px;color:var(--muted)}
   .hm-head .hm-cell.today{color:var(--brand);font-weight:700}
@@ -1515,17 +1530,7 @@
   .modal--bgrisk .row3{grid-template-columns:1fr 1fr}   /* 取消/确认平分 */
   .modal--dlfix .row3{grid-template-columns:1fr 1fr}    /* 取消/确认平分 */
   .modal--dlfix{max-width:360px}
-  /* 可长按补录的手动格：hover 提示可编辑（无 hover 触屏无感，title 兜底） */
-  .hm-cell.editable,.mc-day.editable{cursor:pointer;
-    transition:transform .28s cubic-bezier(.175,.885,.32,1.275),
-               border-radius .28s cubic-bezier(.175,.885,.32,1.275),
-               filter .18s ease}
-  .hm-cell.editable:hover,.mc-day.editable:hover{
-    transform:scale(.92);border-radius:12px;filter:brightness(1.08)}
-  .hm-cell.editable:active,.mc-day.editable:active{transform:scale(.88)}
-  .hm-cell.dl-pressing,.mc-day.dl-pressing{
-    transform:scale(.85)!important;filter:brightness(1.2)}
-  .hm-cell.blank{visibility:hidden}   /* 非计划日：占位保对齐，整格隐形 */
+
   .bgrisk-body p{margin:6px 0}
   .bgrisk-body ul{margin:6px 0 2px;padding-left:18px;display:flex;
     flex-direction:column;gap:6px;color:var(--fg)}
