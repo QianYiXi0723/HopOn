@@ -1039,6 +1039,8 @@
   .gcard-ico{width:40px;height:40px;border-radius:8px;object-fit:cover;flex:none}
   .gcard-daily{display:flex;align-items:center;gap:6px;min-height:20px;
                font-size:12px;overflow:hidden}
+  /* 手动卡底行：模式文字居左、打卡钮居右，按钮中线与文字行对齐 */
+  .dl-gcard .gcard-daily{justify-content:space-between}
   /* 日常进度条行：与体力条同形态（名称 + 条 + N/N），小窗一行一任务 */
   .gcard-task{display:flex;align-items:center;gap:8px;font-size:12px;min-width:0}
   /* 标签/计数双定宽：任务名最长 5 字（每日活跃度）、计数最长 7 字（400/400），

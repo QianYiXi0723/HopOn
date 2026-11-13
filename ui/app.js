@@ -1877,15 +1877,18 @@ function renderManualGroup(){
       '<div class="gcard-head">' +
         '<span class="gcard-ico ph">' + escHtml(first) + '</span>' +
         '<div class="gcard-name"><b>' + escHtml(it.name) + '</b></div>' +
-        '<button type="button" class="dl-toggle' + (done ? ' done' : '') +
-        '" data-id="' + escHtml(it.id) + '" title="点击勾掉/恢复今日">' +
-        (done ? '✓ 已打卡' : '打卡') + '</button>' +
         '<div class="gcard-streak"><b class="value">' + Number(it.streak || 0) +
         '</b><small>连续天数</small></div>' +
       '</div>' +
       /* 二值状态没有「进度」可言（2026-11-12 用户裁）：去伪进度条，
          底行只留模式文字——完成态由打卡钮颜色表达 */
-      '<div class="gcard-daily"><span class="dim">' + escHtml(modeTxt) + '</span></div>' +
+      /* 打卡钮在底行右端（2026-11-14 用户裁决）：与「每天」行中线对齐，
+         不贴角——卡片自身 padding 即空隙 */
+      '<div class="gcard-daily"><span class="dim">' + escHtml(modeTxt) + '</span>' +
+        '<button type="button" class="dl-toggle' + (done ? ' done' : '') +
+        '" data-id="' + escHtml(it.id) + '" title="点击勾掉/恢复今日">' +
+        (done ? '✓ 已打卡' : '打卡') + '</button>' +
+      '</div>' +
       '</div>';
   }).join('');
 }
