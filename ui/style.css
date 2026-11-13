@@ -1119,8 +1119,8 @@
     var(--hover) 0 4px, transparent 4px 8px);color:var(--muted)}
   .hm-legend{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);
     margin-top:8px;flex-wrap:wrap;padding:0 10px}
-  .hm-legend .hm-cell{min-height:18px;min-width:20px;padding:0 6px;font-size:12px;
-    flex:0 0 auto}
+  .hm-legend .hm-cell{height:18px;min-height:18px;min-width:20px;padding:0 6px;
+    font-size:12px;flex:0 0 auto}
 
   /* ---------- 通知绑定三区（邮箱客户端式） ----------
      第 1 行三卡拉伸吃满视口，最近推送整行贴底 —— 消灭右下黑色空洞 */
