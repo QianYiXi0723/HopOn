@@ -244,6 +244,11 @@ def _get(sid: str) -> Optional[Session]:
 # 二维码
 # --------------------------------------------------------------------------- #
 
+# 设备信息.apk 公网下载页（2026-11-14 用户裁决：软件公开发行，二维码指向
+# Gitee Releases——免梯、手机直开；APK 是跨版本通用独立工具，各版本资产都有）
+GITEE_RELEASES_URL = "https://gitee.com/qianyixi/HopOn/releases"
+
+
 
 def qr_png_base64(text: str) -> str:
     """把文本渲染成 PNG 二维码并转 base64；缺依赖时返回空串（前端会降级提示）。"""
@@ -1093,13 +1098,6 @@ TOOLS_SERVER: Optional[Dict[str, Any]] = None
 #: 启动失败的原因。空串表示没失败（要么没试过，要么成功了）
 TOOLS_ERROR: str = ""
 
-#: 是否允许启动 APK 局域网下载服务（--no-lan-tools 关闭）。
-#: 这个服务必须绑 0.0.0.0 手机才能扫码下载，代价是每出现一个新的可执行文件路径，
-#: Windows 防火墙就要问一次「是否允许接受来自网络的连接」。所以启动时不再预热，
-#: 只在用户真的要看下载地址时（/api/apk/restart）才起来 —— 主控制台只绑 127.0.0.1，
-#: 回环流量不经过防火墙，从来不会触发询问。
-LAN_TOOLS_ENABLED: bool = True
-
 _TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
 
@@ -1120,53 +1118,24 @@ def _mask_oaid(value: str) -> str:
 
 
 def apk_info(*, retry: bool = True) -> Dict[str, Any]:
-    """tools/ 里的 APK 信息 + 手机扫码下载地址。
+    """设备信息.apk 的公网下载信息 + 二维码（2026-11-14 用户裁决：软件公开发
+    行，二维码必须指向公网——原局域网 0.0.0.0:8790 方案废弃）。
 
-    ``retry=True``（默认）：服务没起来就**现在再试一次**。
-    这样即使启动时端口被占 / tools 目录当时还是空的，等页面加载、
-    用户把 APK 放进来或关掉占端口的程序之后，刷一下就能出来二维码，
-    不用重启整个控制台。
+    URL = Gitee Releases 页（免梯、手机直开；设备信息.apk 是跨版本通用的
+    独立工具，各版本资产里都有）。本地 tools/ 有 APK 时顺带报大小。
+    ``retry`` 参数保留兼容旧签名，公网方案无服务可重启，忽略。
     """
-    global TOOLS_SERVER
-
-    from core import tools_server
-
-    if not TOOLS_SERVER and retry:
-        start_tools_service()
-
-    if not TOOLS_SERVER:
-        return {
-            "available": False,
-            "message": TOOLS_ERROR or "下载服务未启动",
-            "retryable": True,
-        }
-
-    files = [
-        item for item in tools_server.list_files() if item["name"].lower().endswith(".apk")
-    ]
-    if not files:
-        return {
-            "available": False,
-            "message": f"tools/ 目录里没有 APK（{tools_server.TOOLS_DIR}）",
-            "retryable": True,
-        }
-
-    apk = files[0]
-    url = TOOLS_SERVER["url"] + quote(apk["name"])
-    info = {
+    apk_path = BASE_DIR / "tools" / "设备信息.apk"
+    size_text = ""
+    if apk_path.exists():
+        size_text = _human_size(apk_path.stat().st_size)
+    return {
         "available": True,
-        "name": apk["name"],
-        "size": apk["size"],
-        "size_text": _human_size(apk["size"]),
-        "url": url,
-        "ip": TOOLS_SERVER["ip"],
-        "port": TOOLS_SERVER["port"],
-        "qr": qr_png_base64(url),
+        "name": "设备信息.apk",
+        "size_text": size_text,
+        "url": GITEE_RELEASES_URL,
+        "qr": qr_png_base64(GITEE_RELEASES_URL),
     }
-    if TOOLS_SERVER["ip"] in ("127.0.0.1", "::1"):
-        # 没拿到局域网地址：服务起来了，但手机扫了也下载不了
-        info["warning"] = "没检测到局域网地址（可能没连 WiFi），手机扫码可能打不开"
-    return info
 
 
 def device_status() -> Dict[str, Any]:
@@ -3937,15 +3906,6 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": f"打开失败：{exc}"}, 500)
             return
 
-        if path == "/api/apk/restart":
-            payload = self._read_json_body()
-            if payload is not None:
-                try:
-                    self._json(restart_tools_service())
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("重启 APK 下载服务失败")
-                    self._json({"ok": False, "message": f"重启失败：{exc}"}, 500)
-            return
 
         if path == "/api/daemon/quiet-run":
             # 关机前落盘（2026-11-06）：壳「彻底退出」/系统关机前调用。写
@@ -4105,54 +4065,6 @@ class LocalHTTPServer(ThreadingHTTPServer):
 
     daemon_threads = True
     allow_reuse_address = os.name != "nt"
-
-
-def start_tools_service() -> Optional[Dict[str, Any]]:
-    """启动 APK 局域网下载服务（进程内只起一次，重复调用返回同一实例）。
-
-    它监听 0.0.0.0 的独立端口，只读地暴露 tools/ 一层文件；
-    主控制台始终只听 127.0.0.1，避免 /api/* 被同一 WiFi 的人调用。
-
-    失败时**不抛异常**，而是把原因写进 :data:`TOOLS_ERROR`——界面要把它
-    显示出来，否则用户只看到一句"下载服务未启动"，根本没法自己排查。
-    """
-    global TOOLS_SERVER, TOOLS_ERROR
-
-    if TOOLS_SERVER is not None:
-        return TOOLS_SERVER
-    if not LAN_TOOLS_ENABLED:
-        TOOLS_ERROR = "局域网下载服务已被禁用（--no-lan-tools）"
-        logger.info("APK 下载服务未启动：%s", TOOLS_ERROR)
-        return None
-    try:
-        from core import tools_server
-
-        TOOLS_SERVER = tools_server.start()
-        TOOLS_ERROR = "" if TOOLS_SERVER else (tools_server.LAST_ERROR or "下载服务未启动")
-    except Exception as exc:  # noqa: BLE001
-        TOOLS_ERROR = f"启动异常：{type(exc).__name__}: {exc}"
-        logger.warning("APK 下载服务启动失败：%s", TOOLS_ERROR)
-        TOOLS_SERVER = None
-    if TOOLS_SERVER is None and TOOLS_ERROR:
-        logger.warning("APK 下载服务不可用：%s", TOOLS_ERROR)
-    return TOOLS_SERVER
-
-
-def restart_tools_service() -> Dict[str, Any]:
-    """关掉现有下载服务、换端口重新起一个，并把新的二维码信息一并返回。
-
-    用于界面上的「换个端口重试」：比如 8790 被别的程序占了、或者用户刚把
-    APK 拷进 tools/，点一下就能刷新，不用重启控制台。
-    """
-    global TOOLS_SERVER, TOOLS_ERROR
-
-    from core import tools_server as ts
-
-    ts.stop(TOOLS_SERVER)
-    TOOLS_SERVER = None
-    TOOLS_ERROR = ""
-    start_tools_service()
-    return apk_info(retry=False)
 
 
 def serve(

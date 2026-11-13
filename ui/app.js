@@ -684,10 +684,9 @@ function renderDevice(d){
     try { shown = decodeURIComponent(apk.url); } catch (e) {}
     meta.innerHTML =
       '<div class="apk-file"><b>' + escHtml(apk.name) + '</b>' +
-      '<span class="dim">' + escHtml(apk.size_text) + '</span></div>' +
-      '<div class="apk-hint">手机连同一 WiFi 扫码即可下载</div>' +
-      '<div class="apk-url mono">' + escHtml(shown) + '</div>' +
-      (apk.warning ? '<div class="warn-t">⚠ ' + escHtml(apk.warning) + '</div>' : '');
+      (apk.size_text ? '<span class="dim">' + escHtml(apk.size_text) + '</span>' : '') + '</div>' +
+      '<div class="apk-hint">扫码打开 Gitee 下载页，选最新版本下载</div>' +
+      '<div class="apk-url mono">' + escHtml(shown) + '</div>';
   } else {
     qrBox.innerHTML =
       '<div style="padding:10px 8px;text-align:center">' +
@@ -702,26 +701,31 @@ function renderDevice(d){
 
 async function restartApkService(){
   const btn = document.getElementById('btn-apk-retry');
-  if (btn) { btn.disabled = true; btn.textContent = '重试中…'; }
+  if (btn) { btn.disabled = true; btn.textContent = '生成中…'; }
   try {
-    const d = await postJSON('/api/apk/restart', {});
+    const d = await postJSON('/api/settings', {});
+    const apk = d.apk || {};
     const box = document.getElementById('apk-qr');
     const meta = document.getElementById('apk-meta');
-    if (d.available && d.qr) {
+    if (apk.available && apk.qr) {
       box.innerHTML = '<img alt="APK 下载二维码">';
-      box.querySelector('img').src = 'data:image/png;base64,' + d.qr;
-      let shown = d.url;
-      try { shown = decodeURIComponent(d.url); } catch (e) {}
-      meta.innerHTML = escHtml(d.name) + '（' + escHtml(d.size_text) + '）<br>' + escHtml(shown);
-      toast('下载服务已就绪，端口 ' + d.port);
+      box.querySelector('img').src = 'data:image/png;base64,' + apk.qr;
+      let shown = apk.url;
+      try { shown = decodeURIComponent(apk.url); } catch (e) {}
+      meta.innerHTML =
+        '<div class="apk-file"><b>' + escHtml(apk.name) + '</b>' +
+        (apk.size_text ? '<span class="dim">' + escHtml(apk.size_text) + '</span>' : '') + '</div>' +
+        '<div class="apk-hint">扫码打开 Gitee 下载页，选最新版本下载</div>' +
+        '<div class="apk-url mono">' + escHtml(shown) + '</div>';
+      toast('二维码已更新');
     } else {
       if (btn) { btn.disabled = false; btn.textContent = '生成下载二维码'; }
-      meta.innerHTML = '<span class="warn-t">' + escHtml(d.message || '仍然不可用') + '</span>';
-      toast('仍然不可用：' + (d.message || ''), true);
+      meta.innerHTML = '<span class="warn-t">' + escHtml(apk.message || '二维码不可用') + '</span>';
+      toast('生成失败：' + (apk.message || ''), true);
     }
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = '生成下载二维码'; }
-    toast('重启失败：' + e.message, true);
+    toast('生成失败：' + e.message, true);
   }
 }
 
