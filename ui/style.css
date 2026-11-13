@@ -874,7 +874,13 @@
   .apk-qr{display:inline-block;padding:6px;background:#fff;
           border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
   .apk-qr img{width:126px;height:126px;display:block}
-  .apk-meta{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5;word-break:break-all}
+  .apk-meta{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6;
+    word-break:break-all;display:flex;flex-direction:column;gap:4px;align-items:center}
+  .apk-file{display:flex;align-items:baseline;gap:8px}
+  .apk-file b{font-size:13px;color:var(--fg)}
+  .apk-hint{color:var(--fg)}
+  .apk-url{font-family:ui-monospace,Consolas,monospace;font-size:11px;
+    color:var(--muted);opacity:.75}
   /* 代码粘贴框：等宽字体 + 内阴影质感 */
   .dev-text{width:100%;min-height:132px;padding:10px 16px;border-radius:8px;
     border:none;background:var(--bg-input);color:var(--fg);

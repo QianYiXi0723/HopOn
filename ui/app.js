@@ -682,8 +682,12 @@ function renderDevice(d){
     qrBox.querySelector('img').src = 'data:image/png;base64,' + apk.qr;
     let shown = apk.url;
     try { shown = decodeURIComponent(apk.url); } catch (e) {}
-    meta.innerHTML = escHtml(apk.name) + '（' + escHtml(apk.size_text) + '）<br>' + escHtml(shown) +
-      (apk.warning ? '<br><span class="warn-t">⚠ ' + escHtml(apk.warning) + '</span>' : '');
+    meta.innerHTML =
+      '<div class="apk-file"><b>' + escHtml(apk.name) + '</b>' +
+      '<span class="dim">' + escHtml(apk.size_text) + '</span></div>' +
+      '<div class="apk-hint">手机连同一 WiFi 扫码即可下载</div>' +
+      '<div class="apk-url mono">' + escHtml(shown) + '</div>' +
+      (apk.warning ? '<div class="warn-t">⚠ ' + escHtml(apk.warning) + '</div>' : '');
   } else {
     qrBox.innerHTML =
       '<div style="padding:10px 8px;text-align:center">' +
