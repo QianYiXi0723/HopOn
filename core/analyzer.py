@@ -176,12 +176,15 @@ class DailyReport:
         total = len(self.statuses)
         # "全部完成"只在真的一款不剩时才说：数据待更新/未创建角色/查询失败
         # 的都算未知，否则会出现标题「5/5 全部完成」而方舟其实一整天没登录过的误导。
-        # 2026-11-14 用户裁决：手动项也并入——正文列着 [未完成] 火影忍者，
+        # 2026-11-14 用户裁决：手动项并入——正文列着 [未完成] 火影忍者，
         # 标题不能写「全部完成」
         all_done = (not self.unfinished and not self.failed and not self.stale
                     and not self.no_accounts and not self.manual_lines)
-        # merged 手动项今日计划数（已完成名 + 未完成行）；0 = 今天没有计划手动项
+        # 2026-11-14 用户裁决：前缀「游戏日常」→「日常」，自定义日常并入同一
+        # 分数（游戏完成 + 手动完成 / 游戏总数 + 今日计划手动数），不再分列段
         manual_total = len(self.manual_finished) + len(self.manual_lines)
+        done_count = len(self.finished) + len(self.manual_finished)
+        total_count = total + manual_total
 
         # 标题一律用「已完成」做进度分子：查询失败的游戏仍占分母，但不会让标题
         # 出现「1/5 个未完成」却和正文「已完成 2 款」对不上的观感。
@@ -191,9 +194,9 @@ class DailyReport:
             # （来自活动日历与资源预警，与完成度无关），但标题必须诚实。
             title = "账号数据未就绪"
         elif all_done:
-            title = f"游戏日常：{total}/{total} 全部完成"
+            title = f"日常：{total_count}/{total_count} 全部完成"
         else:
-            title = f"游戏日常：{len(self.finished)}/{total} 已完成"
+            title = f"日常：{done_count}/{total_count} 已完成"
         if self.resource_alerts:
             # 全部满格（current == max，恢复已停）时不再说「将溢出」——
             # 2026-11-09 用户裁决：已满的就别说即将溢出
@@ -204,8 +207,6 @@ class DailyReport:
             title += f" · 📅 活动将结束（{len(self.activity_alerts)}）"
         if self.activity_start_alerts:
             title += f" · 🆕 活动上新（{len(self.activity_start_alerts)}）"
-        if manual_total:
-            title += f" · 手动 {len(self.manual_finished)}/{manual_total}"
 
         lines: List[str] = []
         lines.append(self.generated_at.strftime("%m-%d %H:%M"))
@@ -410,11 +411,11 @@ def build_report(
 # tests/rl_test_push_preview.py 守卫「游戏日常：」不出现在前端源码里。
 # --------------------------------------------------------------------------- #
 
-WAITING_FIRST_CHECK_TITLE = "游戏日常：等待第一次巡检"
+WAITING_FIRST_CHECK_TITLE = "日常：等待第一次巡检"
 WAITING_FIRST_CHECK_BODY = (
     "还没有巡检数据。定时检查跑过一轮后，这里会按真实结果显示推送样式。"
 )
-NO_VALID_RECORDS_TITLE = "游戏日常：暂无有效记录"
+NO_VALID_RECORDS_TITLE = "日常：暂无有效记录"
 NO_VALID_RECORDS_BODY = "今天还没有拿到任何有效的巡检数据。"
 
 
