@@ -91,7 +91,14 @@
   .foot-ico .ico{width:14px;height:14px}
   .foot-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .main{flex:1;min-width:0;width:100%;padding:24px 32px;
-        display:flex;flex-direction:column;min-height:0;overflow-y:auto}
+        display:flex;flex-direction:column;min-height:0;overflow-y:auto;
+        scrollbar-gutter:stable}
+  /* 主滚动条常显（WebView2 默认覆盖式=悬停才现形，小窗等于没有）：
+     10px 细条，内容不满一屏自动消失 */
+  .main::-webkit-scrollbar{width:10px}
+  .main::-webkit-scrollbar-track{background:transparent}
+  .main::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px}
+  .main::-webkit-scrollbar-thumb:hover{background:var(--muted)}
   @media (max-width:760px){
     .app-body{flex-direction:column}
     .side{width:100%;flex-direction:row;align-items:center}
