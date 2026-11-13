@@ -176,7 +176,12 @@ class DailyReport:
         total = len(self.statuses)
         # "全部完成"只在真的一款不剩时才说：数据待更新/未创建角色/查询失败
         # 的都算未知，否则会出现标题「5/5 全部完成」而方舟其实一整天没登录过的误导。
-        all_done = not self.unfinished and not self.failed and not self.stale and not self.no_accounts
+        # 2026-11-14 用户裁决：手动项也并入——正文列着 [未完成] 火影忍者，
+        # 标题不能写「全部完成」
+        all_done = (not self.unfinished and not self.failed and not self.stale
+                    and not self.no_accounts and not self.manual_lines)
+        # merged 手动项今日计划数（已完成名 + 未完成行）；0 = 今天没有计划手动项
+        manual_total = len(self.manual_finished) + len(self.manual_lines)
 
         # 标题一律用「已完成」做进度分子：查询失败的游戏仍占分母，但不会让标题
         # 出现「1/5 个未完成」却和正文「已完成 2 款」对不上的观感。
@@ -199,6 +204,8 @@ class DailyReport:
             title += f" · 📅 活动将结束（{len(self.activity_alerts)}）"
         if self.activity_start_alerts:
             title += f" · 🆕 活动上新（{len(self.activity_start_alerts)}）"
+        if manual_total:
+            title += f" · 手动 {len(self.manual_finished)}/{manual_total}"
 
         lines: List[str] = []
         lines.append(self.generated_at.strftime("%m-%d %H:%M"))
@@ -249,7 +256,8 @@ class DailyReport:
             else:
                 lines.append("没查到的几款先检查凭证或换个网络，别当成已经做完了。")
         else:
-            lines.append(f"共漏 {self.unfinished_task_count} 项，别拖到 23:59。")
+            # 共漏数含手动项（2026-11-14）：正文 [未完成] 行与尾句口径一致
+            lines.append(f"共漏 {self.unfinished_task_count + len(self.manual_lines)} 项，别拖到 23:59。")
 
         # 活动提醒放在消息末尾：不打断"日常做没做完"这个主信息
         if self.activity_alerts or self.activity_start_alerts:

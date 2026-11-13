@@ -75,6 +75,22 @@ GENSHIN_UNFINISHED = status("genshin", "原神", [
 STARRAIL_DONE = status("starrail", "崩坏：星穹铁道", [task("清体力", True, "200/240")])
 
 
+# 手动项桩化（2026-11-14）：标题口径并入手动项后，预览测试不能吃真机
+# config 里的自定义提醒（火影忍者今天计划未完成 → 标题会多出「· 手动 0/1」）。
+# 默认归零；T-M 组单独注入可控手动数据。
+import core.dailies as _cd_mod
+_ORIG_MPP = _cd_mod.merged_push_parts
+_CD_STUB = {"parts": ([], [])}
+
+
+def _stub_mpp(*a, **k):
+    return _CD_STUB["parts"]
+
+
+_cd_mod.merged_push_parts = _stub_mpp
+login_ui._cd = _cd_mod  # 若 login_ui 持独立引用，一并指回桩化模块
+
+
 def preview():
     return login_ui.push_preview_payload()
 
@@ -156,6 +172,32 @@ check("S1 预览只读快照（mtime 未变）", snap_path.stat().st_mtime_ns ==
 check("S2 临时目录无新增文件（不落 push_history/不写其他盘）",
       sorted(p.name for p in tmpdir.iterdir()) == [history.REPORT_SNAPSHOT_NAME],
       [p.name for p in tmpdir.iterdir()])
+
+# ---------- T-M 组：手动项并入标题口径（2026-11-14 用户裁决）----------
+# 正文列着 [未完成] 手动项时，标题禁写「全部完成」，且带「· 手动 N/M」段
+write_snap({"version": 1, "generated_at": "2026-10-31T08:00:00",
+            "statuses": [GENSHIN_UNFINISHED, STARRAIL_DONE],
+            "resource_alerts": [], "activity_alerts": []})
+_CD_STUB["parts"] = (["[未完成] 火影忍者：今日进度（0/1）"], [])
+p = preview()
+check("T-M1 手动未完 → 标题带 · 手动 0/1 且不说全部完成",
+      p["title"] == "游戏日常：1/2 已完成 · 手动 0/1", p.get("title"))
+check("T-M2 正文含手动未完成行",
+      "[未完成] 火影忍者：今日进度（0/1）" in (p.get("body") or ""), (p.get("body") or "")[-200:])
+check("T-M3 共漏数含手动项",
+      "共漏 2 项，别拖到 23:59。" in (p.get("body") or ""), (p.get("body") or "")[-120:])
+
+_CD_STUB["parts"] = ([], ["火影忍者"])
+GENSHIN_DONE = status("genshin", "原神", [
+    task("每日委托", True), task("消耗原粹树脂", True, "160/160"),
+])
+write_snap({"version": 1, "generated_at": "2026-10-31T08:00:00",
+            "statuses": [GENSHIN_DONE, STARRAIL_DONE],
+            "resource_alerts": [], "activity_alerts": []})
+p = preview()
+check("T-M4 手动全完 → 标题 · 手动 1/1 且可写全部完成",
+      p["title"] == "游戏日常：2/2 全部完成 · 手动 1/1", p.get("title"))
+_CD_STUB["parts"] = ([], [])
 
 passed = sum(1 for _, ok in results if ok)
 print("\n[结论] %d/%d 通过%s" % (passed, len(results),
