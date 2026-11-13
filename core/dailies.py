@@ -202,8 +202,8 @@ def report_rows(items: List[Dict[str, Any]], user_dir: Path, date_keys: List[str
     两个口径要点：
     - 账本周期键 = reset 平移后的日期；打卡落在 reset 之前的凌晨（如 01:00
       打 04:00 reset 的项）周期键是昨天——按时间戳映射回**日历日**再对格。
-    - 「开始记录」地板 = 账本最早周期键：地板前的日子不装红叉（那时项还不存在，
-      与游戏「当日未巡检」同语义显示 ⋯）。
+    - 过去计划日未打卡一律 ✗ 可长按补录（不设账本地板：地板=最早周期会把
+      首打较晚的项的整个过去锁成 ⋯，用户实证 2026-11-14）。
     """
     now = now or datetime.now()
     state = _load_state(user_dir)
@@ -218,7 +218,9 @@ def report_rows(items: List[Dict[str, Any]], user_dir: Path, date_keys: List[str
             str(p): str(ts) for p, ts in (raw_periods or {}).items()
             if _parse_period(str(p)) is not None
         }
-        floor = min((_parse_period(p) for p in periods), default=None)
+        # 不设「开始记录」地板（2026-11-14 用户实证：地板=账本最早周期，第一次
+        # 打卡晚的话整个过去全锁死，长按补录形同虚设）——过去计划日一律 ✗
+        # 可补录，用长按自己修正历史
         days7 = it.get("days") if (
             isinstance(it.get("days"), list) and len(it.get("days")) == 7
             and all(isinstance(x, bool) for x in it.get("days"))) else [True] * 7
@@ -244,9 +246,6 @@ def report_rows(items: List[Dict[str, Any]], user_dir: Path, date_keys: List[str
                 continue
             if not days7[d.weekday()]:
                 rows.append({"date": dk, "state": "na", "tip": "非计划日"})
-                continue
-            if floor is not None and d < floor:
-                rows.append({"date": dk, "state": "na", "tip": "开始记录前"})
                 continue
             # 「今天等待打卡」边界跟该项 reset 周期走（与报表列的 04:00
             # 游戏日口径一致）：凌晨时段当前周期还是昨天那一列，不能画红叉
