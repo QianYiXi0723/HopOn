@@ -26,7 +26,7 @@ DEFAULT_RESET = "04:00"
 STANDALONE_TITLE = "⏰ 自定义提醒"
 
 #: 账本保留天数（周期过期即清，防无限膨胀）
-_KEEP_DAYS = 14
+_KEEP_DAYS = 40   # 月报表要整月逐日格子，14 天不够（streak 语义不受影响）
 
 
 def _state_path(user_dir: Path) -> Path:
@@ -176,10 +176,74 @@ def mark_done(item: Dict[str, Any], user_dir: Path, *, undo: bool = False,
     _save_state(user_dir, state)
 
 
+def report_rows(items: List[Dict[str, Any]], user_dir: Path, date_keys: List[str],
+                *, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """报表行单源（七日报表/月报表共用）：每个启用手动项一行逐日状态。
+
+    date_keys: 升序 "YYYY-MM-DD" 日历日列表。state ∈ ok(✓ 已打) /
+    miss(✗ 已过计划日漏打) / na(⋯ 非计划日、开始记录前、今日未打=等待中)。
+
+    两个口径要点：
+    - 账本周期键 = reset 平移后的日期；打卡落在 reset 之前的凌晨（如 01:00
+      打 04:00 reset 的项）周期键是昨天——按时间戳映射回**日历日**再对格。
+    - 「开始记录」地板 = 账本最早周期键：地板前的日子不装红叉（那时项还不存在，
+      与游戏「当日未巡检」同语义显示 ⋯）。
+    """
+    now = now or datetime.now()
+    state = _load_state(user_dir)
+    done_all = state.get("done") if isinstance(state.get("done"), dict) else {}
+    out: List[Dict[str, Any]] = []
+    for it in items:
+        if not isinstance(it, dict) or not it.get("enabled", True):
+            continue
+        iid = str(it.get("id") or "")
+        raw_periods = done_all.get(iid) if isinstance(done_all.get(iid), dict) else {}
+        periods: Dict[str, str] = {
+            str(p): str(ts) for p, ts in (raw_periods or {}).items()
+            if _parse_period(str(p)) is not None
+        }
+        floor = min((_parse_period(p) for p in periods), default=None)
+        days7 = it.get("days") if (
+            isinstance(it.get("days"), list) and len(it.get("days")) == 7
+            and all(isinstance(x, bool) for x in it.get("days"))) else [True] * 7
+        reset_min = _reset_minutes(it)
+        # 周期键 → 日历日集合（凌晨打卡归属次日）
+        done_dates = set()
+        for p, ts in periods.items():
+            pd = _parse_period(p)
+            try:
+                tt = datetime.strptime(ts, "%H:%M:%S").time()
+            except ValueError:
+                tt = None
+            cal = pd + timedelta(days=1) if (tt is not None and
+                    tt.hour * 60 + tt.minute < reset_min) else pd
+            done_dates.add(cal.strftime("%Y-%m-%d"))
+        rows = []
+        for dk in date_keys:
+            d = _parse_period(dk)
+            if d is None:
+                continue
+            if done_dates and dk in done_dates:
+                rows.append({"date": dk, "state": "ok"})
+                continue
+            if not days7[d.weekday()]:
+                rows.append({"date": dk, "state": "na", "tip": "非计划日"})
+                continue
+            if floor is not None and d < floor:
+                rows.append({"date": dk, "state": "na", "tip": "开始记录前"})
+                continue
+            if dk >= now.strftime("%Y-%m-%d"):
+                rows.append({"date": dk, "state": "na", "tip": "等待打卡"})
+                continue
+            rows.append({"date": dk, "state": "miss", "tip": "漏打"})
+        out.append({"id": iid, "name": str(it.get("name") or ""), "days": rows})
+    return out
+
+
 def streak_of(item: Dict[str, Any], user_dir: Path,
               *, now: Optional[datetime] = None) -> int:
     """连续完成周期数：当前周期已勾含当前，否则从上一周期往回数
-    （与游戏 streak 同语义——今天没做完不断签）。账本 14 天，上限即 14。"""
+    （与游戏 streak 同语义——今天没做完不断签）。账本 40 天。"""
     iid = str(item.get("id") or "")
     state = _load_state(user_dir)
     done = state.get("done") if isinstance(state.get("done"), dict) else {}

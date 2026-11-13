@@ -292,6 +292,44 @@ def load_raw_config() -> Dict[str, Any]:
     return decrypt_config_dict(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
 
 
+def _attach_manual(payload: Dict[str, Any], *, month_mode: bool) -> None:
+    """报表挂手动项行（2026-11-14 用户裁决：自定义日常进七日/月报表）。
+
+    周报：payload["manual"] = dailies.report_rows 行（前端热力图追加行）。
+    月报：手动项并成伪游戏塞进 games（game="cd:<id>"）并逐日注入格子
+    {known, finished}——选单/月历/统计三处前端零改动复用。
+    """
+    try:
+        from core import dailies as _dl
+
+        items = (load_raw_config().get("app") or {}).get("custom_dailies") or []
+        date_keys = [str(row.get("date") or "")
+                     for row in (payload.get("days") or []) if row.get("date")]
+        rows = _dl.report_rows(items, CONFIG_PATH.parent, date_keys)
+        if month_mode:
+            for row in rows:
+                gid = "cd:" + (row["id"] or row["name"])
+                done = sum(1 for c in row["days"] if c["state"] == "ok")
+                miss = sum(1 for c in row["days"] if c["state"] == "miss")
+                nodata = sum(1 for c in row["days"] if c["state"] == "na")
+                payload.setdefault("games", []).append({
+                    "game": gid, "game_name": row["name"],
+                    "done": done, "missed": miss, "nodata": nodata,
+                })
+                by_date = {c["date"]: c["state"] for c in row["days"]}
+                for day in (payload.get("days") or []):
+                    st = by_date.get(str(day.get("date") or ""))
+                    day.setdefault("games", {})[gid] = {
+                        "known": st in ("ok", "miss"),
+                        "finished": st == "ok",
+                        "checks": 1 if st in ("ok", "miss") else 0,
+                    }
+        else:
+            payload["manual"] = rows
+    except Exception:  # noqa: BLE001 - 手动项读不到不影响报表主面
+        logger.exception("报表挂手动项失败，忽略")
+
+
 def _enabled_game_ids() -> List[str]:
     """当前 config.json 里 enabled=true 的游戏 id（页面要列游戏的唯一来源）。
 
@@ -3310,6 +3348,7 @@ class Handler(BaseHTTPRequestHandler):
                     logger.exception("读取月报失败，返回空月历")
                     payload = {"ok": False, "message": "读取月报失败（详见运行日志）",
                                "days": [], "games": []}
+                _attach_manual(payload, month_mode=True)
                 self._json(payload)
                 return
             try:
@@ -3318,6 +3357,7 @@ class Handler(BaseHTTPRequestHandler):
                 logger.exception("读取历史记录失败，返回空报表")
                 payload = history.empty_payload(days=days)
                 payload["message"] = "读取历史记录失败，已显示空报表（详见 logs/dailycheck.log）"
+            _attach_manual(payload, month_mode=False)
             self._json(payload)
             return
 

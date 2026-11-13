@@ -3750,12 +3750,13 @@ function renderHeatmap(d){
   if (!box) return;
   const days = d.days || [];
   const tracked = d.tracked || [];
-  if (!tracked.length) {
+  if (!tracked.length && !(d.manual || []).length) {
     box.innerHTML = '<div class="emptybox">没有启用任何游戏账号。</div>';
     return;
   }
   const nameOf = {};
   (d.games || []).forEach(function(g){ nameOf[g.game] = g.game_name || g.game; });
+  const manualRows = d.manual || [];
 
   let html = '<div class="heatmap">';
   html += '<div class="hm-row hm-head"><div class="hm-label"></div>' +
@@ -3777,6 +3778,23 @@ function renderHeatmap(d){
       const st = hmCellState(c, row, lv);
       html += '<div class="hm-cell ' + st.cls + (row.is_today ? ' today' : '') +
         '" title="' + escHtml(st.tip) + '">' + st.mark + '</div>';
+    });
+    html += '</div>';
+  });
+
+  /* 自定义日常行（2026-11-14 用户裁决）：state 由后端单源算好——
+     ok ✓ / miss ✗ / na ⋯（非计划日、开始记录前、今日等待打卡） */
+  manualRows.forEach(function(m){
+    html += '<div class="hm-row"><div class="hm-label">' +
+      '<span class="gdot" style="background:var(--brand)"></span>' +
+      escHtml(m.name) + '</div>';
+    (m.days || []).forEach(function(cell, i){
+      const cls = cell.state === 'ok' ? ' ok' : cell.state === 'miss' ? ' err' : ' na';
+      const mark = cell.state === 'ok' ? '✓' : cell.state === 'miss' ? '✗' : '⋯';
+      const tip = cell.tip || (cell.state === 'ok' ? '已打卡' : cell.state === 'miss' ? '漏打' : '');
+      html += '<div class="hm-cell ' + cls +
+        ((days[i] && days[i].is_today) ? ' today' : '') +
+        '" title="' + escHtml(tip) + '">' + mark + '</div>';
     });
     html += '</div>';
   });
