@@ -3871,11 +3871,17 @@ function renderHeatmap(d){
       '<span class="gdot" style="background:var(--brand)"></span>' +
       escHtml(m.name) + '</div>';
     (m.days || []).forEach(function(cell, i){
+      /* 非计划日整格不渲染（2026-11-14 用户裁决：还没到星期四就不显示，
+         与概览卡同口径）——visibility:hidden 保列对齐但不画任何东西 */
+      if (cell.state === 'na' && cell.tip === '非计划日') {
+        html += '<div class="hm-cell blank"></div>';
+        return;
+      }
       const cls = cell.state === 'ok' ? ' ok' : cell.state === 'miss' ? ' err' : ' na';
       const mark = cell.state === 'ok' ? '✓' : cell.state === 'miss' ? '✗' : '⋯';
       const today = !!(days[i] && days[i].is_today);
       /* 可补录：过去的计划日（✓撤销/✗补录）+ 今天（等同打卡键）；
-         非计划日/开始记录前不可改（tip 已说明原因） */
+         开始记录前不可改（tip 已说明原因） */
       const editable = cell.state === 'ok' || cell.state === 'miss' || today;
       const tipBase = cell.tip || (cell.state === 'ok' ? '已打卡'
                       : cell.state === 'miss' ? '漏打' : '等待打卡');
