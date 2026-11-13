@@ -1516,9 +1516,16 @@
   .modal--dlfix .row3{grid-template-columns:1fr 1fr}    /* 取消/确认平分 */
   .modal--dlfix{max-width:360px}
   /* 可长按补录的手动格：hover 提示可编辑（无 hover 触屏无感，title 兜底） */
-  .hm-cell.editable{cursor:pointer}
+  .hm-cell.editable,.mc-day.editable{cursor:pointer;
+    transition:transform .28s cubic-bezier(.175,.885,.32,1.275),
+               border-radius .28s cubic-bezier(.175,.885,.32,1.275),
+               filter .18s ease}
+  .hm-cell.editable:hover,.mc-day.editable:hover{
+    transform:scale(.92);border-radius:12px;filter:brightness(1.08)}
+  .hm-cell.editable:active,.mc-day.editable:active{transform:scale(.88)}
+  .hm-cell.dl-pressing,.mc-day.dl-pressing{
+    transform:scale(.85)!important;filter:brightness(1.2)}
   .hm-cell.blank{visibility:hidden}   /* 非计划日：占位保对齐，整格隐形 */
-  .mc-day.editable{cursor:pointer}
   .bgrisk-body p{margin:6px 0}
   .bgrisk-body ul{margin:6px 0 2px;padding-left:18px;display:flex;
     flex-direction:column;gap:6px;color:var(--fg)}

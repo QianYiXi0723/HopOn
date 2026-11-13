@@ -3405,6 +3405,7 @@ async function refreshActivities(){
 let dlfixTimer = null, dlfixPending = null, dlfixPressing = false;
 
 function dlfixOpen(cell) {
+  if (cell) cell.classList.remove('dl-pressing');
   const id = cell.getAttribute('data-dl-id');
   const name = cell.getAttribute('data-dl-name');
   const date = cell.getAttribute('data-dl-date');
@@ -3434,11 +3435,15 @@ document.addEventListener('pointerdown', function(e) {
   const cell = dlfixCell(e.target.closest('.editable[data-dl-id]'));
   if (!cell) return;
   dlfixPressing = true;
+  cell.classList.add('dl-pressing');   // 按住压更深，松手果冻回弹
   dlfixTimer = setTimeout(function() { dlfixTimer = null; dlfixOpen(cell); }, 500);
 });
 ['pointerup', 'pointerleave', 'pointercancel'].forEach(function(ev) {
   document.addEventListener(ev, function() {
     dlfixPressing = false;
+    document.querySelectorAll('.dl-pressing').forEach(function(el) {
+      el.classList.remove('dl-pressing');
+    });
     if (dlfixTimer) { clearTimeout(dlfixTimer); dlfixTimer = null; }
   }, { passive: true });
 });
@@ -3474,9 +3479,22 @@ document.getElementById('dlfix-ok').addEventListener('click', function() {
   }).then(function(r) { return r.json(); }).then(function(res) {
     dlfixClose();
     if (res.message) toast(res.message);
-    if (typeof loadHistory === 'function') loadHistory();
+    /* 补录后留在原地（2026-11-14 用户裁决）：重渲染会重置滚动，先记后还 */
+    const keepScroll = {};
+    ['.main', '.hm-scroll', '.month-scroll'].forEach(function(sel) {
+      const el = document.querySelector(sel);
+      if (el) keepScroll[sel] = el.scrollTop;
+    });
+    const p = (typeof loadHistory === 'function') ? loadHistory() : Promise.resolve();
     const mask = document.getElementById('month-modal');
-    if (mask && !mask.hidden && typeof openMonthModal === 'function') openMonthModal();
+    const needMonth = mask && !mask.hidden && typeof openMonthModal === 'function';
+    Promise.resolve(p).then(function() {
+      if (needMonth) openMonthModal();
+      Object.keys(keepScroll).forEach(function(sel) {
+        const el = document.querySelector(sel);
+        if (el) el.scrollTop = keepScroll[sel];
+      });
+    });
   }).catch(function() { dlfixClose(); });
 });
 
@@ -3902,6 +3920,15 @@ function renderHeatmap(d){
     '<span class="hm-cell na">⋯</span>等待中/无数据' +
     '</div>';
   box.innerHTML = html;
+  /* 发现性（2026-11-14 用户裁决：长按入口不可见）：首次见到可补录格时
+     页内提示一次，localStorage 持久化「不再显示」 */
+  if ((d.manual || []).some(function(m) {
+        return (m.days || []).some(function(c) {
+          return c.state === 'ok' || c.state === 'miss'; });
+      }) && !localStorage.getItem('rl-dlfix-hint')) {
+    localStorage.setItem('rl-dlfix-hint', '1');
+    toast('提示：长按报表里手动项的格子，可补录/撤销打卡记录');
+  }
 }
 
 function loadHistory(){
