@@ -3438,7 +3438,11 @@ document.addEventListener('pointerdown', function(e) {
   cell.classList.add('dl-pressing');   // 按住压更深，松手果冻回弹
   dlfixTimer = setTimeout(function() { dlfixTimer = null; dlfixOpen(cell); }, 500);
 });
-['pointerup', 'pointerleave', 'pointercancel'].forEach(function(ev) {
+/* 结束清理只留 pointerup/pointercancel（2026-11-14 用户实证：果冻缩放
+   会让格子从光标下「缩走」→ pointerleave 误清计时器 → 长按必失败）。
+   语义改为「按住必有结果」：按住不动 500ms 必弹窗，短按早松手即取消，
+   按住期间抖动/格子缩小都不取消。 */
+['pointerup', 'pointercancel'].forEach(function(ev) {
   document.addEventListener(ev, function() {
     dlfixPressing = false;
     document.querySelectorAll('.dl-pressing').forEach(function(el) {
@@ -3447,15 +3451,6 @@ document.addEventListener('pointerdown', function(e) {
     if (dlfixTimer) { clearTimeout(dlfixTimer); dlfixTimer = null; }
   }, { passive: true });
 });
-/* 拖离取消：只认「按住状态下移出格子」——悬空乱晃的 pointermove
-   （没按键）不算，否则真鼠标随手一晃就把长按计时器杀了 */
-document.addEventListener('pointermove', function(e) {
-  if (!dlfixPressing || !dlfixTimer) return;
-  if (!e.buttons) return;   // 无按键的悬空移动≠拖离，不取消
-  if (e.target.closest && !dlfixCell(e.target.closest('.editable[data-dl-id]'))) {
-    clearTimeout(dlfixTimer); dlfixTimer = null;
-  }
-}, { passive: true });
 /* 长按触发了弹窗时，抑制随后的 click 误触（弹窗遮罩已挡，双保险） */
 document.addEventListener('contextmenu', function(e) {
   if (dlfixCell(e.target.closest('.editable[data-dl-id]'))) e.preventDefault();
