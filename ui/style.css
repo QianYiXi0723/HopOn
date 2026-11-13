@@ -1041,9 +1041,11 @@
                font-size:12px;overflow:hidden}
   /* 日常进度条行：与体力条同形态（名称 + 条 + N/N），小窗一行一任务 */
   .gcard-task{display:flex;align-items:center;gap:8px;font-size:12px;min-width:0}
-  .gcard-task .dim{flex:none}
+  /* 标签/计数双定宽：任务名最长 5 字（每日活跃度）、计数最长 7 字（400/400），
+     两端对齐后所有卡片的进度条起止位置一致（2026-11-14 用户裁决） */
+  .gcard-task .dim{flex:none;width:5.5em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .gcard-task .sbar{flex:1 1 auto;min-width:40px}
-  .gcard-task .mono{flex:none;color:var(--fg)}
+  .gcard-task .mono{flex:none;min-width:7ch;text-align:right;color:var(--fg)}
   .gcard-ico.ph{display:grid;place-items:center;background:var(--subtle);
     color:var(--muted);font-size:16px}
   .gcard-name{flex:1;min-width:0}
