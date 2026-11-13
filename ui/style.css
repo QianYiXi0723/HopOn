@@ -1502,6 +1502,11 @@
   /* 后台刷新·风险弹窗 */
   .modal--bgrisk{max-width:480px}
   .modal--bgrisk .row3{grid-template-columns:1fr 1fr}   /* 取消/确认平分 */
+  .modal--dlfix .row3{grid-template-columns:1fr 1fr}    /* 取消/确认平分 */
+  .modal--dlfix{max-width:360px}
+  /* 可长按补录的手动格：hover 提示可编辑（无 hover 触屏无感，title 兜底） */
+  .hm-cell.editable{cursor:pointer}
+  .mc-day.editable{cursor:pointer}
   .bgrisk-body p{margin:6px 0}
   .bgrisk-body ul{margin:6px 0 2px;padding-left:18px;display:flex;
     flex-direction:column;gap:6px;color:var(--fg)}

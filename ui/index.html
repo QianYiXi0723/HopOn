@@ -836,6 +836,22 @@
     <!-- ======== 月报下钻（2026-11-06）：徽章点击 → 整月月历 ======== -->
     <!-- ======== 月报下钻（2026-11-06）：徽章点击 → 整月月历 ======== -->
     <!-- 手动打卡：新增/编辑弹窗（必须放 .app / 所有 tabpanel 之外） -->
+    <div class="modal-mask" id="dlfix-modal" hidden>
+      <div class="modal modal--dlfix">
+        <div class="modal-head">
+          <b>修改打卡记录</b>
+          <span class="spacer"></span>
+          <button type="button" class="modal-x" id="dlfix-x" title="关闭">✕</button>
+        </div>
+        <div class="dlfix-body">
+          <p id="dlfix-text">—</p>
+        </div>
+        <div class="row3">
+          <button type="button" class="btn" id="dlfix-cancel">取消</button>
+          <button type="button" class="btn btn-danger" id="dlfix-ok">确认修改</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-mask" id="bgrisk-modal" hidden>
       <div class="modal modal--bgrisk">
         <div class="modal-head">

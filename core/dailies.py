@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -158,20 +158,36 @@ def is_done(item: Dict[str, Any], user_dir: Path,
 
 
 def mark_done(item: Dict[str, Any], user_dir: Path, *, undo: bool = False,
-              now: Optional[datetime] = None) -> None:
-    """勾掉/撤销该项的当前周期完成（撤销=清当前周期记录）。"""
+              now: Optional[datetime] = None,
+              period_date: Optional["date"] = None) -> None:
+    """勾掉/撤销该项的当前周期完成（撤销=清当前周期记录）。
+
+    period_date：补录/撤销指定历史日历日（2026-11-14 用户裁决：报表格长按
+    补录）——周期键直接用该日历日。写入时刻若早于 reset（凌晨补录），时间戳
+    钳到 reset 时刻：报表按「时间戳 < reset → 归属次日」映射日历日，不钳会把
+    补录记到错误的一天。
+    """
     iid = str(item.get("id") or "")
     if not iid:
         return
     state = _load_state(user_dir)
     state = _prune(state, now)
-    period = _period_key(item, now)
+    now = now or datetime.now()
+    if period_date is not None:
+        period = period_date.strftime("%Y-%m-%d")
+    else:
+        period = _period_key(item, now)
+    reset_min = _reset_minutes(item)
     done = state.get("done") if isinstance(state.get("done"), dict) else {}
     periods = dict(done.get(iid) or {})
     if undo:
         periods.pop(period, None)
     else:
-        periods[period] = datetime.now().strftime("%H:%M:%S")
+        ts = now
+        if period_date is not None and ts.hour * 60 + ts.minute < reset_min:
+            ts = ts.replace(hour=reset_min // 60, minute=reset_min % 60,
+                            second=0, microsecond=0)
+        periods[period] = ts.strftime("%H:%M:%S")
     state["done"] = {**done, iid: periods}
     _save_state(user_dir, state)
 
@@ -232,7 +248,9 @@ def report_rows(items: List[Dict[str, Any]], user_dir: Path, date_keys: List[str
             if floor is not None and d < floor:
                 rows.append({"date": dk, "state": "na", "tip": "开始记录前"})
                 continue
-            if dk >= now.strftime("%Y-%m-%d"):
+            # 「今天等待打卡」边界跟该项 reset 周期走（与报表列的 04:00
+            # 游戏日口径一致）：凌晨时段当前周期还是昨天那一列，不能画红叉
+            if dk >= _period_key(it, now):
                 rows.append({"date": dk, "state": "na", "tip": "等待打卡"})
                 continue
             rows.append({"date": dk, "state": "miss", "tip": "漏打"})

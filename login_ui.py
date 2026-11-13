@@ -1618,10 +1618,25 @@ def custom_dailies_update(payload: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError("项不存在")
         hit = dict(hit)
         hit.setdefault("reset", dailies.DEFAULT_RESET)
-        dailies.mark_done(hit, user_dir, undo=bool(payload.get("undo")))
+        # 报表长按补录（2026-11-14 用户裁决）：payload.date = 历史日历日
+        pdate = None
+        date_raw = str(payload.get("date") or "").strip()
+        if date_raw:
+            try:
+                from datetime import datetime as _dt
+
+                pdate = _dt.strptime(date_raw, "%Y-%m-%d").date()
+            except ValueError:
+                raise ValueError("日期格式不对：" + date_raw)
+        undo = bool(payload.get("undo"))
+        dailies.mark_done(hit, user_dir, undo=undo, period_date=pdate)
         result = custom_dailies_status()
-        result["message"] = ("已勾掉今日（次日 04:00 自动重开）"
-                             if not payload.get("undo") else "已恢复今日待办")
+        if pdate is not None:
+            result["message"] = (("已补录 " + date_raw) if not undo
+                                 else ("已撤销 " + date_raw + " 的打卡"))
+        else:
+            result["message"] = ("已勾掉今日（次日 04:00 自动重开）"
+                                 if not undo else "已恢复今日待办")
         return result
 
     if action == "del":
