@@ -4804,9 +4804,11 @@ function renderKpiToday(h){
     }
     return;
   }
+  /* 闪光只在值变化时触发（2026-11-14 复查：60s 轮询数据没变也闪=噪音） */
+  const changed = el.textContent !== (done + '/' + total);
   el.textContent = done + '/' + total;
   el.className = 'kpi-value value' + (done !== total ? ' warn' : '');
-  flashCard(el.closest('.kpi.card') || el.parentElement);
+  if (changed) flashCard(el.closest('.kpi.card') || el.parentElement);
   /* 0 完成 = critical；部分完成 = warn；全部完成 = 无紧迫（紧迫度只看合并结果，不碰统计） */
   setUrgency('k-today', done === total ? '' : (done > 0 ? 'warn' : 'critical'));
   refreshKpiKeep();
@@ -5071,8 +5073,11 @@ switchTab(PANEL_NAMES.indexOf(hash) >= 0 ? hash
      ? localStorage.getItem('rl-tab') : 'history'));
 /* 预载每日报表数据（接口秒回）：恢复到任意页签时切回 history 零等待，
    消除「切页先空后填」的卡顿感 */
-loadHistory();
-loadLive(false);
+/* 恢复 history 页时 switchTab 已加载过，双份请求+闪两次——只补其它页签 */
+if (activeTab !== 'history') {
+  loadHistory();
+  loadLive(false);
+}
 refreshNotice();
 loadDevice();
 loadAccounts();      // 用 config 里的真实巡检开关覆盖页面默认勾选
