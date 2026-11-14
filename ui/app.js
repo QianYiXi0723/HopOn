@@ -3070,9 +3070,7 @@ function actCardHtml(it, isHero, heroSlim){
       }).join('') + '</div>'
     : '';
   const delBtn = it.merged
-    ? '<button type="button" class="act-merged-tag act-merged-toggle" onclick="toggleMergedMembers(this)" title="展开成员列表，可分别删除">' +
-      it.merged.length + ' 项同止</button>' +
-      '<button type="button" class="act-del-g" onclick="deleteMergedActivity(this)" data-del-merged="' +
+    ? '<button type="button" class="act-del-g" onclick="deleteMergedActivity(this)" data-del-merged="' +
       escHtml((it.merged_ids || []).join(',')) + '" title="整组删除，之后这 ' +
       it.merged.length + ' 项都不再提醒">×</button>'
     : '<button type="button" class="act-del" data-del="' + id +
@@ -3086,7 +3084,12 @@ function actCardHtml(it, isHero, heroSlim){
     '<div class="acard-top"><span class="act-game">' + actIconHtml(it) +
       '<span class="act-name">' + escHtml(it.game_name) + '</span></span>' +
       delBtn + '</div>' +
-    '<div class="acard-title"><span class="acard-title-txt" title="' + escHtml(it.title) + '">' + escHtml(it.title) + '</span>' + reward + '</div>' +
+    '<div class="acard-title"><span class="acard-title-txt" title="' + escHtml(it.title) + '">' +
+      (it.merged && it.merged.length > 1
+        ? escHtml(String(it.title).replace(/ 等 \d+ 项$/, '')) +
+          '<button type="button" class="act-count-toggle" onclick="toggleMergedMembers(this)"' +
+          ' title="展开/收起成员列表，可分别删除">等 ' + it.merged.length + ' 项</button>'
+        : escHtml(it.title)) + '</span>' + reward + '</div>' +
     '<div class="act-time ' + timeCls + '">始 ' + (st || '时间待定') +
       (en ? ' · 止 ' + en : '') + '</div>' +
     '<div class="act-cd ' + cdCls + '">' + escHtml(it.countdown || '') + '</div>' +
