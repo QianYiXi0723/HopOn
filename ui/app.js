@@ -3145,8 +3145,13 @@ function buildMergedItem(members){
     reward: rewards.join('、'),
     progress: '',
     merged: members.map(function(x){
-      /* 跨游戏合并时成员带游戏名前缀（同游戏的重复前缀无意义不加） */
+      /* 跨游戏合并：所有成员都带游戏名前缀（第一个成员也不例外——
+         卡头图标已是 HopOn logo，成员行不标游戏名就无从归属，用户实证）；
+         同游戏合并维持原逻辑（重复前缀无意义不加） */
       var t = x.title || '';
+      if (gameSet.length > 1) {
+        return (x.game_name ? x.game_name + ' ' : '') + t;
+      }
       return (x.game_name && x.game_name !== first.game_name ? x.game_name + ' ' : '') + t;
     }),
     merged_ids: members.map(function(x){ return x.id || ''; }),
