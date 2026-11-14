@@ -2899,12 +2899,10 @@ def tray_summary_status() -> Dict[str, Any]:
                 lines.append(f"{short}　{cur:>3}/{mx:>3}{stale_tag}")
 
     if pending_descs:
-        shown = " · ".join(pending_descs[:3])
-        more = len(pending_descs) - 3
-        headline = (
-            f"{len(pending_descs)} 项待办：{shown}"
-            + (f" 等共{len(pending_descs)}项" if more > 0 else "")
-        )
+        # 标题只点名第一条（2026-11-14 用户裁决：托盘菜单宽度由最长行决定，
+        # 全量拼进标题把菜单撑成宽条；完整明细本来就在下面的逐行里）
+        n = len(pending_descs)
+        headline = f"待办 {n} 项：{pending_descs[0]}" + (f" 等 {n - 1} 项" if n > 1 else "")
     elif not lines:
         headline = "尚无巡检数据"
     else:
