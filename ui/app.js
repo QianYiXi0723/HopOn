@@ -2985,6 +2985,10 @@ function fillCapIcons(){
 fillCapIcons();
 
 function actIconHtml(it){
+  /* 跨游戏合成卡：图标 = HopOn logo（蓝底 H 方块），不再冒充首个游戏 */
+  if (it.cross_game) {
+    return '<span class="act-icon act-logo">H</span>';
+  }
   const base = GAME_ICON[it.game];
   if (!base) {
     return '<span class="act-icon ph">' +

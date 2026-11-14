@@ -59,6 +59,9 @@
   .brand{display:flex;align-items:center;gap:8px;padding:4px 12px 14px}
   .logo{width:26px;height:26px;border-radius:4px;background:var(--brand);color:#fff;
         display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}
+  /* 跨游戏合成卡的卡头图标：复用侧栏 logo 视觉（蓝底 H） */
+  .act-icon.act-logo{width:24px;height:24px;border-radius:6px;background:var(--brand);
+    color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px}
   .brand b{display:block;font-size:15px;line-height:1.2}
   .brand span{font-size:12px;color:var(--muted)}
   .nav{display:flex;flex-direction:column;gap:6px}
