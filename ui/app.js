@@ -3,10 +3,16 @@
 const PANEL_NAMES = ['history', 'query', 'account', 'schedule'];
 let schedTimer = null;
 
-let activeTab = 'history';   // 当前页签（数据轮询的闸门：只轮询可见页）
+/* 当前页签（数据轮询的闸门：只轮询可见页）。
+   F5 记忆（2026-11-14 用户裁决）：刷新回到离开时的页面，localStorage 持久化 */
+let activeTab = (function() {
+  const saved = localStorage.getItem('rl-tab');
+  return ['history', 'query', 'account', 'schedule'].indexOf(saved) >= 0 ? saved : 'history';
+})();
 
 function switchTab(name){
   activeTab = name;
+  localStorage.setItem('rl-tab', name);
   PANEL_NAMES.forEach(function(k){
     const panel = document.getElementById('tab-' + k);
     if (panel) {
@@ -34,6 +40,8 @@ function stopSchedPoll(){
 document.querySelectorAll('.nav button[data-tab]').forEach(function(btn){
   btn.addEventListener('click', function(){ switchTab(this.dataset.tab); });
 });
+/* F5 记忆：非默认页签在启动时切回去（switchTab 统一设置面板/按钮态并触发该页加载） */
+if (activeTab !== 'history') switchTab(activeTab);
 
 document.addEventListener('click', function(e){
   /* 点击高亮：点卡片/折叠框加 .active（蓝描边），点其它卡片时切换。
