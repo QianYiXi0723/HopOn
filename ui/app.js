@@ -3211,10 +3211,13 @@ function renderActivities(d){
     const mergeBuckets = {};
     const mergedOngoing = [];
     ongoing.forEach(function(x){
-      /* 合并桶不带游戏维度（2026-11-09 用户需求）：不同游戏同截止也并成
-         一张特殊合并卡；成员行带游戏名前缀防混 */
-      const bucket = (x.ending_soon && (+x.hours_left || 0) <= winH)
-        ? 'm:' + String(x.end || '') : null;
+      /* 合并桶（2026-11-09 用户需求 + 2026-11-14 用户实证修订）：
+         不带游戏维度 + **小时粒度分桶**——按精确 end 秒级分桶会让
+         03:59:59 vs 04:00:00 这种 1 秒差「并列」活动分家（用户实证：
+         星铁支配遗忘没并入绝区零+原神合并卡）。同一小时内到期并成一卡。 */
+      const h = (+x.hours_left || 0);
+      const bucket = (x.ending_soon && h <= winH)
+        ? 'm:' + Math.max(1, Math.ceil(h)) : null;
       if (!bucket) { mergedOngoing.push(x); return; }
       (mergeBuckets[bucket] = mergeBuckets[bucket] || []).push(x);
     });
