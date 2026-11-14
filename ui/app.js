@@ -3321,10 +3321,33 @@ function renderActivities(d){
   }
 }
 
-/* 合并组卡成员列表展开/收起（「等 N 项」按钮即开关；任意 N 通用） */
+/* 合并组卡成员列表展开/收起（「等 N 项」按钮即开关；任意 N 通用）。
+   浮层 position:fixed + JS 按按钮 rect 摆位（2026-11-15 用户实证：absolute
+   浮层被 .hm-scroll overflow 裁剪——卡片贴滚动容器底部时浮层整层不可见，
+   表现为「按了没反应」）。滚动即收（fixed 不随内容滚，留着会脱钩）。 */
 function toggleMergedMembers(btn){
   const card = btn.closest('.acard');
-  if (card) card.classList.toggle('mopen');
+  if (!card) return;
+  /* 开浮层前先掐掉本卡的闪光：filter 动画会劫持 fixed 定位（浮层偏回卡片
+     坐标系被裁）——刷新后首渲染必闪的 950ms 内点击也会中招 */
+  card.querySelectorAll('.rl-flash').forEach(function(el) {
+    el.classList.remove('rl-flash');
+  });
+  const willOpen = !card.classList.contains('mopen');
+  document.querySelectorAll('.acard.mopen').forEach(function(c) {
+    if (c !== card) c.classList.remove('mopen');
+  });
+  card.classList.toggle('mopen', willOpen);
+  const merged = card.querySelector('.act-merged');
+  if (willOpen && merged) {
+    const r = btn.getBoundingClientRect();
+    merged.style.position = 'fixed';
+    merged.style.left = Math.round(r.left) + 'px';
+    merged.style.right = 'auto';
+    const h = Math.min(merged.scrollHeight || 180, 180);
+    merged.style.top = (r.bottom + 3 + h > innerHeight
+      ? Math.max(8, r.top - 3 - h) : r.bottom + 3) + 'px';
+  }
 }
 /* 点浮层外任意处收起（下拉菜单惯例） */
 document.addEventListener('pointerdown', function(e) {
@@ -3333,6 +3356,12 @@ document.addEventListener('pointerdown', function(e) {
     if (!card.contains(e.target)) card.classList.remove('mopen');
   });
 }, { passive: true });
+/* 滚动即收（fixed 浮层不随内容滚） */
+window.addEventListener('scroll', function() {
+  document.querySelectorAll('.acard.mopen').forEach(function(c) {
+    c.classList.remove('mopen');
+  });
+}, { passive: true, capture: true });
 
 /* 合并组卡分别删除：只删点名的这一项，整卡重渲保持「等 N 项」计数同步 */
 async function deleteMemberActivity(btn){
