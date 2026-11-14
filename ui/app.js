@@ -40,8 +40,7 @@ function stopSchedPoll(){
 document.querySelectorAll('.nav button[data-tab]').forEach(function(btn){
   btn.addEventListener('click', function(){ switchTab(this.dataset.tab); });
 });
-/* F5 记忆：非默认页签在启动时切回去（switchTab 统一设置面板/按钮态并触发该页加载） */
-if (activeTab !== 'history') switchTab(activeTab);
+
 
 document.addEventListener('click', function(e){
   /* 点击高亮：点卡片/折叠框加 .active（蓝描边），点其它卡片时切换。
@@ -5054,7 +5053,12 @@ if (pickList) pickList.addEventListener('change', updatePickNext);
    下面的 switchTab 会发起真实请求做后台静默刷新，数据到手平滑替换 */
 renderCachedData();
 const hash = (location.hash || '').replace('#', '');
-switchTab(PANEL_NAMES.indexOf(hash) >= 0 ? hash : 'history');
+/* 启动页签：URL hash 优先 → F5 记忆（rl-tab）→ 默认每日报表。
+   位置纪律：必须在脚本尾——顶层 let（liveLoaded 等）全就位后才能
+   switchTab 触发加载链，过早调用会撞 TDZ 把整个启动链炸掉（实锤） */
+switchTab(PANEL_NAMES.indexOf(hash) >= 0 ? hash
+  : (PANEL_NAMES.indexOf(localStorage.getItem('rl-tab')) >= 0
+     ? localStorage.getItem('rl-tab') : 'history'));
 refreshNotice();
 loadDevice();
 loadAccounts();      // 用 config 里的真实巡检开关覆盖页面默认勾选
