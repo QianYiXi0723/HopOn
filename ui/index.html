@@ -836,6 +836,32 @@
     <!-- ======== 月报下钻（2026-11-06）：徽章点击 → 整月月历 ======== -->
     <!-- ======== 月报下钻（2026-11-06）：徽章点击 → 整月月历 ======== -->
     <!-- 手动打卡：新增/编辑弹窗（必须放 .app / 所有 tabpanel 之外） -->
+    <!-- 发现新版本弹窗（2026-11-15 双渠道版）：公告 + 下载途径选择。
+         必须放所有 tabpanel 之外（859 行同款纪律：嵌进 tab 里其它页签下
+         整棵子树 display:none，fixed 也逃不出）。数据全部来自 /api/update
+         现有字段，零后端改动；Mirror酱接入后加第三个渠道按钮（需 CDK） -->
+    <div class="modal-mask" id="update-modal" hidden>
+      <div class="modal modal--update">
+        <div class="modal-head">
+          <b>发现新版本 <span id="upd-latest"></span></b>
+          <button type="button" class="modal-x" onclick="closeUpdateModal()" title="关闭">✕</button>
+        </div>
+        <div class="upd-cur" id="upd-cur"></div>
+        <pre class="upd-notes" id="upd-notes" hidden></pre>
+        <div class="upd-src-title">下载途径</div>
+        <div class="upd-src">
+          <a class="upd-btn" href="https://github.com/QianYiXi0723/HopOn/releases/latest" target="_blank" rel="noopener">
+            <b>GitHub Releases</b>
+            <span class="upd-src-sub">主渠道</span>
+          </a>
+          <a class="upd-btn" href="https://gitee.com/qianyixi/HopOn/releases/latest" target="_blank" rel="noopener">
+            <b>Gitee 镜像</b>
+            <span class="upd-src-sub">国内免梯</span>
+          </a>
+        </div>
+        <div class="upd-pkg" id="upd-pkg"></div>
+      </div>
+    </div>
     <div class="modal-mask" id="dlfix-modal" hidden>
       <div class="modal modal--dlfix">
         <div class="modal-head">

@@ -1372,6 +1372,25 @@
      否则弹窗被拦腰截断（标题竖排折行、统计居中成一坨，2026-11-06 实测） */
   .modal--month{width:min(420px,94vw);max-width:min(420px,94vw);text-align:left}
   .modal--month .modal-head b{white-space:nowrap}
+
+  /* ---------- 发现新版本弹窗（2026-11-15 双渠道版） ----------
+     同月报弹窗纪律：宽度/text-align 必须双特异性压过 .modal 基础 420px 居中 */
+  .modal.modal--update{width:min(500px,94vw);max-width:min(500px,94vw);text-align:left}
+  .upd-cur{font-size:12px;color:var(--subtle);margin:-2px 0 8px}
+  .upd-notes{white-space:pre-wrap;word-break:break-word;font:12px/1.6 inherit;
+             background:var(--bg-sub);border-radius:6px;padding:10px 12px;
+             max-height:180px;overflow-y:auto;margin:0 0 10px;color:var(--fg)}
+  .upd-src-title{font-size:12px;color:var(--subtle);margin-bottom:6px}
+  .upd-src{display:flex;gap:8px}
+  .upd-btn{flex:1;display:flex;flex-direction:column;gap:2px;align-items:center;
+           justify-content:center;padding:10px 8px;border-radius:8px;
+           background:var(--bg-sub);border:none;text-decoration:none;
+           transition:background .15s}
+  .upd-btn:hover{background:var(--btn-hover)}
+  .upd-btn b{font-size:13px;color:var(--fg)}
+  .upd-src-sub{font-size:11px;color:var(--subtle)}
+  .upd-pkg{font-size:11px;color:var(--subtle);margin-top:8px;text-align:center;
+           white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .month-toolbar{display:flex;align-items:center;gap:10px;margin:-6px 0 12px}
   .month-nav{display:flex;gap:4px}
   .month-nav .btn{min-width:34px;padding:4px 10px;font-weight:700}

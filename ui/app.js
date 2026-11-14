@@ -507,6 +507,7 @@ document.addEventListener('keydown', function(e){
   if (e.key !== 'Escape') return;
   if (!document.getElementById('dev-modal').hidden) { closeDev(); return; }
   if (!document.getElementById('pick-modal').hidden) { closePick(); return; }
+  if (!document.getElementById('update-modal').hidden) { closeUpdateModal(); return; }
   if (!document.getElementById('stage').hidden) reset();
 });
 /* 遮罩点击关闭：pick/dev/addtime（关闭均无副作用）；stage 例外——
@@ -517,6 +518,7 @@ document.querySelectorAll('.modal-mask').forEach(function(mask){
     if (e.target !== mask) return;
     if (mask.id === 'pick-modal') closePick();
     else if (mask.id === 'dev-modal') closeDev();
+    else if (mask.id === 'update-modal') closeUpdateModal();
     else if (mask.id === 'addtime-modal') rlCloseAddTime();
   });
 });
@@ -611,9 +613,9 @@ function checkUpdate(){
         return;
       }
       if (d.has_update) {
-        // 有新版：toast 带版本与下载指引（下载仍走 GitHub/Gitee，双渠道）
-        toast('发现新版本 v' + d.latest + '！当前 v' + d.current + '，打开下载页', false);
-        if (d.url) window.open(d.url, '_blank');
+        // 有新版：弹窗展示公告+双下载渠道（2026-11-15，替代旧 toast+直跳——
+        // 学习 MFAAvalonia 公告范式 + MirrorChyan 官方「无 url 落回原有源」规范）
+        openUpdateModal(d);
       } else {
         /* 文案以服务端为准（2026-11-13）：Gitee 备用通道数据落后时是
            「无法确认」而不是「已最新」，不能在前端硬编码掩盖 */
@@ -627,6 +629,36 @@ function checkUpdate(){
     });
 }
 document.getElementById('ver-line').addEventListener('click', checkUpdate);
+
+/* 发现新版本弹窗（2026-11-15 双渠道版）：公告+下载途径选择。
+   数据来自 /api/update 现有字段（notes/assets），零后端改动；
+   渠道按钮写死两仓 releases/latest 页——不依赖检查通道（Gitee 通道
+   检查成功时 d.url 指向 Gitee，写死才两边都稳）；Mirror酱接入后
+   在此加第三个渠道按钮。公告轻剥 markdown 符号（井号标题、星号加粗、
+   反引号），纯文本展示——MFAAvalonia 的 Markdown 渲染器是完整公告
+   系统才需要 */
+function openUpdateModal(d){
+  document.getElementById('upd-latest').textContent = 'v' + d.latest;
+  document.getElementById('upd-cur').textContent =
+    '当前 v' + d.current + (d.published_at ? (' · 发布于 ' + String(d.published_at).slice(0, 10)) : '');
+  const notes = String(d.notes || '')
+    .replace(/^#{1,6}\s*/gm, '').replace(/\*\*|`/g, '').trim();
+  const box = document.getElementById('upd-notes');
+  box.textContent = notes || '（本次更新暂无说明）';
+  box.hidden = !notes;
+  const pkgs = (d.assets || []).filter(function(a){
+    const n = String(a.name || '').toLowerCase();
+    return /\.(exe|zip)$/.test(n);
+  }).map(function(a){
+    return String(a.name || '') + ' ' + ((a.size || 0) / 1048576).toFixed(1) + 'MB';
+  });
+  document.getElementById('upd-pkg').textContent =
+    pkgs.length ? ('包含 ' + pkgs.join('　·　')) : '';
+  document.getElementById('update-modal').hidden = false;
+}
+function closeUpdateModal(){
+  document.getElementById('update-modal').hidden = true;
+}
 
 function refreshNotice(){
   fetch('/api/env').then(function(r){ return r.json(); }).then(function(d){
