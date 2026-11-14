@@ -1569,7 +1569,7 @@ class ActivityTierAlert:
     补发一次——「只早不迟：迟到走补发」的用户裁决。旧「每日可重复」结束
     提醒由三段取代：每活动最多三条，防轰炸从源头收敛。
     文案按动作节点分层（模仿航班值机/证书到期阶梯）：规划=提前安排、
-    必打=今天得上号、冲刺=最后几小时。
+    冲刺=剩最后一天、抢救=最后几小时。
     """
 
     game_id: str
@@ -1599,8 +1599,8 @@ class ActivityTierAlert:
         if self.tier == 1:
             return f"🗓️ 活动规划：{self.game_name}{self._shown()} 约 {left}后结束"
         if self.tier == 2:
-            return f"⏳ 今日必打：{self.game_name}{self._shown()} 约 {left}后结束"
-        return (f"🔔 最后冲刺：{self.game_name}{self._shown()} 仅剩约 {left}"
+            return f"⏳ 活动冲刺：{self.game_name}{self._shown()} 约 {left}后结束"
+        return (f"🔔 最后抢救：{self.game_name}{self._shown()} 仅剩约 {left}"
                 f"，想拿奖励抓紧了")
 
 

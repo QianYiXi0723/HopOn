@@ -3043,7 +3043,7 @@ function actCardHtml(it, isHero, heroSlim){
   const prog = actProgHtml(it);
   /* 三段段位标记（2026-11-11 #9，与英雄卡关联）：已设档位显示「档名+阈值」，
      已推的打勾，-1 档显「关」——数据全部来自后端 payload，前端零推算 */
-  const tierNames = {1: '规划', 2: '必打', 3: '冲刺'};
+  const tierNames = {1: '规划', 2: '冲刺', 3: '抢救'};
   const tierBadge = (function(){
     const set = Array.isArray(it.tiers_set) ? it.tiers_set : [];
     if (!set.some(function(t){ return t >= 0; })) return '';
