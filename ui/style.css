@@ -1113,6 +1113,9 @@
   /* 行多时纵向滚动（GitHub 范式：格子定尺寸不压缩）；表头吸顶。
      限高必须落在**行间隙**（10+22+6×44+6×8+10=346）：切在格子中间会造出
      「视觉露 8px、hit-test 全在裁剪区外」的死格——长按/点击全穿透（实锤）。 */
+  /* 卡片数据到达闪光：950ms 提亮渐隐（2026-11-14 用户裁决恢复） */
+  .rl-flash{animation:rl-flash .95s ease}
+  @keyframes rl-flash{from{filter:brightness(1.35)}to{filter:brightness(1)}}
   .hm-scroll{max-height:346px;overflow-y:auto;border-radius:8px}
   .hm-scroll .heatmap{border-radius:0}
   .hm-row{display:grid;grid-template-columns:150px repeat(7,1fr);gap:8px;min-width:0;

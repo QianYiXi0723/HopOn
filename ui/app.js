@@ -4005,6 +4005,7 @@ function renderHeatmap(d){
     localStorage.setItem('rl-dlfix-hint', '1');
     toast('提示：长按报表里手动项的格子，可补录/撤销打卡记录');
   }
+  flashCard(document.getElementById('act-list') ? document.getElementById('act-list').closest('.card') : null);
 }
 
 function loadHistory(){
@@ -4805,6 +4806,7 @@ function renderKpiToday(h){
   }
   el.textContent = done + '/' + total;
   el.className = 'kpi-value value' + (done !== total ? ' warn' : '');
+  flashCard(el.closest('.kpi.card') || el.parentElement);
   /* 0 完成 = critical；部分完成 = warn；全部完成 = 无紧迫（紧迫度只看合并结果，不碰统计） */
   setUrgency('k-today', done === total ? '' : (done > 0 ? 'warn' : 'critical'));
   refreshKpiKeep();
@@ -5053,12 +5055,24 @@ if (pickList) pickList.addEventListener('change', updatePickNext);
    下面的 switchTab 会发起真实请求做后台静默刷新，数据到手平滑替换 */
 renderCachedData();
 const hash = (location.hash || '').replace('#', '');
+/* 卡片数据到达闪光（2026-11-14 用户裁决恢复）：950ms 渐隐，重触发防连点 */
+function flashCard(el) {
+  if (!el || !el.classList) return;
+  el.classList.remove('rl-flash');
+  void el.offsetWidth;   // 强制 reflow 重启动画
+  el.classList.add('rl-flash');
+}
+
 /* 启动页签：URL hash 优先 → F5 记忆（rl-tab）→ 默认每日报表。
    位置纪律：必须在脚本尾——顶层 let（liveLoaded 等）全就位后才能
    switchTab 触发加载链，过早调用会撞 TDZ 把整个启动链炸掉（实锤） */
 switchTab(PANEL_NAMES.indexOf(hash) >= 0 ? hash
   : (PANEL_NAMES.indexOf(localStorage.getItem('rl-tab')) >= 0
      ? localStorage.getItem('rl-tab') : 'history'));
+/* 预载每日报表数据（接口秒回）：恢复到任意页签时切回 history 零等待，
+   消除「切页先空后填」的卡顿感 */
+loadHistory();
+loadLive(false);
 refreshNotice();
 loadDevice();
 loadAccounts();      // 用 config 里的真实巡检开关覆盖页面默认勾选
