@@ -214,9 +214,12 @@ class DailyReport:
             lines.append("（本轮未获得有效账号数据：查询失败或快照过期；"
                          "以下提醒来自活动日历与资源预警，与日常完成度无关）")
         # 2026-11-13 用户裁决：日常完成态块放最前（先看今天做完没），体力警告后移
+        # 2026-11-14 用户裁决：手动未完成行并进同一未完成块（不再挂尾分家）
         for item in self.unfinished:
             tasks = "、".join(task.describe() for task in item.unfinished_tasks)
             lines.append(f"[未完成] {item.game_name}：{tasks}")
+        if self.manual_lines:
+            lines.extend(self.manual_lines)
 
         # 已完成汇总：游戏 + 已完成手动项并列（2026-11-13 用户裁决：
         # 手动项完成态不独立成行，与游戏同一行交代）
@@ -267,11 +270,6 @@ class DailyReport:
                 lines.append(alert.warn_line())
             for alert in self.activity_start_alerts:
                 lines.append(alert.warn_line())
-        # 手动打卡行（2026-11-13 起含 [已完成] 态）：与游戏日常同款前缀格式
-        if self.manual_lines:
-            lines.append("")
-            for row in self.manual_lines:
-                lines.append(row)
         return title, "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
