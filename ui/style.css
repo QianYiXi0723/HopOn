@@ -1391,6 +1391,16 @@
   .upd-src-sub{font-size:11px;color:var(--subtle)}
   .upd-pkg{font-size:11px;color:var(--subtle);margin-top:8px;text-align:center;
            white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* 站内下载区：按钮→进度→完成三态切换 */
+  .upd-dl{margin-top:10px;border-top:1px solid var(--bg-sub);padding-top:10px}
+  .upd-dl-btn{width:100%}
+  .upd-dl-prog{padding:2px 0}
+  .upd-dl-bar{height:8px;border-radius:4px;background:var(--bg-sub);overflow:hidden}
+  .upd-dl-bar i{display:block;height:100%;width:0;border-radius:4px;
+                background:var(--accent-blue);transition:width .3s}
+  .upd-dl-txt{font-size:11px;color:var(--subtle);margin-top:4px;text-align:center}
+  .upd-dl-done{display:flex;align-items:center;justify-content:center;gap:10px}
+  .upd-dl-ok{font-size:12px;font-weight:600;color:#3fb972}
   .month-toolbar{display:flex;align-items:center;gap:10px;margin:-6px 0 12px}
   .month-nav{display:flex;gap:4px}
   .month-nav .btn{min-width:34px;padding:4px 10px;font-weight:700}

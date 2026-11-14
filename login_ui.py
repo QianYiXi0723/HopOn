@@ -3390,6 +3390,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "message": "检查更新失败：可稍后重试"})
             return
 
+        if parsed.path == "/api/update/download":
+            # 站内下载进度查询（GET）：下载在引擎后台线程跑（Gitee 主通道
+            # 实测 1.9MB/s），前端轮询状态；发起=POST /api/update/download，
+            # 取消=POST /api/update/download/cancel。
+            from core import update as _update
+
+            self._json(_update.download_status())
+            return
+
         if parsed.path == "/api/logtail":
             try:
                 n = int((query.get("n") or ["200"])[0])
@@ -3558,6 +3567,20 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._read_json_body()
             if payload is not None:
                 self._handle_save_push(payload)
+            return
+
+        if path in ("/api/update/download", "/api/update/download/cancel"):
+            # 站内下载发起/取消（2026-11-15）：进度走 GET /api/update/download。
+            from core import update as _update
+
+            if path.endswith("/cancel"):
+                self._json(_update.cancel_download())
+            else:
+                payload = self._read_json_body()
+                if payload is None:
+                    return
+                self._json(_update.start_download(
+                    payload.get("version") or "", payload.get("asset") or ""))
             return
 
         if path == "/api/accounts/enabled":
@@ -3900,6 +3923,27 @@ class Handler(BaseHTTPRequestHandler):
 
                 subprocess.Popen(["explorer", "/select,", str(apk)])
                 self._json({"ok": True, "message": "已在资源管理器中定位 设备信息.apk，用微信/QQ 发给手机即可"})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"ok": False, "error": f"打开失败：{exc}"}, 500)
+            return
+
+        if path == "/api/update/open-folder":
+            # 资源管理器定位已下载并校验通过的安装包（站内下载完成态）
+            try:
+                from core import update as _update
+
+                st = _update.download_status()
+                file_path = str(st.get("file") or "")
+                if st.get("stage") != "done" or not st.get("sha_ok") or not file_path:
+                    self._json({"ok": False, "error": "还没有校验通过的安装包"}, 404)
+                    return
+                if not os.path.isfile(file_path):
+                    self._json({"ok": False, "error": "安装包文件不存在（可能已被移动）"}, 404)
+                    return
+                import subprocess
+
+                subprocess.Popen(["explorer", "/select,", file_path])
+                self._json({"ok": True, "message": "已在资源管理器中定位安装包，双击即可安装"})
             except Exception as exc:  # noqa: BLE001
                 self._json({"ok": False, "error": f"打开失败：{exc}"}, 500)
             return

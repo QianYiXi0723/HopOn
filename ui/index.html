@@ -860,6 +860,18 @@
           </a>
         </div>
         <div class="upd-pkg" id="upd-pkg"></div>
+        <!-- 站内下载（2026-11-15）：引擎代理下载+SHA-256 校验，完成态引导安装 -->
+        <div class="upd-dl" id="upd-dl">
+          <button type="button" class="btn primary upd-dl-btn" id="upd-dl-btn">下载到本机（校验后安装）</button>
+          <div class="upd-dl-prog" id="upd-dl-prog" hidden>
+            <div class="upd-dl-bar"><i id="upd-dl-fill"></i></div>
+            <div class="upd-dl-txt" id="upd-dl-txt"></div>
+          </div>
+          <div class="upd-dl-done" id="upd-dl-done" hidden>
+            <span class="upd-dl-ok">✓ 校验通过</span>
+            <button type="button" class="btn sm" id="upd-dl-open">打开文件夹安装</button>
+          </div>
+        </div>
       </div>
     </div>
     <div class="modal-mask" id="dlfix-modal" hidden>

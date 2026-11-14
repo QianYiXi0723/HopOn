@@ -638,6 +638,8 @@ document.getElementById('ver-line').addEventListener('click', checkUpdate);
    反引号），纯文本展示——MFAAvalonia 的 Markdown 渲染器是完整公告
    系统才需要 */
 function openUpdateModal(d){
+  window.__updateInfo = d;
+  updDlReset();   // 下载区三态复位（上次任务的状态不残留）
   document.getElementById('upd-latest').textContent = 'v' + d.latest;
   document.getElementById('upd-cur').textContent =
     '当前 v' + d.current + (d.published_at ? (' · 发布于 ' + String(d.published_at).slice(0, 10)) : '');
@@ -658,6 +660,81 @@ function openUpdateModal(d){
 }
 function closeUpdateModal(){
   document.getElementById('update-modal').hidden = true;
+  updDlReset();   // 关弹窗停轮询（下载任务在后端继续跑也不刷 UI）
+}
+
+/* 站内下载按钮绑定（addEventListener 纪律；元素在全局弹窗区，页面加载即存在） */
+(function(){
+  const btn = document.getElementById('upd-dl-btn');
+  const open = document.getElementById('upd-dl-open');
+  if (btn) btn.addEventListener('click', updDlStart);
+  if (open) open.addEventListener('click', function(){
+    fetch('/api/update/open-folder').then(function(r){ return r.json(); }).then(function(d){
+      if (d && !d.ok) toast(d.error || '打开失败', true);
+    }).catch(function(){ toast('无法连接本地服务', true); });
+  });
+})();
+
+/* 站内下载（2026-11-15）：引擎代理下载+SHA-256 校验+引导安装。
+   通道实测：Gitee 直连 14.6MB@1.9MB/s（主），GitHub 慢（备）——
+   通道顺序在后端 _asset_urls。三态 UI：按钮→进度→完成。
+   不自动安装：装/换血是 #20 后续能力，v1 只保证「包到本地且校验通过」 */
+let _updDlTimer = null;
+function updDlReset(){
+  if (_updDlTimer) { clearTimeout(_updDlTimer); _updDlTimer = null; }
+  document.getElementById('upd-dl-btn').hidden = false;
+  document.getElementById('upd-dl-prog').hidden = true;
+  document.getElementById('upd-dl-done').hidden = true;
+}
+function updDlPick(){
+  const d = window.__updateInfo || {};
+  const pkg = (d.assets || []).find(function(a){
+    return /\.exe$/i.test(String(a.name || ''));
+  }) || { name: 'HopOn_v' + d.latest + '_Setup.exe' };
+  return { version: d.latest, asset: pkg.name };
+}
+function updDlStart(){
+  const pick = updDlPick();
+  updDlReset();
+  document.getElementById('upd-dl-btn').hidden = true;
+  document.getElementById('upd-dl-prog').hidden = false;
+  document.getElementById('upd-dl-fill').style.width = '0%';
+  document.getElementById('upd-dl-txt').textContent = '发起下载…';
+  postJSON('/api/update/download', pick).then(function(d){
+    if (!d || !d.ok) {
+      updDlReset();
+      toast((d && d.message) || '下载发起失败', true);
+      return;
+    }
+    updDlPoll();
+  }).catch(function(){ updDlReset(); toast('无法连接本地服务', true); });
+}
+function updDlPoll(){
+  fetch('/api/update/download').then(function(r){ return r.json(); }).then(function(d){
+    const st = d.stage || 'idle';
+    const fill = document.getElementById('upd-dl-fill');
+    const txt = document.getElementById('upd-dl-txt');
+    if (st === 'downloading') {
+      const pct = d.total ? Math.min(100, Math.round(d.bytes / d.total * 100)) : 0;
+      fill.style.width = pct + '%';
+      txt.textContent = (d.message || '下载中') + ' ' + pct + '% · ' +
+        ((d.speed || 0) / 1048576).toFixed(1) + 'MB/s';
+      _updDlTimer = setTimeout(updDlPoll, 500);
+    } else if (st === 'verify') {
+      fill.style.width = '100%';
+      txt.textContent = d.message || '校验 SHA-256…';
+      _updDlTimer = setTimeout(updDlPoll, 500);
+    } else if (st === 'done' && d.sha_ok) {
+      document.getElementById('upd-dl-prog').hidden = true;
+      document.getElementById('upd-dl-btn').hidden = true;   // 完成态收起按钮，防重复点击
+      document.getElementById('upd-dl-done').hidden = false;
+    } else if (st === 'error') {
+      updDlReset();
+      toast(d.message || '下载失败', true);
+    } else {
+      _updDlTimer = setTimeout(updDlPoll, 800);
+    }
+  }).catch(function(){ _updDlTimer = setTimeout(updDlPoll, 1200); });
 }
 
 function refreshNotice(){
