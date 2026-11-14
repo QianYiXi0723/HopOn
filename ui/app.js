@@ -4756,7 +4756,7 @@ function renderKpiToday(h){
     if (c.finished) done++;
   });
   let total = tracked.length;
-  /* 手动项并入（2026-11-14 用户裁决）：与推送标题「日常：X/Y」同一分数——
+  /* 手动项并入（2026-11-14 用户裁决）：与推送标题同一分数——
      今日计划的手动项恒为已知（打卡账本本地可查），分母必计、分子按已完成 */
   const mt = (h && h.manual_today) || {};
   const manualPlanned = mt.planned || 0;
