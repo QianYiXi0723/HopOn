@@ -4804,11 +4804,15 @@ function renderKpiToday(h){
     }
     return;
   }
-  /* 闪光只在值变化时触发（2026-11-14 复查：60s 轮询数据没变也闪=噪音） */
+  /* 闪光时机（2026-11-14 复查改）：刷新后的**首次渲染必闪**——否则 F5 时
+     数据没变=全程零反馈=「F5 没效果」的体感；之后只在值变化时闪（60s
+     轮询数据没变也闪=噪音）。 */
   const changed = el.textContent !== (done + '/' + total);
+  const firstRender = !window.__kpiRendered;
   el.textContent = done + '/' + total;
   el.className = 'kpi-value value' + (done !== total ? ' warn' : '');
-  if (changed) flashCard(el.closest('.kpi.card') || el.parentElement);
+  if (changed || firstRender) flashCard(el.closest('.kpi.card') || el.parentElement);
+  window.__kpiRendered = true;
   /* 0 完成 = critical；部分完成 = warn；全部完成 = 无紧迫（紧迫度只看合并结果，不碰统计） */
   setUrgency('k-today', done === total ? '' : (done > 0 ? 'warn' : 'critical'));
   refreshKpiKeep();
