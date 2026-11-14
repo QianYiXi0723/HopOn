@@ -3070,7 +3070,7 @@ function actCardHtml(it, isHero, heroSlim){
       }).join('') + '</div>'
     : '';
   const delBtn = it.merged
-    ? '<button type="button" class="act-del-g" onclick="deleteMergedActivity(this)" data-del-merged="' +
+    ? '<button type="button" class="act-del act-del-g" onclick="deleteMergedActivity(this)" data-del-merged="' +
       escHtml((it.merged_ids || []).join(',')) + '" title="整组删除，之后这 ' +
       it.merged.length + ' 项都不再提醒">×</button>'
     : '<button type="button" class="act-del" data-del="' + id +
