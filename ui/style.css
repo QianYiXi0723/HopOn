@@ -980,10 +980,10 @@
   .act-count-wrap{display:inline-flex;align-items:baseline}
   .act-count-anchor{position:relative;display:inline-block}
   /* 成员浮层：锚在「等 N 项」正下方（任意 N 通用，宽度贴内容） */
-  .acard.mopen .act-merged{display:grid;position:absolute;top:100%;left:0;right:auto;
-    min-width:200px;z-index:10;max-height:180px;overflow-y:auto;scrollbar-width:thin;
-    background:var(--bg-raise);border:1px solid var(--line);border-radius:8px;
-    box-shadow:var(--card-shadow);padding:8px 10px;margin-top:3px}
+  .acard.mopen .act-merged{display:grid;position:fixed;
+    min-width:200px;max-width:420px;z-index:60;max-height:180px;overflow-y:auto;
+    scrollbar-width:thin;background:var(--bg-raise);border:1px solid var(--line);
+    border-radius:8px;box-shadow:var(--card-shadow);padding:8px 10px}
   .act-merged-toggle{cursor:pointer}
   .act-mrow{display:flex;align-items:center;gap:8px;min-width:0;min-height:19px}
   .act-mrow .mt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
