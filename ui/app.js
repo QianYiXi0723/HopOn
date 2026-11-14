@@ -3086,15 +3086,17 @@ function actCardHtml(it, isHero, heroSlim){
       delBtn + '</div>' +
     '<div class="acard-title"><span class="acard-title-txt" title="' + escHtml(it.title) + '">' +
       (it.merged && it.merged.length > 1
-        ? escHtml(String(it.title).replace(/ 等 \d+ 项$/, '')) +
+        ? '<span class="act-count-wrap">' +
+          escHtml(String(it.title).replace(/ 等 \d+ 项$/, '')) +
+          '<span class="act-count-anchor">' +
           '<button type="button" class="act-count-toggle" onclick="toggleMergedMembers(this)"' +
-          ' title="展开/收起成员列表，可分别删除">等 ' + it.merged.length + ' 项</button>'
+          ' title="展开/收起成员列表，可分别删除">等 ' + it.merged.length + ' 项</button>' +
+          mergedList + '</span></span>'
         : escHtml(it.title)) + '</span>' + reward + '</div>' +
     '<div class="act-time ' + timeCls + '">始 ' + (st || '时间待定') +
       (en ? ' · 止 ' + en : '') + '</div>' +
     '<div class="act-cd ' + cdCls + '">' + escHtml(it.countdown || '') + '</div>' +
     tierBadge +
-    mergedList +
     prog +
     '</div>';
 }
@@ -3319,11 +3321,18 @@ function renderActivities(d){
   }
 }
 
-/* 合并组卡成员列表展开/收起（8 项同止角标即开关） */
+/* 合并组卡成员列表展开/收起（「等 N 项」按钮即开关；任意 N 通用） */
 function toggleMergedMembers(btn){
   const card = btn.closest('.acard');
   if (card) card.classList.toggle('mopen');
 }
+/* 点浮层外任意处收起（下拉菜单惯例） */
+document.addEventListener('pointerdown', function(e) {
+  if (!e.target.closest) return;
+  document.querySelectorAll('.acard.mopen').forEach(function(card) {
+    if (!card.contains(e.target)) card.classList.remove('mopen');
+  });
+}, { passive: true });
 
 /* 合并组卡分别删除：只删点名的这一项，整卡重渲保持「等 N 项」计数同步 */
 async function deleteMemberActivity(btn){
