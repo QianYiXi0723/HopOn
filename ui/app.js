@@ -3445,12 +3445,21 @@ function renderActivities(d){
       mergedOngoing.push(buildMergedItem(members));
     });
     const heroPool = mergedOngoing.slice().sort(byUrgency);
-    /* 英雄卡选择（2026-11-09 三改）：最紧急优先；但最紧急卡「没有内容可展示」
-       （无进度、奖励空、非组卡——鸣潮活动常这样）时 2x2 只会整卡留白
-       （P6-2 的 241px 教训），此时英雄让给下一张「有内容」的卡，
-       紧急卡保持小卡 + 描边。全都没有内容才回落最紧急卡（slim）。
-       用户实证：只剩两天的鸣潮卡把英雄卡整卡挤没了。 */
-    const heroIt = heroPool.find(actHasContent) || heroPool[0] || (upcoming[0] || null);
+    /* 英雄卡选择（2026-11-09 三改；2026-11-16 四改加时间门槛）：最紧急优先；
+       但最紧急卡「没有内容可展示」（无进度、奖励空、非组卡——鸣潮活动常这样）
+       时 2x2 只会整卡留白（P6-2 的 241px 教训），此时英雄让给下一张「有内容」
+       的卡，紧急卡保持小卡 + 描边。窗口内全都没内容才回落最紧急卡（slim）。
+       用户实证：只剩两天的鸣潮卡把英雄卡整卡挤没了。
+       2026-11-16 用户裁决：剩余时间过长的活动不该占英雄位（实证：find 跳过
+       无内容紧急卡后命中剩 37 天带奖励的卡霸占 2x2）——候选只收提醒窗口内
+       （定时与状态的活动提醒天数，后端随 payload 给 window_hours，与
+       ending_soon 徽章/合并窗同口径）的活动，窗外一律普通网格；
+       未开始（upcoming）同样不参加英雄竞选。 */
+    const nearPool = heroPool.filter(function(x){
+      const h = +x.hours_left;
+      return h > 0 && h <= winH;
+    });
+    const heroIt = nearPool.find(actHasContent) || nearPool[0] || null;
     const heroSlim = !!heroIt && !actHasContent(heroIt);
 
     let html = '';
