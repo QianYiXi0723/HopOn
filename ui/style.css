@@ -1598,3 +1598,12 @@
   .av-steps summary{cursor:pointer;font-size:13px;color:var(--fg)}
   .av-steps .hint{margin:6px 0 2px}
   #av-sha{font-family:Consolas,'Courier New',monospace;font-size:12px}
+
+  /* ---------- 安装黑暗期提示层 ----------
+     display 必须写在类里且 [hidden] 兜底用 id 特异性——inline display:flex
+     会压 [hidden] 的 UA display:none（2026-11-15 实弹踩坑：遮罩一旦显示
+     就永远关不掉，盖住整个控制台） */
+  #installing-mask{display:flex;position:fixed;inset:0;z-index:1200;
+                   background:rgba(0,0,0,.78);flex-direction:column;
+                   align-items:center;justify-content:center;gap:10px;color:#e8e8e8}
+  #installing-mask[hidden]{display:none}
