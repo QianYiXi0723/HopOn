@@ -808,8 +808,11 @@ function updDlPoll(){
       txt.textContent = d.message || '校验 SHA-256…';
       _updDlTimer = setTimeout(updDlPoll, 500);
     } else if (st === 'done' && d.sha_ok) {
+      // 校验通过→完成态（打开文件夹手动安装）；VERYSILENT 自动安装待
+      // Inno 7 跨目录升级语义完善后重开（2026-11-15 实弹：影子安装卸载语义）
       document.getElementById('upd-dl-prog').hidden = true;
-      updDlAutoInstall();            // 单按钮贯穿：校验通过自动接安装（#20 闭环）
+      document.getElementById('upd-dl-btn').hidden = true;
+      document.getElementById('upd-dl-done').hidden = false;
     } else if (st === 'error') {
       localStorage.removeItem('rl-updating');
       document.getElementById('installing-mask').hidden = true;
