@@ -324,7 +324,6 @@ def standalone_due(items: List[Dict[str, Any]], user_dir: Path,
     state = _load_state(user_dir)
     fired = state.get("fired") if isinstance(state.get("fired"), dict) else {}
     done = state.get("done") if isinstance(state.get("done"), dict) else {}
-    now_hm = now.strftime("%H:%M")
     out: List[Dict[str, Any]] = []
     for it in items:
         if not it.get("enabled", True) or it.get("mode") != "standalone":
@@ -340,7 +339,13 @@ def standalone_due(items: List[Dict[str, Any]], user_dir: Path,
             continue
         if period in (fired.get(iid) or {}):
             continue
-        if now_hm >= target:
+        # 只早不迟（2026-11-11 裁决，2026-11-15 修正）：触发窗口=[目标-30s, +∞)
+        # ——原实现 now_hm >= target 是「越过目标才发」，比 merged 班次
+        # （[目标-30s, 目标] 窗口触发即推）晚一个轮询周期（实测慢 30-60s）。
+        # 秒级比较（now_hm 分钟粒度撑不住提前量）；fired 账本防重复。
+        tt = datetime.strptime(target, "%H:%M").time()
+        win = datetime.combine(now.date(), tt) - timedelta(seconds=30)
+        if now >= win:
             out.append(it)
     return out
 
