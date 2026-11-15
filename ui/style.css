@@ -284,7 +284,7 @@
   @keyframes dot-pulse{0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,.4)}50%{box-shadow:0 0 0 5px rgba(74,222,128,0)}}
   @media (prefers-reduced-motion: reduce){.dot.on{animation:none}}
   /* 心跳数据等宽字体，数字宽度稳定不跳 */
-  #d-since,#d-heart,#k-next-sub{font-family:ui-monospace,Consolas,"Courier New",monospace;
+  #d-since,#d-heart{font-family:ui-monospace,Consolas,"Courier New",monospace;
     font-variant-numeric:tabular-nums}
   /* 问号气泡随标题文字垂直居中（2026-11-13 用户裁决：vertical-align:-3px
      的静态补偿在小窗/字体场景下漂移，改 flex 居中一劳永逸） */
@@ -682,17 +682,19 @@
     .tl-item{grid-template-columns:52px 18px minmax(0,1fr);column-gap:10px}
   }
 
-  /* ---------- KPI 摘要条（吸顶锚点：80px 常态 / 56px compact 收缩） ---------- */
-  .kpi-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;
+  /* ---------- KPI 摘要条（吸顶锚点：80px 常态 / 44px compact 收缩；
+     2026-11-16 四卡减两卡：下次巡查搬定时页 #d-next、凭证健康搬账号页抽屉） ---------- */
+  .kpi-bar{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;
            flex:none;margin-bottom:16px;
            position:sticky;top:0;z-index:50;min-height:80px;background:var(--bg-base);
            transition:min-height 250ms ease-out, padding 250ms ease-out}
-  .kpi-bar.compact{min-height:56px;grid-template-columns:repeat(2,1fr)}
-  .kpi-bar.compact .kpi{display:none}
-  .kpi-bar.compact .kpi.keep{display:block}
-  .kpi-bar.compact .kpi-value{font-size:24px}
-  .kpi-bar.compact .kpi.primary .kpi-value{font-size:28px}
+  /* 收起态（2026-11-16 重写）：不再隐藏卡片——两张卡都压成一行摘要（标签+数字），
+     信息一个不少；sub 行收起，数字降级 20px/22px */
+  .kpi-bar.compact{min-height:44px;align-items:center}
+  .kpi-bar.compact .kpi{display:flex;flex-direction:row;align-items:center;gap:8px;padding:6px 12px}
   .kpi-bar.compact .kpi-sub{display:none}
+  .kpi-bar.compact .kpi-value{font-size:20px;margin-top:0}
+  .kpi-bar.compact .kpi.primary .kpi-value{font-size:22px}
   .kpi{background:var(--bg-elevated);border:none;border-radius:8px;
        padding:12px 20px;min-width:0}
   .kpi-label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}
@@ -709,7 +711,12 @@
   .kpi-value.refreshing::after{content:"";display:inline-block;width:10px;height:10px;
     margin-left:8px;border:2px solid var(--btn-bg);border-top-color:var(--brand);
     border-radius:50%;animation:s .8s linear infinite;vertical-align:3px}
-  @media (max-width:1000px){ .kpi-bar{grid-template-columns:repeat(2,1fr)} }
+  /* 手动收起/展开小钮（2026-11-16）：右缘悬浮于 kpi-bar（sticky 即包含块），
+     配色复用 .btn 族变量，不新造颜色 */
+  .kpi-toggle{position:absolute;right:10px;top:50%;transform:translateY(-50%);
+    height:24px;padding:0 10px;font-size:12px;line-height:1;border:none;border-radius:6px;
+    background:var(--btn-bg);color:var(--muted);cursor:pointer;z-index:2}
+  .kpi-toggle:hover{background:var(--btn-hover);color:var(--fg)}
   @media (max-width:520px){ .kpi-bar{grid-template-columns:1fr} }
 
   /* ---------- 底部日志控制台：固定底栏（不随内容滚动、不悬浮遮挡） ----------
