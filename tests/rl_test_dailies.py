@@ -181,6 +181,25 @@ def main() -> int:
     check(undone2 == ["[未完成] 戊：今日进度（0/1）"] and finished2 == ["甲", "乙"],
           "勾掉后从未完成行转入已完成名（按 config 序）")
 
+    # 独立时段触发窗口四态（2026-11-15 修正的固化断言：[目标-30s, +∞)——
+    # 旧实现 now_hm >= target 比随巡检慢 30-60s（fcd5b40）。
+    # 变异回放锚点：回退本段后跑旧版 dailies，回测应 FAIL）
+    import tempfile as _tf
+    _ud = Path(_tf.mkdtemp(prefix="rl_dailies_win_"))
+    _today = datetime.now().date()
+    _win_items = [{"id": "w1", "name": "窗口", "mode": "standalone", "time": "23:59",
+                   "enabled": True, "days": [True] * 7,
+                   "reset": "04:00", "template": ""}]
+
+    def _due(h, m, s):
+        now = datetime.combine(_today, datetime.strptime(f"{h}:{m}:{s}", "%H:%M:%S").time())
+        return len(D.standalone_due(_win_items, _ud, now=now))
+
+    check(_due(23, 59, 10) == 1, "W1 目标后 10s → 补发触发（越过即发）")
+    check(_due(23, 58, 35) == 1, "W2 目标前 25s → 触发（新窗口生效点，旧实现此处为 0）")
+    check(_due(23, 59, 59) == 1, "W3 目标前 1s → 触发")
+    check(_due(23, 58, 10) == 0, "W4 目标前 50s → 不触发（窗口外）")
+
     print(f"rl_test_dailies: {PASS} 项断言全绿")
     return 0
 
