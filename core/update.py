@@ -491,12 +491,73 @@ def _finish_job(job: Dict[str, Any], pkg: Path, version: str, asset: str) -> Non
             except OSError:
                 pass
         job["stage"] = "done" if verdict["ok"] else "error"
+        _save_download_state(job)
+
+
+#: 下载终态持久化（2026-11-15 用户实测「下载后检测不到本地资源而无法更新」
+#  的根因：done 态只在引擎进程内存里——引擎/壳任何一次重启都清零，本地
+#  文件明明还在却「检测不到」）。done 落盘，重启后 download_status 从盘恢复。
+STATE_NAME = "download_state.json"
+
+
+def _download_state_path() -> Path:
+    from core.paths import user_root
+
+    return user_root() / "data" / STATE_NAME
+
+
+def _save_download_state(job: Dict[str, Any]) -> None:
+    """终态（done/error）落盘；只存可恢复的最小字段。"""
+    payload = {
+        "stage": job.get("stage"),
+        "version": job.get("version"),
+        "asset": job.get("asset"),
+        "file": job.get("file"),
+        "sha_ok": job.get("sha_ok"),
+        "total": job.get("total"),
+        "message": job.get("message"),
+        "saved_at": _now_text(),
+    }
+    try:
+        p = _download_state_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = str(p) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp, p)
+    except OSError as exc:
+        logger.debug("[update] 下载状态落盘失败（忽略）：%s", exc)
+
+
+def _load_download_state() -> Optional[Dict[str, Any]]:
+    """读盘上终态；file 不存在（被删/被移动）则视为无效清掉。"""
+    try:
+        p = _download_state_path()
+        if not p.exists():
+            return None
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        if raw.get("stage") != "done" or not raw.get("sha_ok"):
+            return None
+        if not raw.get("file") or not os.path.isfile(raw["file"]):
+            try:
+                p.unlink()
+            except OSError:
+                pass
+            return None
+        raw["ok"] = True
+        return raw
+    except (OSError, ValueError):
+        return None
 
 
 def download_status() -> Dict[str, Any]:
-    """当前下载任务状态（无任务=stage idle）。"""
+    """当前下载任务状态：内存任务优先；无任务时从盘恢复 done 终态
+    （引擎重启后仍能「一键安装」，根治「检测不到本地资源」）。"""
     with _download_lock:
         if not _download_job:
+            saved = _load_download_state()
+            if saved:
+                return saved
             return {"stage": "idle", "ok": True}
         return {k: v for k, v in _download_job.items() if not k.startswith("_")}
 
