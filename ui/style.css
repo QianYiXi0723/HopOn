@@ -1350,7 +1350,7 @@
   @keyframes rl-spin{to{transform:rotate(360deg)}}
   /* ---------- 底部日志：用户视图（2026-10-31 方案 A）---------- */
   .console-fold{padding:6px 4px;font-size:12px;color:var(--text-tertiary);
-    border-bottom:1px dashed var(--border);margin-bottom:6px}
+    border-bottom:1px dashed var(--line);margin-bottom:6px}
   #console-toggle{cursor:pointer;color:var(--accent);text-decoration:underline}
 
   /* 活动卡双模式切换（按时间/按游戏）：与渠道分段同款胶囊语言，
@@ -1407,6 +1407,7 @@
                 background:var(--accent-blue);transition:width .3s}
   .upd-dl-txt{font-size:11px;color:var(--subtle);margin-top:4px;text-align:center}
   .upd-dl-done{display:flex;align-items:center;justify-content:center;gap:10px}
+  .upd-dl-done[hidden]{display:none}
   .upd-dl-ok{font-size:12px;font-weight:600;color:#3fb972}
   .month-toolbar{display:flex;align-items:center;gap:10px;margin:-6px 0 12px}
   .month-nav{display:flex;gap:4px}
@@ -1487,7 +1488,7 @@
   /* ---- 库街区绑定弹窗（鸣潮，2026-11-09 D2b）---- */
   .kuro-modes{margin-bottom:14px}
   .kuro-row{display:flex;gap:8px;margin-bottom:10px}
-  .kuro-row input{flex:1;min-width:0;background:var(--subtle);border:1px solid var(--border);
+  .kuro-row input{flex:1;min-width:0;background:var(--subtle);border:1px solid var(--line);
     border-radius:8px;padding:9px 12px;color:var(--fg);font-family:inherit;font-size:14px}
   .kuro-row input:focus{outline:none;border-color:var(--accent,#7c5cff)}
   .kuro-row .btn{flex:none}
@@ -1538,7 +1539,7 @@
   .dl-toggle:hover{filter:brightness(1.15)}
   .dl-gcard.is-done{opacity:.72}
   .dl-row{display:flex;align-items:center;gap:8px;padding:7px 0;
-    border-bottom:1px solid var(--border)}
+    border-bottom:1px solid var(--line)}
   .dl-row:last-child{border-bottom:none}
   .dl-row.is-done{opacity:.55}
   .dl-row.is-off{opacity:.4}
@@ -1556,7 +1557,7 @@
   .df-row--top{align-items:flex-start}
   .df-label{flex:none;width:64px;color:var(--muted)}
   .df-row input[type=text],.df-row input[type=time],.df-row textarea{
-    flex:1;min-width:0;background:var(--subtle);border:1px solid var(--border);
+    flex:1;min-width:0;background:var(--subtle);border:1px solid var(--line);
     border-radius:8px;padding:8px 10px;color:var(--fg);font-family:inherit;font-size:14px}
   .df-row textarea{resize:vertical}
   .df-row input[type=checkbox]{width:auto}
@@ -1565,7 +1566,7 @@
      紧凑贴左不拉伸（小窗下 flex:1 会把七枚拉成满行宽条，与 seg-mini 节奏打架），
      窄弹窗放不下时自动换行 */
   .wd-picker{display:flex;gap:4px;flex:1;min-width:0;flex-wrap:wrap}
-  .wd-chip{flex:none;min-width:34px;height:28px;border:1px solid var(--border);
+  .wd-chip{flex:none;min-width:34px;height:28px;border:1px solid var(--line);
     background:var(--subtle);color:var(--muted);border-radius:8px;
     font-family:inherit;font-size:13px;cursor:pointer;padding:0 10px}
   .wd-chip:hover{color:var(--fg)}
@@ -1576,7 +1577,7 @@
   .bgr-row{display:flex;align-items:center;gap:8px;font-size:14px}
   .bgr-row.is-off .bgr-min,.bgr-row.is-off .bgr-unit{opacity:.4}
   .bgr-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .bgr-min{background:var(--subtle);border:1px solid var(--border);
+  .bgr-min{background:var(--subtle);border:1px solid var(--line);
     border-radius:8px;color:var(--fg);font-family:inherit;font-size:14px}
   /* 全局 input[type=number]{width:100%;height:42px} 特异性更高（0,1,1），
      必须用属性选择器同杠才能把宽度压回 72px（2026-11-13 用户截图实锤） */
