@@ -688,13 +688,11 @@
            flex:none;margin-bottom:16px;
            position:sticky;top:0;z-index:50;min-height:80px;background:var(--bg-base);
            transition:min-height 250ms ease-out, padding 250ms ease-out}
-  /* 收起态（2026-11-16 重写）：不再隐藏卡片——两张卡都压成一行摘要（标签+数字），
-     信息一个不少；sub 行收起，数字降级 20px/22px */
-  .kpi-bar.compact{min-height:44px;align-items:center}
-  .kpi-bar.compact .kpi{display:flex;flex-direction:row;align-items:center;gap:8px;padding:6px 12px}
-  .kpi-bar.compact .kpi-sub{display:none}
-  .kpi-bar.compact .kpi-value{font-size:20px;margin-top:0}
-  .kpi-bar.compact .kpi.primary .kpi-value{font-size:22px}
+  /* 收起态（2026-11-16 二次修订·用户实测裁决）：真收起——卡片整体隐藏，
+     条上只留展开键；完整信息回展开态看。旧「压成一行摘要」被否：
+     悬停卡片时 .card:hover 的 z-index:60 会盖住摘要条上的按钮 */
+  .kpi-bar.compact{min-height:44px}
+  .kpi-bar.compact .kpi{display:none}
   .kpi{background:var(--bg-elevated);border:none;border-radius:8px;
        padding:12px 20px;min-width:0}
   .kpi-label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}
@@ -712,10 +710,11 @@
     margin-left:8px;border:2px solid var(--btn-bg);border-top-color:var(--brand);
     border-radius:50%;animation:s .8s linear infinite;vertical-align:3px}
   /* 手动收起/展开小钮（2026-11-16）：右缘悬浮于 kpi-bar（sticky 即包含块），
-     配色复用 .btn 族变量，不新造颜色 */
+     配色复用 .btn 族变量，不新造颜色；z-index 必须压过 .card:hover 的 60，
+     否则鼠标悬停卡片时按钮被盖住（批次 2 实测：展开键凭空消失无法点击） */
   .kpi-toggle{position:absolute;right:10px;top:50%;transform:translateY(-50%);
     height:24px;padding:0 10px;font-size:12px;line-height:1;border:none;border-radius:6px;
-    background:var(--btn-bg);color:var(--muted);cursor:pointer;z-index:2}
+    background:var(--btn-bg);color:var(--muted);cursor:pointer;z-index:61}
   .kpi-toggle:hover{background:var(--btn-hover);color:var(--fg)}
   @media (max-width:520px){ .kpi-bar{grid-template-columns:1fr} }
 
