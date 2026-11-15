@@ -110,6 +110,7 @@ def main() -> int:
     real_collect = M.collect_statuses
     L._LIVE_CACHE["at"] = 0
     L._LIVE_CACHE["payload"] = None
+    L._LIVE_LAST_QUERY.clear()   # 2026-11-16 90 秒间隔护栏：每轮世界重置，防跨轮渗漏
     # 重置账本：只有 genshin 在冷却（清掉 R1-R3 的遗留，保证场景自洽）
     L._live_risk_write({"genshin": {"until": time.time() + 3600, "retcode": 1034}})
 
@@ -164,6 +165,7 @@ def main() -> int:
         # 让 R8 真正走到查询路径，否则命中的 1034 永远记不了账
         L._LIVE_CACHE["at"] = 0
         L._LIVE_CACHE["payload"] = None
+        L._LIVE_LAST_QUERY.clear()   # R6 的真查会记账，不重置会让 90s 护栏拦住本轮
         L.live_status(force=True)
         book = L._live_risk_read()
         check("R8 新命中入账", "starrail" in book and int(book["starrail"]["retcode"]) == 1034)
@@ -176,6 +178,7 @@ def main() -> int:
         M.collect_statuses = fake_collect_empty
         L._LIVE_CACHE["at"] = 0
         L._LIVE_CACHE["payload"] = None
+        L._LIVE_LAST_QUERY.clear()   # 同 R8：间隔护栏的记账不得跨轮渗漏
         out = L.live_status(force=True)
         check("R7 全冷却时账号表为空", calls and calls[-1] == [],
               f"calls={calls}")

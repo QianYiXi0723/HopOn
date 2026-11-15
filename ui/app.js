@@ -193,9 +193,19 @@ function pushEnabled(group, games, enabled){
 }
 
 /* 监控开关变化后的缓存跟进（fire-and-forget 不阻塞 UI）：force 全量查询
-   走引擎侧并发闸（连点去重）；新缓存落地后托盘 30s 内自动跟随 */
+   走引擎侧并发闸（连点去重）；新缓存落地后托盘 30s 内自动跟随。
+   2026-11-16 去抖：连续切 N 个开关只在静止 500ms 后发一次，且 5 秒内
+   最多一次——配合服务端 90 秒最短间隔护栏，绝不连环打私有接口 */
+let _kickTimer = null, _kickLast = 0;
 function kickLiveRefresh(){
-  fetch('/api/live?refresh=1').catch(function(){});
+  if (_kickTimer) clearTimeout(_kickTimer);
+  _kickTimer = setTimeout(function(){
+    _kickTimer = null;
+    const now = Date.now();
+    if (now - _kickLast < 5000) return;   // 5 秒内最多一次
+    _kickLast = now;
+    fetch('/api/live?refresh=1').catch(function(){});
+  }, 500);
 }
 
 /* 「全选」按钮文案随状态变化 + 游戏监控抽屉的折叠摘要

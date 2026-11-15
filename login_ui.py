@@ -1771,6 +1771,13 @@ _LIVE_AUTO_REFRESH_MINUTES = 10
 _LIVE_LOCK = threading.Lock()
 #: 磁盘缓存：服务重启后也能秒回上一次的结果，页面冷启动绝不该现场打接口
 _LIVE_DISK_CACHE = USER_DIR / "data" / "live_cache.json"
+#: 同一款游戏两次真实查询的最小间隔（秒）。2026-11-16 用户实测：F5 与连续切
+#: 监控开关会在一分钟内对同一 gid 打多次私有接口，只靠 45 秒进程缓存挡不住。
+#: 与 45 秒 TTL 叠加而非替换：0-45s 吃进程缓存，45-90s 走间隔护栏回放磁盘缓存，
+#: ≥90s 才放行真查。force 也不例外（refresh=1 ≠ 不限频）。
+_LIVE_MIN_INTERVAL_SECONDS = 90
+#: gid -> 上次真实发起查询的 time.time()（进程内，不落盘——落盘会引入新的文件锁问题）
+_LIVE_LAST_QUERY: Dict[str, float] = {}
 
 
 def _live_disk_read() -> Optional[Dict[str, Any]]:
@@ -2102,7 +2109,44 @@ def live_status(force: bool = False, family: Optional[str] = None,
             payload["cached"] = True
             return _annotate_live_cool(_filter_live_games(payload, enabled), cooled)
 
+        # 90 秒最短间隔护栏：距上次真实发起查询不足间隔的 gid 本轮不查，
+        # 磁盘缓存原样回放；全部被限频就直接回磁盘缓存（ok 恒为 true）。
+        # 风控冷却（1034/10041 账本）是另一条独立护栏，两者互不掺和。
+        now_ts = time.time()
+        skip_gids = {
+            a.game for a in cfg.accounts
+            if now_ts - float(_LIVE_LAST_QUERY.get(a.game, 0.0)) < _LIVE_MIN_INTERVAL_SECONDS
+        }
+        throttled_gids: List[str] = []
+        if skip_gids:
+            kept_accounts = [a for a in cfg.accounts if a.game not in skip_gids]
+            throttled_gids = sorted(skip_gids)
+            if not kept_accounts:
+                disk_all = _live_disk_read()
+                if disk_all is not None:
+                    payload = dict(disk_all)
+                    payload["throttled"] = True
+                    logger.info(
+                        "实时查询 90 秒间隔护栏：本轮 %d 款游戏全部在间隔内，回放磁盘缓存",
+                        len(skip_gids))
+                    return payload
+                logger.info(
+                    "实时查询 90 秒间隔护栏：本轮 %d 款游戏全部在间隔内且无磁盘缓存",
+                    len(skip_gids))
+                return {"ok": True, "cached": True, "throttled": True,
+                        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "games": []}
+            from dataclasses import replace as _dc_replace
+
+            cfg = _dc_replace(cfg, accounts=kept_accounts)
+
         statuses = collect_statuses(cfg)
+
+        # 间隔记账：真实发起过查询的 gid 记 now（成功失败都算——护栏保护的是
+        # 「打接口」这个动作本身）；必须在 _LIVE_LOCK 内、写缓存之前
+        sent_at = time.time()
+        for _acc in cfg.accounts:
+            _LIVE_LAST_QUERY[_acc.game] = sent_at
 
         # 风控记账：本轮命中的 1034/10041 写入冷却账本（6 小时内不再实时查询该游戏）
         _live_risk_record([(s.game_id, s.error) for s in statuses if not s.ok and s.error])
@@ -2170,6 +2214,24 @@ def live_status(force: bool = False, family: Optional[str] = None,
                 entry["cooled"] = True
                 games.append(entry)
 
+        # 间隔护栏内的游戏：磁盘缓存原样回放（不设 cooled/cooldown——这不是风控，
+        # 前端按正常数据渲染）；磁盘也没有就给占位条目，绝不缺游戏
+        if throttled_gids:
+            disk_int = _live_disk_read()
+            disk_games_int = (
+                {g.get("game"): g for g in (disk_int.get("games") or []) if isinstance(g, dict)}
+                if disk_int else {}
+            )
+            names_int = _game_display_map()
+            present_int = {g.get("game") for g in games}
+            for gid in throttled_gids:
+                if gid in present_int:
+                    continue
+                old_int = disk_games_int.get(gid)
+                games.append(dict(old_int) if isinstance(old_int, dict) else {
+                    "game": gid, "game_name": names_int.get(gid, gid), "placeholder": True,
+                })
+
         # 点名刷新合并写：集合内条目替换、集合外条目原样保留——局部刷新不丢缓存
         if target_games is not None:
             disk = _live_disk_read() or {}
@@ -2187,9 +2249,14 @@ def live_status(force: bool = False, family: Optional[str] = None,
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "games": games,
         }
+        # 进程/磁盘缓存存不带 throttled 的基线（限频标记只属于本次响应，
+        # 落进缓存会让 45 秒 TTL 消费者读到误导字段）
         _LIVE_CACHE["at"] = time.time()
         _LIVE_CACHE["payload"] = payload
         _live_disk_write(payload)
+        if throttled_gids:
+            payload = dict(payload)
+            payload["throttled"] = True
         return _annotate_live_cool(payload)
 
 
