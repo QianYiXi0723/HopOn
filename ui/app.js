@@ -556,6 +556,24 @@ function startSkland(){
   openPickModal('s');
 }
 
+/* ---------- 未绑定入口（2026-11-16）：统一 document 委托 ----------
+   目标元素都在动态重渲染区（游戏概览卡 / 实时体力空态），逐个绑会被
+   innerHTML 冲掉。data-bind 落点 = 账号页 + 选卡弹窗（forced 只勾本次
+   这一款，沿用凭证行直达语义，绝不触碰监控开关）；平台归属查选卡弹窗
+   现成的 name=m/s/k 分组，不另造映射。 */
+document.addEventListener('click', function(e){
+  if (!e.target.closest) return;
+  if (e.target.closest('#live-go-bind')) { switchTab('account'); return; }
+  const link = e.target.closest('a[data-bind]');
+  if (!link) return;
+  const gid = link.getAttribute('data-bind');
+  switchTab('account');
+  const group = ['m', 's', 'k'].find(function(g){
+    return document.querySelector('input[name="' + g + '"][value="' + gid + '"]');
+  });
+  if (group) openPickModal(group, [gid]);
+});
+
 function showError(msg){
   const stage = document.getElementById('stage');
   stage.hidden = false;
@@ -3005,11 +3023,15 @@ function renderLive(d){
     const boundN = enabledIds.filter(function(k){
       return accs[k] && accs[k].has_credential;
     }).length;
-    let msg;
+    let msg, extra = '';
     if (!enabledIds.length) msg = '没有启用的账号。';
-    else if (!boundN) msg = '启用的账号都还没绑定凭证——去「账号与通知」绑定后再来。';
+    else if (!boundN) {
+      msg = '启用的账号都还没绑定凭证——去「账号与通知」绑定后再来。';
+      /* 2026-11-16：空态自带可点的绑定入口（点击行为走 document 委托） */
+      extra = '<button class="btn sm" id="live-go-bind">去绑定账号</button>';
+    }
     else msg = '暂无实时数据（凭证可能失效或角色未创建），稍后重试或查运行日志。';
-    box.innerHTML = '<div class="emptybox">' + msg + '</div>';
+    box.innerHTML = '<div class="emptybox">' + msg + extra + '</div>';
   } else {
     /* 每游戏一张便笺卡（HoYoLAB 实时便笺形态）：卡片直接作为网格子项
        （不加包装层——包装 div 会独占一条网格轨道，把卡片挤成竖排） */
@@ -4110,6 +4132,12 @@ function gameCardHtml(g){
     }).join('');
   } else if (raw && raw.no_account) {
     daily = '<div class="gcard-daily"><span class="dim">' + escHtml(raw.no_account) + '</span></div>';
+  } else if ((window.__accounts || {})[gid] &&
+             window.__accounts[gid].has_credential === false) {
+    /* 未绑定兜底（2026-11-16）：卡片直接给可点的绑定入口，
+       不再让用户自己找路；点击行为走 document 委托（见 a[data-bind]） */
+    daily = '<div class="gcard-daily"><span class="dim">还没绑定账号</span> ' +
+      '<a class="link" data-bind="' + escHtml(gid) + '" href="javascript:void(0)">去绑定 →</a></div>';
   } else {
     daily = '<div class="gcard-daily"><span class="dim">今日无日常判定数据</span></div>';
   }

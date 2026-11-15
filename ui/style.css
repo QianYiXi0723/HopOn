@@ -1236,6 +1236,10 @@
 
   /* ---------- 空状态 / Toast ---------- */
   .emptybox{padding:20px 12px;text-align:center;color:var(--muted);font-size:12px;line-height:1.8}
+  /* 未绑定入口链接（2026-11-16）：品牌色下划线；点击行为走 app.js 的 document 委托 */
+  .link{color:var(--brand);text-decoration:underline;cursor:pointer}
+  .link:hover{filter:brightness(1.15)}
+  .emptybox .btn{margin-top:8px}
   #toast{position:fixed;left:50%;top:18px;transform:translate(-50%,-14px);
          background:var(--fg);color:var(--bg);padding:6px 16px;border-radius:4px;
          font-size:12px;opacity:0;pointer-events:none;z-index:99;

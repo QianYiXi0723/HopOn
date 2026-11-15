@@ -2229,6 +2229,10 @@ def write_mihoyo(
     有角色的游戏顺手回填 uid / server（修掉模板占位 UID 100000000），
     没角色的游戏只写登录态、不回填 —— 查询层会按"未创建角色"提示，
     玩家日后建号**无需重新扫码**。返回 (已写入, 未创建角色) 两个 id 列表。
+
+    2026-11-16 统一原则：绑定只把本次绑定成功的游戏开启监控（enabled=True），
+    **从不自动关闭任何游戏**——不在 games 列表 / absent 的行，enabled 原样保留
+    （存量 wuwa/bh3/pgr 关着但有凭证，就是靠这条保证不被扫码流程回溯改动）。
     """
     raw = load_raw_config()
     wanted = set(games)
@@ -2266,6 +2270,9 @@ def write_mihoyo(
                 cred["server"] = role["server"]
             if role.get("nickname"):
                 account["nickname"] = role["nickname"]
+            # 2026-11-16 统一原则：只拉起本次绑定成功（进了 updated）的游戏；
+            # absent 与不在 games 列表的行不进这个分支，enabled 原样保留
+            account["enabled"] = True
             updated.append(str(account.get("nickname") or MIHOYO_GAMES.get(game, game)))
         else:
             absent.append(game)
@@ -2294,6 +2301,8 @@ def write_skland(target: str, token: str) -> str:
             cred = account.setdefault("credential", {})
             cred["token"] = token
             cred["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            # 2026-11-16 统一原则：只拉起本次绑定的 target，另一款永不自动关闭
+            account["enabled"] = True
             hit = True
             break
     if not hit:
@@ -2437,6 +2446,7 @@ def write_kuro(token: str, nickname: str = "", games: Optional[List[str]] = None
             hit["nickname"] = real_name            # 真实角色名优先于传入/占位
         elif nickname:
             hit["nickname"] = nickname
+        # 2026-11-16 注记：此处已符合统一原则（绑定=只开本次勾选、从不自动关闭），勿改
         if enabled and not hit.get("enabled", True):
             hit["enabled"] = True   # 绑定了就参与巡检；不想查可以再关开关
         return str(hit.get("nickname") or nickname_default)
