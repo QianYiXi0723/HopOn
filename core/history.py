@@ -500,6 +500,94 @@ def _month_stats(days: Dict[str, Any], game: str, month: str) -> Dict[str, int]:
     return {"done": done, "missed": missed}
 
 
+# ---------- 手动补录覆盖账本（2026-11-14 用户裁决：报表全行可长按修正） ----------
+# 巡检原始记录（history.json）绝不动笔；用户的补录/撤销写在独立覆盖账本里，
+# summary/month_grid 出报表时叠加——巡检继续写它的，修正永久保留。
+
+_OVERRIDES_KEEP_DAYS = 400
+
+
+def _overrides_path() -> Path:
+    return DATA_DIR / "history_overrides.json"
+
+
+def load_overrides() -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """{date_key: {game_id: {finished: bool, at: iso}}}；坏档静默回空。"""
+    try:
+        data = json.loads(_overrides_path().read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception:  # noqa: BLE001 - 覆盖档损坏不拖垮报表
+        logger.exception("history_overrides.json 读取失败，按空处理")
+        return {}
+
+
+def save_overrides(data: Dict[str, Dict[str, Dict[str, Any]]]) -> None:
+    from core.ipc_lock import blocking as _ipc_blocking
+
+    path = _overrides_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _ipc_blocking(str(path) + ".lock"):
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=1) + chr(10),
+                        encoding="utf-8")
+
+
+def set_override(date_key: str, game_id: str, finished: bool) -> None:
+    """补录/改判某游戏某天的完成态。date_key=YYYY-MM-DD。"""
+    if _parse_day(date_key) is None:
+        raise ValueError("日期格式不对：" + str(date_key))
+    data = load_overrides()
+    row = data.setdefault(date_key, {})
+    row[game_id] = {"finished": bool(finished),
+                    "at": datetime.now().strftime("%H:%M:%S")}
+    # 保留窗：太老的日子整条清掉，账本不无限膨胀
+    cutoff = (datetime.now() - timedelta(days=_OVERRIDES_KEEP_DAYS)).strftime("%Y-%m-%d")
+    for dk in [k for k in data if k < cutoff]:
+        data.pop(dk)
+    save_overrides(data)
+
+
+def clear_override(date_key: str, game_id: str) -> None:
+    """撤销补录（恢复巡检原始记录）。"""
+    data = load_overrides()
+    row = data.get(date_key)
+    if row and game_id in row:
+        row.pop(game_id)
+        if not row:
+            data.pop(date_key)
+        save_overrides(data)
+
+
+def apply_overrides(rows: List[Dict[str, Any]]) -> None:
+    """把覆盖账本叠加到报表行（in place）——known/finished/manual 强制，
+    err/stale/noacc 尾巴清掉；日期无覆盖的原样不动。"""
+    ovr = load_overrides()
+    if not ovr:
+        return
+    for row in rows:
+        ovs = ovr.get(str(row.get("date") or ""))
+        if not ovs:
+            continue
+        for gid, ov in ovs.items():
+            cell = (row.get("games") or {}).get(gid)
+            if not isinstance(cell, dict) or cell.get("future"):
+                continue
+            cell["finished"] = bool(ov.get("finished"))
+            cell["known"] = True
+            cell["unfinished_tasks"] = 0
+            cell["manual"] = True
+            for k in ("err", "stale", "noacc"):
+                cell.pop(k, None)
+
+
+def _parse_day(s: str):
+    try:
+        return datetime.strptime(str(s), "%Y-%m-%d")
+    except (TypeError, ValueError):
+        return None
+
+
 def summary(
     days: int = DEFAULT_DAYS,
     *,
@@ -643,6 +731,11 @@ def _summary_unsafe(
             "all_done": bool(known_any and all_done),
         })
 
+    # 手动补录覆盖叠加（2026-11-14 用户裁决）：报表全行可长按修正——
+    # 覆盖强制 known/finished，err/stale/noacc 尾巴清掉；连胜/月统计沿用
+    # 覆盖后的记录（_month_stats/_streak 读 store 原文，报表层口径以覆盖为准）
+    apply_overrides(recent)
+
     # --- 每个游戏的连胜与本月统计 ---
     stats: List[Dict[str, Any]] = []
     for game in games:
@@ -755,6 +848,21 @@ def month_grid(
             "future": future,
             "games": cells,
         })
+
+    # 手动补录覆盖叠加（2026-11-14 用户裁决：报表全行可长按修正），
+    # 依据最终格重算当月统计——补录的日子进 done/missed 而不是 nodata
+    apply_overrides(rows)
+    tally = {g: {"done": 0, "missed": 0} for g in games}
+    for row in rows:
+        if row["future"]:
+            continue
+        for g in games:
+            cell = row["games"][g]
+            if cell.get("known"):
+                tally[g]["done" if cell["finished"] else "missed"] += 1
+            elif (cell.get("checks") or 0) > 0:
+                tally[g].setdefault("nodata", 0)
+                tally[g]["nodata"] += 1
 
     game_stats = [{
         "game": game,

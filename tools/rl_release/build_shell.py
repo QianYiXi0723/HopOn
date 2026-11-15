@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """重编译 C# 壳：dotnet publish shell -> shell/publish。
 
-先统一 csproj 的 <Version> 到 2.1.0（原来停在 1.2.0）。
+csproj <Version> 从 core/__init__.py 的 __version__ 动态同步（2026-11-15
+修复：原硬编码 2.1.0——版本演进后每次编译都把 csproj 打回旧版，触发
+_build_release 的版本一致性闸，打包死循环）。
 """
 import re
 import subprocess
@@ -12,13 +14,19 @@ ROOT = Path(r"E:\Apps\HopOn")
 CSPROJ = ROOT / "shell" / "HopOn.csproj"
 DOTNET = Path(r"C:\Program Files\dotnet\dotnet.exe")
 
+VERSION = re.search(
+    r'^__version__\s*=\s*"([^"]+)"',
+    (ROOT / "core" / "__init__.py").read_text(encoding="utf-8"),
+    re.M,
+).group(1)
+
 text = CSPROJ.read_text(encoding="utf-8")
-new, n = re.subn(r"<Version>[^<]*</Version>", "<Version>2.1.0</Version>", text)
+new, n = re.subn(r"<Version>[^<]*</Version>", f"<Version>{VERSION}</Version>", text)
 if n != 1:
     print("[WARN] <Version> 替换命中 %d 次" % n)
 else:
     CSPROJ.write_text(new, encoding="utf-8", newline="")
-    print("csproj Version -> 2.1.0")
+    print(f"csproj Version -> {VERSION}")
 
 print("=== dotnet publish ===")
 proc = subprocess.run(

@@ -18,14 +18,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from core import netutil
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +167,7 @@ def check(*, force: bool = False) -> UpdateInfo:
     channel = "github"
     try:
         req = urllib.request.Request(RELEASES_API, headers=headers)
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        with netutil.urlopen_with_fallback(req, timeout=TIMEOUT) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001 - 主渠道断网/限流走备用
         gh_err = str(exc)[:200]
@@ -175,7 +179,7 @@ def check(*, force: bool = False) -> UpdateInfo:
             req = urllib.request.Request(
                 GITEE_RELEASES_API,
                 headers={"User-Agent": "HopOn/%s" % cur})
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            with netutil.urlopen_with_fallback(req, timeout=TIMEOUT) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
             channel = "gitee"
         except Exception as exc:  # noqa: BLE001 - 两通道都断才算失败
@@ -272,3 +276,235 @@ def peek() -> Optional[Dict[str, Any]]:
     if not cached:
         return None
     return _info_from_cache(cached, current_version()).to_dict()
+
+
+# --------------------------------------------------------------------------- #
+# 站内下载 + 校验（2026-11-15，#20 第一步落地）：
+#   引擎侧流式下载 Release 资产 → SHA-256 校验 → 引导用户双击安装。
+#   通道实测（2026-11-15）：Gitee 直连 14.6MB @ 1.9MB/s；GitHub 能通但
+#   931B/s——主通道 Gitee，GitHub 备用。不自动安装：装/换血是 #20 的
+#   后续独立能力，v1 只负责「包到本地且校验通过」。
+# --------------------------------------------------------------------------- #
+
+#: 下载根目录（用户数据根下，用户可在文件管理器里找到）
+DOWNLOAD_DIR_NAME = "downloads"
+#: 空闲超时（秒）：连续这么久没收到数据才判死——慢下载可以跑很久
+IDLE_TIMEOUT = 20
+#: 磁盘剩余空间粗检阈值（MB）：低于此值直接拒绝
+MIN_FREE_MB = 300
+#: 通道顺序：实测 Gitee 快且稳
+DL_CHANNELS = ("gitee", "github")
+
+_download_lock = threading.Lock()
+_download_job: Optional[Dict[str, Any]] = None   # 当前任务（单任务锁）
+
+
+def download_dir(version: str) -> Path:
+    from core.paths import user_root
+
+    return user_root() / "data" / DOWNLOAD_DIR_NAME / ("v" + str(version).lstrip("vV"))
+
+
+def _asset_urls(tag: str, asset: str) -> List[str]:
+    """按通道顺序给出资产直连 URL（Gitee 优先）。tag 不带 v 前缀也统一补。"""
+    tag = "v" + str(tag).lstrip("vV")
+    return [
+        f"https://gitee.com/qianyixi/HopOn/releases/download/{tag}/{asset}",
+        f"https://github.com/QianYiXi0723/HopOn/releases/download/{tag}/{asset}",
+    ]
+
+
+def _sums_urls(tag: str) -> List[str]:
+    tag = "v" + str(tag).lstrip("vV")
+    return [
+        f"https://gitee.com/qianyixi/HopOn/releases/download/{tag}/SHA256SUMS.txt",
+        f"https://github.com/QianYiXi0723/HopOn/releases/download/{tag}/SHA256SUMS.txt",
+    ]
+
+
+def _free_mb(path: Path) -> int:
+    import shutil
+
+    try:
+        return int(shutil.disk_usage(str(path.parent)).free / 1048576)
+    except OSError:
+        return MIN_FREE_MB  # 读不到就不拦
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        while True:
+            chunk = fh.read(1048576)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _verify_sums(pkg: Path, tag: str, asset: str) -> Dict[str, Any]:
+    """拉同渠道 SHA256SUMS.txt 校验包。返回 {ok, message}。
+
+    官方规范：校验失败即丢弃；哈希与包同渠道不混用。
+    """
+    import urllib.request
+
+    expected = ""
+    last_err = ""
+    for url in _sums_urls(tag):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "HopOn/%s" % current_version()})
+            with netutil.urlopen_with_fallback(req, timeout=TIMEOUT) as resp:
+                text = resp.read().decode("utf-8", errors="replace")
+            for line in text.splitlines():
+                parts = line.split()
+                if len(parts) >= 2 and parts[1].strip("*") == asset:
+                    expected = parts[0].lower()
+                    break
+            if expected:
+                break
+        except Exception as exc:  # noqa: BLE001 - 单通道失败试下一个
+            last_err = str(exc)[:150]
+    if not expected:
+        return {"ok": False, "message": "校验清单（SHA256SUMS.txt）拉取失败：%s" % (last_err or "未找到该资产的记录")}
+    actual = _sha256_file(pkg)
+    if actual != expected:
+        return {"ok": False, "message": "SHA-256 校验不匹配——包可能损坏，已丢弃（预期 %s…，实际 %s…）" % (expected[:12], actual[:12])}
+    return {"ok": True, "message": "SHA-256 校验通过"}
+
+
+def start_download(version: str, asset: str) -> Dict[str, Any]:
+    """发起一次站内下载（单任务锁；已有任务在跑则拒绝）。
+
+    立即返回，下载在后台线程跑；进度查 :func:`download_status`。
+    """
+    global _download_job
+    asset = str(asset or "").strip()
+    # 白名单：只允许主包形态，文件名取 basename 防路径注入
+    if not re.fullmatch(r"[\w.\-]+\.(exe|zip)", asset, re.IGNORECASE):
+        return {"ok": False, "message": "不支持的资产类型（只收 Setup.exe / zip 主包）"}
+    version = str(version or "").strip().lstrip("vV")
+    if not version:
+        return {"ok": False, "message": "缺少版本号"}
+    with _download_lock:
+        if _download_job and _download_job.get("stage") in ("downloading", "verify"):
+            return {"ok": False, "message": "已有下载任务在进行（%s）" % _download_job.get("asset", "")}
+        target_dir = download_dir(version)
+        pkg = target_dir / asset
+        if pkg.exists():
+            # 已有本地包：直接走校验（快路径，不重复下载）
+            job = {
+                "stage": "verify", "version": version, "asset": asset,
+                "bytes": pkg.stat().st_size, "total": pkg.stat().st_size,
+                "speed": 0, "file": str(pkg), "sha_ok": None, "message": "本地已有此包，直接校验",
+                "_cancel": False,
+            }
+            _download_job = job
+            threading.Thread(target=_finish_job, args=(job, pkg, version, asset),
+                             daemon=True, name="update-verify").start()
+            return {"ok": True, "message": "本地已有此包，直接校验", "existed": True}
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return {"ok": False, "message": "创建下载目录失败：%s" % exc}
+        if _free_mb(target_dir) < MIN_FREE_MB:
+            return {"ok": False, "message": "磁盘剩余空间不足 %dMB，拒绝下载" % MIN_FREE_MB}
+        job = {
+            "stage": "downloading", "version": version, "asset": asset,
+            "bytes": 0, "total": 0, "speed": 0, "file": str(pkg),
+            "sha_ok": None, "message": "连接下载源…", "_cancel": False,
+        }
+        _download_job = job
+        threading.Thread(target=_download_worker, args=(job, pkg, version, asset),
+                         daemon=True, name="update-download").start()
+        return {"ok": True, "message": "开始下载 %s" % asset}
+
+
+def _download_worker(job: Dict[str, Any], pkg: Path, version: str, asset: str) -> None:
+    """后台下载线程：流式写盘+进度回写+空闲超时（学 MFAAvalonia
+    DownloadStreamCopier：限空闲不限总时长；长度完整性断言）。"""
+    global _download_job
+    import urllib.request
+
+    urls = _asset_urls(version, asset)
+    last_err = ""
+    for i, url in enumerate(urls):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "HopOn/%s" % current_version()})
+            with netutil.urlopen_with_fallback(req, timeout=TIMEOUT) as resp:
+                total = int(resp.headers.get("Content-Length") or 0)
+                job["total"] = total
+                t0 = time.time()
+                got = 0
+                with open(str(pkg) + ".part", "wb") as fh:
+                    while True:
+                        if job.get("_cancel"):
+                            fh.close()
+                            try:
+                                os.remove(str(pkg) + ".part")
+                            except OSError:
+                                pass
+                            job["stage"] = "error"
+                            job["message"] = "已取消"
+                            return
+                        chunk = resp.read(262144)
+                        if not chunk:
+                            break
+                        fh.write(chunk)
+                        got += len(chunk)
+                        job["bytes"] = got
+                        elapsed = max(0.001, time.time() - t0)
+                        job["speed"] = int(got / elapsed)
+                        job["message"] = "下载中（%s）" % ("Gitee" if i == 0 else "GitHub")
+            if got == 0 or (total and got != total):
+                raise IOError("下载不完整：预期 %s，实际 %s 字节" % (total or "?", got))
+            os.replace(str(pkg) + ".part", pkg)
+            _finish_job(job, pkg, version, asset)
+            return
+        except Exception as exc:  # noqa: BLE001 - 换通道重试
+            last_err = str(exc)[:200]
+            logger.debug("[update] 下载 %s 通道失败：%s", url.split("/")[2], exc)
+            try:
+                os.remove(str(pkg) + ".part")
+            except OSError:
+                pass
+            if job.get("_cancel"):
+                job["stage"] = "error"
+                job["message"] = "已取消"
+                return
+    job["stage"] = "error"
+    job["message"] = "下载失败（Gitee 与 GitHub 均不可达）：%s" % last_err
+
+
+def _finish_job(job: Dict[str, Any], pkg: Path, version: str, asset: str) -> None:
+    """下载完成后：SHA-256 校验（同渠道 SUMS）→ 终态。"""
+    global _download_job
+    with _download_lock:
+        job["stage"] = "verify"
+        job["message"] = "校验 SHA-256…"
+        verdict = _verify_sums(pkg, version, asset)
+        job["sha_ok"] = verdict["ok"]
+        job["message"] = verdict["message"]
+        if not verdict["ok"]:
+            try:
+                pkg.unlink()   # 校验失败即丢弃（官方规范）
+            except OSError:
+                pass
+        job["stage"] = "done" if verdict["ok"] else "error"
+
+
+def download_status() -> Dict[str, Any]:
+    """当前下载任务状态（无任务=stage idle）。"""
+    with _download_lock:
+        if not _download_job:
+            return {"stage": "idle", "ok": True}
+        return {k: v for k, v in _download_job.items() if not k.startswith("_")}
+
+
+def cancel_download() -> Dict[str, Any]:
+    global _download_job
+    with _download_lock:
+        if not _download_job or _download_job.get("stage") not in ("downloading", "verify"):
+            return {"ok": False, "message": "没有进行中的下载任务"}
+        _download_job["_cancel"] = True
+        return {"ok": True, "message": "正在取消…"}

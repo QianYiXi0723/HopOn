@@ -1568,8 +1568,8 @@ class ActivityTierAlert:
     每档**终身只推一次**；迟过越线（停机跨过整档窗口）的档在下次巡检当场
     补发一次——「只早不迟：迟到走补发」的用户裁决。旧「每日可重复」结束
     提醒由三段取代：每活动最多三条，防轰炸从源头收敛。
-    文案按动作节点分层（模仿航班值机/证书到期阶梯）：规划=安排时间、
-    行动=今天该打、召回=马上就没了。
+    文案按动作节点分层（模仿航班值机/证书到期阶梯）：规划=提前安排、
+    冲刺=剩最后一天、抢救=最后几小时。
     """
 
     game_id: str
@@ -1594,14 +1594,14 @@ class ActivityTierAlert:
 
     def warn_line(self) -> str:
         left = self._left_text()
+        # 档位序号不进推送（2026-11-13 用户裁决）；行动语只在真正需要动手的
+        # 档保留——规划档批量出现时同款尾巴重复三遍很难读
         if self.tier == 1:
-            return (f"🗓️ 活动规划：{self.game_name}{self._shown()} 约 {left}后结束"
-                    f"（第 1 档·规划），安排好时间")
+            return f"🗓️ 活动规划：{self.game_name}{self._shown()} 约 {left}后结束"
         if self.tier == 2:
-            return (f"⏳ 活动行动：{self.game_name}{self._shown()} 约 {left}后结束"
-                    f"（第 2 档·行动），今天该打了")
-        return (f"🔔 最后冲刺：{self.game_name}{self._shown()} 仅剩约 {left}"
-                f"（第 3 档·冲刺），想拿奖励抓紧了")
+            return f"⏳ 活动冲刺：{self.game_name}{self._shown()} 约 {left}后结束"
+        return (f"🔔 最后抢救：{self.game_name}{self._shown()} 仅剩约 {left}"
+                f"，想拿奖励抓紧了")
 
 
 def pending_deadline_alerts(

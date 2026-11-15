@@ -101,6 +101,7 @@ APP_VERSION = "2.102.1"
 # 那会让所有用户共用同一台设备。现在 OAID 每次分配身份时随机生成，
 # device_oaid.txt 不再读取（留着也不会生效）。
 
+from core import netutil
 from core.paths import user_root
 
 #: logs/ 目录：设备身份、指纹缓存与真机档案都放这里，不进版本库
@@ -1033,12 +1034,12 @@ def generate_fp(
     }
     try:
         requests = _import_requests()
-        response = requests.post(
-            DEVICE_FP_URL,
+        response = netutil.http_post(DEVICE_FP_URL,
             json=payload,
             headers={"User-Agent": USER_AGENT},
             proxies=_proxies(),
             timeout=REQUEST_TIMEOUT,
+        requests_module=requests,
         )
         body = response.json() if response.status_code == 200 else {}
     except Exception as exc:
@@ -1323,12 +1324,12 @@ def device_login_and_save(
     results: Dict[str, Any] = {}
     for key, url in (("login", DEVICE_LOGIN_URL), ("save", SAVE_DEVICE_URL)):
         try:
-            resp = requests.post(
-                url,
+            resp = netutil.http_post(url,
                 data=body_text.encode("utf-8"),
                 headers=headers,
                 proxies=_proxies(),
                 timeout=REQUEST_TIMEOUT,
+            requests_module=requests,
             )
             payload = resp.json()
         except Exception as exc:
@@ -1547,12 +1548,12 @@ def _daily_note_once(
     """发一次便笺请求；retcode != 0 抛 _RetcodeError（带 retcode 供重试判断）。"""
     requests = _import_requests()
     try:
-        response = requests.get(
-            url,
+        response = netutil.http_get(url,
             params=params,
             headers=headers,
             proxies=_proxies(),
             timeout=REQUEST_TIMEOUT,
+        requests_module=requests,
         )
     except Exception as exc:  # 连接失败、超时、DNS、代理不可用等网络层异常
         raise MiyousheQueryError(f"网络请求失败：{exc}") from exc

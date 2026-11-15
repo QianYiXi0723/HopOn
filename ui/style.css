@@ -59,6 +59,9 @@
   .brand{display:flex;align-items:center;gap:8px;padding:4px 12px 14px}
   .logo{width:26px;height:26px;border-radius:4px;background:var(--brand);color:#fff;
         display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}
+  /* 跨游戏合成卡的卡头图标：复用侧栏 logo 视觉（蓝底 H） */
+  .act-icon.act-logo{width:24px;height:24px;border-radius:6px;background:var(--brand);
+    color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px}
   .brand b{display:block;font-size:15px;line-height:1.2}
   .brand span{font-size:12px;color:var(--muted)}
   .nav{display:flex;flex-direction:column;gap:6px}
@@ -91,7 +94,14 @@
   .foot-ico .ico{width:14px;height:14px}
   .foot-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .main{flex:1;min-width:0;width:100%;padding:24px 32px;
-        display:flex;flex-direction:column;min-height:0;overflow-y:auto}
+        display:flex;flex-direction:column;min-height:0;overflow-y:auto;
+        scrollbar-gutter:stable}
+  /* 主滚动条常显（WebView2 默认覆盖式=悬停才现形，小窗等于没有）：
+     10px 细条，内容不满一屏自动消失 */
+  .main::-webkit-scrollbar{width:10px}
+  .main::-webkit-scrollbar-track{background:transparent}
+  .main::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px}
+  .main::-webkit-scrollbar-thumb:hover{background:var(--muted)}
   @media (max-width:760px){
     .app-body{flex-direction:column}
     .side{width:100%;flex-direction:row;align-items:center}
@@ -250,6 +260,9 @@
   .btn:hover{background:var(--btn-hover)}
   .btn.primary{background:var(--brand);color:#fff}
   .btn.primary:hover{background:var(--brand-hover)}
+  .btn.btn-danger{background:var(--err,#e06055);border-color:var(--err,#e06055);color:#fff}
+  .btn.btn-danger:hover{filter:brightness(1.1)}
+  .btn.btn-danger:disabled{opacity:.5;cursor:not-allowed}
   .btn.sm{height:30px;padding:0 12px;font-size:12px}
   .btn:disabled{opacity:.45;cursor:not-allowed}
   .mini{padding:4px 10px;font-size:12px;border-radius:4px;border:none;
@@ -405,6 +418,8 @@
             display:flex;align-items:center;justify-content:center;
             background:var(--btn-bg);color:var(--muted);
             border:1px solid var(--line);border-radius:4px;cursor:pointer}
+  .spin-btn .spin-ico{width:12px;height:12px}
+  .spin-btn .spin-ico.up{transform:rotate(180deg)}
   .spin-btn:hover{background:var(--btn-hover);color:var(--brand)}
   .spin-btn:active{transform:translateY(1px)}
   /* 添加时间点确认弹窗：大号时间 + ▲▼ 微调 */
@@ -473,11 +488,11 @@
      收纳态朝左（◀）、展开态朝下（▼）。
      基础三角用 border 画成「朝下」；CSS 正角度是**顺时针**，所以朝下转
      +90° 才指向左边（转 -90° 是顺时针反向＝指向右边，曾据此写错一次）。 */
-  .set-head::after{content:"";width:0;height:0;flex:none;margin-left:2px;
-    border-left:4.5px solid transparent;border-right:4.5px solid transparent;
-    border-top:5.5px solid var(--muted);transition:transform .15s ease;
-    transform:rotate(90deg)}
-  .set-item[open] > .set-head::after{transform:rotate(0deg)}
+  /* 抽屉箭头：细线 chevron（行业惯例），收起 › / 展开 ⌄，150ms 旋转 */
+  .set-head::after{content:"";width:8px;height:8px;flex:none;margin-left:2px;
+    border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);
+    transition:transform .15s ease;transform:rotate(-45deg)}
+  .set-item[open] > .set-head::after{transform:rotate(45deg)}
   .set-body{padding:12px 16px 16px}
   /* 纯介绍型行（2026-11-06）：无抽屉体的设置退化为纯开关行——
      说明收进标题旁问号悬浮。箭头隐形占位（visibility 不清布局）：
@@ -512,11 +527,10 @@
   details.card > summary.card-head::-webkit-details-marker{display:none}
   details.card > summary.card-head:hover{background:var(--hover)}
   /* 箭头：沿用抽屉三角语义（收纳 ◀ / 展开 ▼，见 set-head::after 同款写法） */
-  details.card > summary.card-head::after{content:"";width:0;height:0;flex:none;margin-left:2px;
-    border-left:4.5px solid transparent;border-right:4.5px solid transparent;
-    border-top:5.5px solid var(--muted);transition:transform .15s ease;
-    transform:rotate(90deg)}
-  details.card[open] > summary.card-head::after{transform:rotate(0deg)}
+  details.card > summary.card-head::after{content:"";width:8px;height:8px;flex:none;margin-left:2px;
+    border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);
+    transition:transform .15s ease;transform:rotate(-45deg)}
+  details.card[open] > summary.card-head::after{transform:rotate(45deg)}
   /* 收起时卡头圆角四面收齐（否则底部两角是直的，看起来像被切掉） */
   details.card:not([open]) > summary.card-head{border-radius:8px}
   /* 卡体：与 .card-body 同内边距，但不需要吃掉高度 */
@@ -863,7 +877,13 @@
   .apk-qr{display:inline-block;padding:6px;background:#fff;
           border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
   .apk-qr img{width:126px;height:126px;display:block}
-  .apk-meta{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5;word-break:break-all}
+  .apk-meta{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6;
+    word-break:break-all;display:flex;flex-direction:column;gap:4px;align-items:center}
+  .apk-file{display:flex;align-items:baseline;gap:8px}
+  .apk-file b{font-size:13px;color:var(--fg)}
+  .apk-hint{color:var(--fg)}
+  .apk-url{font-family:ui-monospace,Consolas,monospace;font-size:11px;
+    color:var(--muted);opacity:.75}
   /* 代码粘贴框：等宽字体 + 内阴影质感 */
   .dev-text{width:100%;min-height:132px;padding:10px 16px;border-radius:8px;
     border:none;background:var(--bg-input);color:var(--fg);
@@ -944,6 +964,12 @@
   .act-time.t-on{color:var(--text-secondary)}
   .act-time.t-end{color:var(--text-tertiary)}
   /* 合并组卡（2026-11-05）：成员小字清单 + 「N 项同止」角标 */
+  /* 「等 N 项」可点按钮（承接原 N 项同止角标的展开功能）：
+     虚线下划线暗示可点，hover 变实 */
+  .act-count-toggle{border:none;background:transparent;color:inherit;
+    font:inherit;font-size:inherit;padding:0 0 1px;cursor:pointer;
+    border-bottom:1px dashed currentColor;opacity:.75;white-space:nowrap}
+  .act-count-toggle:hover{opacity:1;border-bottom-style:solid}
   .act-merged{font-size:12px;line-height:1.55;color:var(--text-secondary);
     margin-top:6px;display:none;gap:4px;min-width:0;
     /* 成员清单默认隐藏（点「N 项同止」展开），展开态给足可读高度滚动 */
@@ -951,10 +977,13 @@
   /* 展开的成员清单 = 卡片下方浮层（绝对定位，不推挤网格行）——
      统一 180 行高与可读展开两全 */
   .acard.mopen{z-index:5}
-  .acard.mopen .act-merged{display:grid;position:absolute;top:100%;left:0;right:0;
-    z-index:10;max-height:180px;overflow-y:auto;scrollbar-width:thin;
-    background:var(--bg-raise);border:1px solid var(--line);border-radius:8px;
-    box-shadow:var(--card-shadow);padding:8px 10px;margin-top:2px}
+  .act-count-wrap{display:inline-flex;align-items:baseline}
+  .act-count-anchor{position:relative;display:inline-block}
+  /* 成员浮层：锚在「等 N 项」正下方（任意 N 通用，宽度贴内容） */
+  .acard.mopen .act-merged{display:grid;position:fixed;
+    min-width:200px;max-width:420px;z-index:60;max-height:180px;overflow-y:auto;
+    scrollbar-width:thin;background:var(--bg-raise);border:1px solid var(--line);
+    border-radius:8px;box-shadow:var(--card-shadow);padding:8px 10px}
   .act-merged-toggle{cursor:pointer}
   .act-mrow{display:flex;align-items:center;gap:8px;min-width:0;min-height:19px}
   .act-mrow .mt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
@@ -1035,11 +1064,15 @@
   .gcard-ico{width:40px;height:40px;border-radius:8px;object-fit:cover;flex:none}
   .gcard-daily{display:flex;align-items:center;gap:6px;min-height:20px;
                font-size:12px;overflow:hidden}
+  /* 手动卡底行：模式文字居左、打卡钮居右，按钮中线与文字行对齐 */
+  .dl-gcard .gcard-daily{justify-content:space-between}
   /* 日常进度条行：与体力条同形态（名称 + 条 + N/N），小窗一行一任务 */
   .gcard-task{display:flex;align-items:center;gap:8px;font-size:12px;min-width:0}
-  .gcard-task .dim{flex:none}
+  /* 标签/计数双定宽：任务名最长 5 字（每日活跃度）、计数最长 7 字（400/400），
+     两端对齐后所有卡片的进度条起止位置一致（2026-11-14 用户裁决） */
+  .gcard-task .dim{flex:none;width:5.5em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .gcard-task .sbar{flex:1 1 auto;min-width:40px}
-  .gcard-task .mono{flex:none;color:var(--fg)}
+  .gcard-task .mono{flex:none;min-width:7ch;text-align:right;color:var(--fg)}
   .gcard-ico.ph{display:grid;place-items:center;background:var(--subtle);
     color:var(--muted);font-size:16px}
   .gcard-name{flex:1;min-width:0}
@@ -1086,14 +1119,36 @@
   .heatmap{display:flex;flex-direction:column;gap:8px;width:100%;
            flex:1 0 auto;min-height:min-content;
            background:var(--bg-sub);border-radius:8px;padding:10px}
+  /* 行多时纵向滚动（GitHub 范式：格子定尺寸不压缩）；表头吸顶。
+     限高必须落在**行间隙**（10+22+6×44+6×8+10=346）：切在格子中间会造出
+     「视觉露 8px、hit-test 全在裁剪区外」的死格——长按/点击全穿透（实锤）。 */
+  /* 卡片数据到达闪光：950ms 提亮渐隐（2026-11-14 用户裁决恢复） */
+  .rl-flash{animation:rl-flash .95s ease}
+  @keyframes rl-flash{from{filter:brightness(1.35)}to{filter:brightness(1)}}
+  .hm-scroll{max-height:346px;overflow-y:auto;border-radius:8px}
+  .hm-scroll .heatmap{border-radius:0}
   .hm-row{display:grid;grid-template-columns:150px repeat(7,1fr);gap:8px;min-width:0;
-          flex:1 1 auto;min-height:38px}
-  .hm-row.hm-head{flex:0 0 auto}   /* 表头保持紧凑，不参与纵向拉伸 */
+          flex:0 0 auto;height:44px}   /* 行高固定 44px，不拉伸不压缩 */
+  .hm-row.hm-head{flex:0 0 auto;height:auto;position:sticky;top:0;z-index:2;
+          background:var(--bg-sub)}   /* 表头吸顶，滚动能看到今天是几号 */
   @media (max-width:760px){ .hm-row{grid-template-columns:96px repeat(7,1fr)} }
   .hm-label{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;
     min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .hm-cell{min-height:38px;border-radius:4px;display:flex;align-items:center;
+  .hm-cell{height:44px;border-radius:4px;display:flex;align-items:center;
     justify-content:center;font-size:12px;font-weight:600;min-width:0}
+  /* 可长按补录的手动格：果冻 hover（Discord 图标三件套——缩放+圆角 morph
+     + overshoot 贝塞尔回弹），按住时压得更深；title 兜底触屏。
+     位置纪律：必须在全局区——曾误入 1099 媒体块导致最大化窗口整个无效 */
+  .hm-cell.editable,.mc-day.editable{cursor:pointer;
+    transition:transform .28s cubic-bezier(.175,.885,.32,1.275),
+               border-radius .28s cubic-bezier(.175,.885,.32,1.275),
+               filter .18s ease}
+  .hm-cell.editable:hover,.mc-day.editable:hover{
+    transform:scale(.92);border-radius:12px;filter:brightness(1.08)}
+  .hm-cell.editable:active,.mc-day.editable:active{transform:scale(.88)}
+  .hm-cell.dl-pressing,.mc-day.dl-pressing{
+    transform:scale(.85)!important;filter:brightness(1.2)}
+  .hm-cell.blank{visibility:hidden}   /* 非计划日：占位保对齐，整格隐形 */
   .hm-head .hm-cell{background:transparent;min-height:22px;font-weight:400;
     font-size:12px;color:var(--muted)}
   .hm-head .hm-cell.today{color:var(--brand);font-weight:700}
@@ -1107,8 +1162,8 @@
     var(--hover) 0 4px, transparent 4px 8px);color:var(--muted)}
   .hm-legend{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);
     margin-top:8px;flex-wrap:wrap;padding:0 10px}
-  .hm-legend .hm-cell{min-height:18px;min-width:20px;padding:0 6px;font-size:12px;
-    flex:0 0 auto}
+  .hm-legend .hm-cell{height:18px;min-height:18px;min-width:20px;padding:0 6px;
+    font-size:12px;flex:0 0 auto}
 
   /* ---------- 通知绑定三区（邮箱客户端式） ----------
      第 1 行三卡拉伸吃满视口，最近推送整行贴底 —— 消灭右下黑色空洞 */
@@ -1317,6 +1372,35 @@
      否则弹窗被拦腰截断（标题竖排折行、统计居中成一坨，2026-11-06 实测） */
   .modal--month{width:min(420px,94vw);max-width:min(420px,94vw);text-align:left}
   .modal--month .modal-head b{white-space:nowrap}
+
+  /* ---------- 发现新版本弹窗（2026-11-15 双渠道版） ----------
+     同月报弹窗纪律：宽度/text-align 必须双特异性压过 .modal 基础 420px 居中 */
+  .modal.modal--update{width:min(500px,94vw);max-width:min(500px,94vw);text-align:left}
+  .upd-cur{font-size:12px;color:var(--subtle);margin:-2px 0 8px}
+  .upd-notes{white-space:pre-wrap;word-break:break-word;font:12px/1.6 inherit;
+             background:var(--bg-sub);border-radius:6px;padding:10px 12px;
+             max-height:180px;overflow-y:auto;margin:0 0 10px;color:var(--fg)}
+  .upd-src-title{font-size:12px;color:var(--subtle);margin-bottom:6px}
+  .upd-src{display:flex;gap:8px}
+  .upd-btn{flex:1;display:flex;flex-direction:column;gap:2px;align-items:center;
+           justify-content:center;padding:10px 8px;border-radius:8px;
+           background:var(--bg-sub);border:none;text-decoration:none;
+           transition:background .15s}
+  .upd-btn:hover{background:var(--btn-hover)}
+  .upd-btn b{font-size:13px;color:var(--fg)}
+  .upd-src-sub{font-size:11px;color:var(--subtle)}
+  .upd-pkg{font-size:11px;color:var(--subtle);margin-top:8px;text-align:center;
+           white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* 站内下载区：按钮→进度→完成三态切换 */
+  .upd-dl{margin-top:10px;border-top:1px solid var(--bg-sub);padding-top:10px}
+  .upd-dl-btn{width:100%}
+  .upd-dl-prog{padding:2px 0}
+  .upd-dl-bar{height:8px;border-radius:4px;background:var(--bg-sub);overflow:hidden}
+  .upd-dl-bar i{display:block;height:100%;width:0;border-radius:4px;
+                background:var(--accent-blue);transition:width .3s}
+  .upd-dl-txt{font-size:11px;color:var(--subtle);margin-top:4px;text-align:center}
+  .upd-dl-done{display:flex;align-items:center;justify-content:center;gap:10px}
+  .upd-dl-ok{font-size:12px;font-weight:600;color:#3fb972}
   .month-toolbar{display:flex;align-items:center;gap:10px;margin:-6px 0 12px}
   .month-nav{display:flex;gap:4px}
   .month-nav .btn{min-width:34px;padding:4px 10px;font-weight:700}
@@ -1493,6 +1577,10 @@
   .bgr-unit{flex:none;color:var(--muted);font-size:13px}
   /* 后台刷新·风险弹窗 */
   .modal--bgrisk{max-width:480px}
+  .modal--bgrisk .row3{grid-template-columns:1fr 1fr}   /* 取消/确认平分 */
+  .modal--dlfix .row3{grid-template-columns:1fr 1fr}    /* 取消/确认平分 */
+  .modal--dlfix{max-width:360px}
+
   .bgrisk-body p{margin:6px 0}
   .bgrisk-body ul{margin:6px 0 2px;padding-left:18px;display:flex;
     flex-direction:column;gap:6px;color:var(--fg)}

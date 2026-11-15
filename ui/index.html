@@ -19,6 +19,7 @@
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3.2 1.9"/></symbol>
   <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 10.5h16"/></symbol>
   <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M5.5 9l6.5 6.5L18.5 9" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2.5L5.5 13.5H11l-1 8 7.5-11H12l1-8z"/></symbol>
   <symbol id="i-gift" viewBox="0 0 24 24"><rect x="4" y="11.5" width="16" height="8.5" rx="1.5"/><path d="M3.5 8h17v3.5h-17z"/><path d="M12 8v12"/><path d="M12 8c-4.2 0-5-4-2.4-4C11.5 4 12 8 12 8zm0 0c4.2 0 5-4 2.4-4C12.5 4 12 8 12 8z"/></symbol>
   <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="16" r="4"/><path d="M11 13L20 4M16 8l3 3M13.5 10.5l1.8 1.8"/></symbol>
@@ -86,7 +87,7 @@
   <div class="kpi-bar" id="kpi-bar">
     <div class="kpi card primary">
       <div class="kpi-label">今日完成
-        <span class="q" data-tip="按今天最近一次巡检结果统计；查询失败与待上线更新都不计为未完成"></span></div>
+        <span class="q" data-tip="游戏巡检 + 手动打卡的今日完成；周计划项只在其计划日计入；查询失败与待上线更新都不计为未完成"></span></div>
       <div class="kpi-value value" id="k-today">–</div>
       <div class="kpi-sub" id="k-today-sub">等待巡检数据</div>
     </div>
@@ -103,7 +104,7 @@
     </div>
     <div class="kpi card">
       <div class="kpi-label">体力临满
-        <span class="q" data-tip="体力达到 85% 以上的游戏数；在「信息查询」里查询后更新"></span></div>
+        <span class="q" data-tip="体力达到预警阈值的游戏数；阈值在「定时与状态」页的「体力溢出提醒」里调整，查询后在「信息查询」更新"></span></div>
       <div class="kpi-value value" id="k-resin">–</div>
       <div class="kpi-sub" id="k-resin-sub">查询后显示</div>
     </div>
@@ -142,7 +143,6 @@
           <button type="button" class="btn sm" id="h-month-entry" style="height:24px"
                   title="打开整月月历（热力 / 分游戏）">每月报表</button>
         </h2>
-        <span class="q" data-tip="绿色 = 当天完成，红色 = 查过但未完成，灰 = 当天未运行或未查到"></span>
         <span class="spacer"></span>
       </div>
       <div id="h-table"></div>
@@ -334,10 +334,10 @@
                   <div class="apk-meta" id="apk-meta"></div>
                 </div>
                 <div class="hint" style="margin-top:10px">
-                  手机扫不出？（校园网隔离 / 手机在流量）改用任一方式：
-                  <a href="https://gitee.com/qianyixi/HopOn/releases" target="_blank" rel="noopener">Gitee Releases 下载「设备信息.apk」</a>（国内免梯，选最新版本）；
-                  或电脑端 <a href="#" onclick="openApkFolder(); return false">打开 apk 所在文件夹</a> 传给手机。
-                  本机缺失时下载服务会自动从最新版本补一份。
+                  手机扫不出？（校园网隔离 / 手机在流量）：直接在手机浏览器打开
+                  <a href="https://gitee.com/qianyixi/HopOn/releases" target="_blank" rel="noopener">gitee.com/qianyixi/HopOn/releases</a>
+                  下载「设备信息.apk」（免梯，任意版本的都通用）；或电脑端
+                  <a href="#" onclick="openApkFolder(); return false">打开 apk 所在文件夹</a> 传给手机。
                 </div>
               </div>
               <div class="dev-right">
@@ -559,8 +559,8 @@
         <div class="row3 has-spin">
           <input type="time" id="d-new-time" value="22:00" step="60">
           <div class="spin">
-            <button type="button" class="spin-btn" id="btn-time-up" title="+1 分钟">▲</button>
-            <button type="button" class="spin-btn" id="btn-time-down" title="-1 分钟">▼</button>
+            <button type="button" class="spin-btn" id="btn-time-up" title="+1 分钟"><svg class="ico spin-ico up"><use href="#i-chev"/></svg></button>
+            <button type="button" class="spin-btn" id="btn-time-down" title="-1 分钟"><svg class="ico spin-ico"><use href="#i-chev"/></svg></button>
           </div>
           <button id="btn-add-time" class="btn">添加</button>
         </div>
@@ -583,7 +583,6 @@
       <div class="card-head card__header">
         <h2><svg class="ico"><use href="#i-gear"/></svg> 开机与提醒行为</h2>
         <span class="spacer"></span>
-        <span class="q" data-tip="点击任意一行展开详细设置"></span>
       </div>
       <div class="card__body">
         <div class="rule-list">
@@ -642,7 +641,7 @@
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-history"/></svg></i>
                 <span class="set-txt"><b>后台静默刷新
-                  <span class="q" data-tip="不用打开软件，自动帮你更新体力面板：默认米游社/库街区系每 60 分钟、森空岛系每 180 分钟，也可以给某一款单独设。自动刷新只更新面板数字，不会影响日常完成记录和报表；哪款游戏弹出人机验证或拒绝查询，就自动停几小时不去碰它"></span></b>
+                  <span class="q" data-tip="不用打开软件，自动帮你更新体力面板；不影响日常记录和报表"></span></b>
                 </span>
               </span>
               <span class="set-sum" id="sum-bgrefresh">读取中…</span>
@@ -652,9 +651,6 @@
             </summary>
             <div class="set-body">
               <div id="bg-refresh-grid" class="bgr-grid"></div>
-              <div class="row3" style="margin-top:10px">
-                <button type="button" class="btn" id="btn-bgrefresh-save">保存每款设置</button>
-              </div>
             </div>
           </details>
 
@@ -704,7 +700,9 @@
           <details class="set-item" id="acc-activity">
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-hourglass"/></svg></i>
-                <span class="set-txt"><b>活动结束提醒</b></span>
+                <span class="set-txt"><b>活动结束提醒
+                  <span class="q" data-tip="结束前按三段各推一条（每档只推一次，填 -1 关闭该档）；「提前 N 天」= 日历卡片提前多少天开始亮「即将结束」角标"></span></b>
+                </span>
               </span>
               <span class="set-sum" id="sum-activity"></span>
               <span class="set-end">
@@ -722,15 +720,14 @@
                 <label class="unit-field"><span class="u-pre">规划</span>
                   <input type="number" id="activity-tier-1" min="-1" max="2160" step="1"
                          inputmode="numeric" placeholder="72"><span class="u-suf">时</span></label>
-                <label class="unit-field"><span class="u-pre">行动</span>
+                <label class="unit-field"><span class="u-pre">冲刺</span>
                   <input type="number" id="activity-tier-2" min="-1" max="2160" step="1"
                          inputmode="numeric" placeholder="24"><span class="u-suf">时</span></label>
-                <label class="unit-field"><span class="u-pre">冲刺</span>
+                <label class="unit-field"><span class="u-pre">抢救</span>
                   <input type="number" id="activity-tier-3" min="-1" max="2160" step="1"
                          inputmode="numeric" placeholder="6"><span class="u-suf">时</span></label>
                 <button id="btn-activity-tiers" class="btn">保存三段</button>
               </div>
-              <div class="hint">每档只推一次，-1 关闭；「提前天数」只控徽章显示窗。</div>
             </div>
           </details>
 
@@ -839,24 +836,78 @@
     <!-- ======== 月报下钻（2026-11-06）：徽章点击 → 整月月历 ======== -->
     <!-- ======== 月报下钻（2026-11-06）：徽章点击 → 整月月历 ======== -->
     <!-- 手动打卡：新增/编辑弹窗（必须放 .app / 所有 tabpanel 之外） -->
+    <!-- 发现新版本弹窗（2026-11-15 双渠道版）：公告 + 下载途径选择。
+         必须放所有 tabpanel 之外（859 行同款纪律：嵌进 tab 里其它页签下
+         整棵子树 display:none，fixed 也逃不出）。数据全部来自 /api/update
+         现有字段，零后端改动；Mirror酱接入后加第三个渠道按钮（需 CDK） -->
+    <div class="modal-mask" id="update-modal" hidden>
+      <div class="modal modal--update">
+        <div class="modal-head">
+          <b>发现新版本 <span id="upd-latest"></span></b>
+          <button type="button" class="modal-x" onclick="closeUpdateModal()" title="关闭">✕</button>
+        </div>
+        <div class="upd-cur" id="upd-cur"></div>
+        <pre class="upd-notes" id="upd-notes" hidden></pre>
+        <div class="upd-src-title">下载途径</div>
+        <div class="upd-src">
+          <a class="upd-btn" href="https://github.com/QianYiXi0723/HopOn/releases/latest" target="_blank" rel="noopener">
+            <b>GitHub Releases</b>
+            <span class="upd-src-sub">主渠道</span>
+          </a>
+          <a class="upd-btn" href="https://gitee.com/qianyixi/HopOn/releases/latest" target="_blank" rel="noopener">
+            <b>Gitee 镜像</b>
+            <span class="upd-src-sub">国内免梯</span>
+          </a>
+        </div>
+        <div class="upd-pkg" id="upd-pkg"></div>
+        <!-- 站内下载（2026-11-15）：引擎代理下载+SHA-256 校验，完成态引导安装 -->
+        <div class="upd-dl" id="upd-dl">
+          <button type="button" class="btn primary upd-dl-btn" id="upd-dl-btn">下载到本机（校验后安装）</button>
+          <div class="upd-dl-prog" id="upd-dl-prog" hidden>
+            <div class="upd-dl-bar"><i id="upd-dl-fill"></i></div>
+            <div class="upd-dl-txt" id="upd-dl-txt"></div>
+          </div>
+          <div class="upd-dl-done" id="upd-dl-done" hidden>
+            <span class="upd-dl-ok">✓ 校验通过</span>
+            <button type="button" class="btn sm" id="upd-dl-open">打开文件夹安装</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-mask" id="dlfix-modal" hidden>
+      <div class="modal modal--dlfix">
+        <div class="modal-head">
+          <b>修改打卡记录</b>
+          <span class="spacer"></span>
+          <button type="button" class="modal-x" id="dlfix-x" title="关闭">✕</button>
+        </div>
+        <div class="dlfix-body">
+          <p id="dlfix-text">—</p>
+        </div>
+        <div class="row3">
+          <button type="button" class="btn" id="dlfix-cancel">取消</button>
+          <button type="button" class="btn btn-danger" id="dlfix-ok">确认修改</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-mask" id="bgrisk-modal" hidden>
       <div class="modal modal--bgrisk">
         <div class="modal-head">
           <b>修改刷新频率前请阅读</b>
           <span class="spacer"></span>
-          <button type="button" class="modal-x" id="bgrisk-x" title="关闭" disabled>✕</button>
+          <button type="button" class="modal-x" id="bgrisk-x" title="关闭">✕</button>
         </div>
         <div class="bgrisk-body">
-          <p>查得越勤，游戏平台就越容易起疑心：</p>
+          <p>查询间隔越短，越容易被平台判定为异常操作。</p>
           <ul>
-            <li>米游社系（原神/星铁/绝区零/崩3）：可能弹人机验证或暂时拒绝查询，一般几分钟到 6 小时自己恢复</li>
-            <li>森空岛系（明日方舟/终末地）：查太勤会让登录凭证直接失效，得重新扫码绑定</li>
-            <li>极端高频有账号被限制使用的风险。HopOn 发现异常会自动停几小时不再查询——这能降低风险，但不能保证不出事</li>
+            <li>可能要求人机验证，或让登录凭证失效，需要重新扫码绑定</li>
+            <li>出现上述情况时，这款游戏会自动暂停查询几小时</li>
           </ul>
+          <p>建议保持默认间隔。若调整后账号出现上述情况，需等待冷却结束再自行处理，与 HopOn 无关。</p>
         </div>
         <div class="row3">
-          <button type="button" class="btn" id="bgrisk-cancel" disabled>取消（5s）</button>
-          <button type="button" class="btn" id="bgrisk-ok" disabled>确认保存（5s）</button>
+          <button type="button" class="btn" id="bgrisk-cancel">取消</button>
+          <button type="button" class="btn btn-danger" id="bgrisk-ok" disabled>确认修改（5s）</button>
         </div>
       </div>
     </div>
@@ -940,12 +991,12 @@
     </div>
     <div class="addtime-body">
       <div class="addtime-stepper">
-        <button type="button" class="spin-btn big" id="addtime-down" title="-1 分钟">▼</button>
+        <button type="button" class="spin-btn big" id="addtime-down" title="-1 分钟"><svg class="ico spin-ico"><use href="#i-chev"/></svg></button>
         <input type="time" id="addtime-val" class="addtime-val" value="22:00" step="60"
                aria-label="提醒时间">
-        <button type="button" class="spin-btn big" id="addtime-up" title="+1 分钟">▲</button>
+        <button type="button" class="spin-btn big" id="addtime-up" title="+1 分钟"><svg class="ico spin-ico up"><use href="#i-chev"/></svg></button>
       </div>
-      <div class="hint" id="addtime-hint">可直接输入时间；点 ▲▼ 调 1 分钟，长按连续调整（10 分钟 / 1 小时）</div>
+      <div class="hint" id="addtime-hint">可直接输入时间；点箭头调 1 分钟，长按连续调整（10 分钟 / 1 小时）</div>
     </div>
     <div class="toolbar" style="justify-content:flex-end">
       <button class="btn" id="addtime-cancel">取消</button>

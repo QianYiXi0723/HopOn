@@ -3,10 +3,16 @@
 const PANEL_NAMES = ['history', 'query', 'account', 'schedule'];
 let schedTimer = null;
 
-let activeTab = 'history';   // 当前页签（数据轮询的闸门：只轮询可见页）
+/* 当前页签（数据轮询的闸门：只轮询可见页）。
+   F5 记忆（2026-11-14 用户裁决）：刷新回到离开时的页面，localStorage 持久化 */
+let activeTab = (function() {
+  const saved = localStorage.getItem('rl-tab');
+  return ['history', 'query', 'account', 'schedule'].indexOf(saved) >= 0 ? saved : 'history';
+})();
 
 function switchTab(name){
   activeTab = name;
+  localStorage.setItem('rl-tab', name);
   PANEL_NAMES.forEach(function(k){
     const panel = document.getElementById('tab-' + k);
     if (panel) {
@@ -34,6 +40,7 @@ function stopSchedPoll(){
 document.querySelectorAll('.nav button[data-tab]').forEach(function(btn){
   btn.addEventListener('click', function(){ switchTab(this.dataset.tab); });
 });
+
 
 document.addEventListener('click', function(e){
   /* 点击高亮：点卡片/折叠框加 .active（蓝描边），点其它卡片时切换。
@@ -500,6 +507,7 @@ document.addEventListener('keydown', function(e){
   if (e.key !== 'Escape') return;
   if (!document.getElementById('dev-modal').hidden) { closeDev(); return; }
   if (!document.getElementById('pick-modal').hidden) { closePick(); return; }
+  if (!document.getElementById('update-modal').hidden) { closeUpdateModal(); return; }
   if (!document.getElementById('stage').hidden) reset();
 });
 /* 遮罩点击关闭：pick/dev/addtime（关闭均无副作用）；stage 例外——
@@ -510,6 +518,7 @@ document.querySelectorAll('.modal-mask').forEach(function(mask){
     if (e.target !== mask) return;
     if (mask.id === 'pick-modal') closePick();
     else if (mask.id === 'dev-modal') closeDev();
+    else if (mask.id === 'update-modal') closeUpdateModal();
     else if (mask.id === 'addtime-modal') rlCloseAddTime();
   });
 });
@@ -604,9 +613,9 @@ function checkUpdate(){
         return;
       }
       if (d.has_update) {
-        // 有新版：toast 带版本与下载指引（下载仍走 GitHub/Gitee，双渠道）
-        toast('发现新版本 v' + d.latest + '！当前 v' + d.current + '，打开下载页', false);
-        if (d.url) window.open(d.url, '_blank');
+        // 有新版：弹窗展示公告+双下载渠道（2026-11-15，替代旧 toast+直跳——
+        // 学习 MFAAvalonia 公告范式 + MirrorChyan 官方「无 url 落回原有源」规范）
+        openUpdateModal(d);
       } else {
         /* 文案以服务端为准（2026-11-13）：Gitee 备用通道数据落后时是
            「无法确认」而不是「已最新」，不能在前端硬编码掩盖 */
@@ -620,6 +629,113 @@ function checkUpdate(){
     });
 }
 document.getElementById('ver-line').addEventListener('click', checkUpdate);
+
+/* 发现新版本弹窗（2026-11-15 双渠道版）：公告+下载途径选择。
+   数据来自 /api/update 现有字段（notes/assets），零后端改动；
+   渠道按钮写死两仓 releases/latest 页——不依赖检查通道（Gitee 通道
+   检查成功时 d.url 指向 Gitee，写死才两边都稳）；Mirror酱接入后
+   在此加第三个渠道按钮。公告轻剥 markdown 符号（井号标题、星号加粗、
+   反引号），纯文本展示——MFAAvalonia 的 Markdown 渲染器是完整公告
+   系统才需要 */
+function openUpdateModal(d){
+  window.__updateInfo = d;
+  updDlReset();   // 下载区三态复位（上次任务的状态不残留）
+  document.getElementById('upd-latest').textContent = 'v' + d.latest;
+  document.getElementById('upd-cur').textContent =
+    '当前 v' + d.current + (d.published_at ? (' · 发布于 ' + String(d.published_at).slice(0, 10)) : '');
+  const notes = String(d.notes || '')
+    .replace(/^#{1,6}\s*/gm, '').replace(/\*\*|`/g, '').trim();
+  const box = document.getElementById('upd-notes');
+  box.textContent = notes || '（本次更新暂无说明）';
+  box.hidden = !notes;
+  const pkgs = (d.assets || []).filter(function(a){
+    const n = String(a.name || '').toLowerCase();
+    return /\.(exe|zip)$/.test(n);
+  }).map(function(a){
+    return String(a.name || '') + ' ' + ((a.size || 0) / 1048576).toFixed(1) + 'MB';
+  });
+  document.getElementById('upd-pkg').textContent =
+    pkgs.length ? ('包含 ' + pkgs.join('　·　')) : '';
+  document.getElementById('update-modal').hidden = false;
+}
+function closeUpdateModal(){
+  document.getElementById('update-modal').hidden = true;
+  updDlReset();   // 关弹窗停轮询（下载任务在后端继续跑也不刷 UI）
+}
+
+/* 站内下载按钮绑定（addEventListener 纪律；元素在全局弹窗区，页面加载即存在） */
+(function(){
+  const btn = document.getElementById('upd-dl-btn');
+  const open = document.getElementById('upd-dl-open');
+  if (btn) btn.addEventListener('click', updDlStart);
+  if (open) open.addEventListener('click', function(){
+    fetch('/api/update/open-folder').then(function(r){ return r.json(); }).then(function(d){
+      if (d && !d.ok) toast(d.error || '打开失败', true);
+    }).catch(function(){ toast('无法连接本地服务', true); });
+  });
+})();
+
+/* 站内下载（2026-11-15）：引擎代理下载+SHA-256 校验+引导安装。
+   通道实测：Gitee 直连 14.6MB@1.9MB/s（主），GitHub 慢（备）——
+   通道顺序在后端 _asset_urls。三态 UI：按钮→进度→完成。
+   不自动安装：装/换血是 #20 后续能力，v1 只保证「包到本地且校验通过」 */
+let _updDlTimer = null;
+function updDlReset(){
+  if (_updDlTimer) { clearTimeout(_updDlTimer); _updDlTimer = null; }
+  document.getElementById('upd-dl-btn').hidden = false;
+  document.getElementById('upd-dl-prog').hidden = true;
+  document.getElementById('upd-dl-done').hidden = true;
+}
+function updDlPick(){
+  const d = window.__updateInfo || {};
+  const pkg = (d.assets || []).find(function(a){
+    return /\.exe$/i.test(String(a.name || ''));
+  }) || { name: 'HopOn_v' + d.latest + '_Setup.exe' };
+  return { version: d.latest, asset: pkg.name };
+}
+function updDlStart(){
+  const pick = updDlPick();
+  updDlReset();
+  document.getElementById('upd-dl-btn').hidden = true;
+  document.getElementById('upd-dl-prog').hidden = false;
+  document.getElementById('upd-dl-fill').style.width = '0%';
+  document.getElementById('upd-dl-txt').textContent = '发起下载…';
+  postJSON('/api/update/download', pick).then(function(d){
+    if (!d || !d.ok) {
+      updDlReset();
+      toast((d && d.message) || '下载发起失败', true);
+      return;
+    }
+    updDlPoll();
+  }).catch(function(){ updDlReset(); toast('无法连接本地服务', true); });
+}
+function updDlPoll(){
+  fetch('/api/update/download').then(function(r){ return r.json(); }).then(function(d){
+    const st = d.stage || 'idle';
+    const fill = document.getElementById('upd-dl-fill');
+    const txt = document.getElementById('upd-dl-txt');
+    if (st === 'downloading') {
+      const pct = d.total ? Math.min(100, Math.round(d.bytes / d.total * 100)) : 0;
+      fill.style.width = pct + '%';
+      txt.textContent = (d.message || '下载中') + ' ' + pct + '% · ' +
+        ((d.speed || 0) / 1048576).toFixed(1) + 'MB/s';
+      _updDlTimer = setTimeout(updDlPoll, 500);
+    } else if (st === 'verify') {
+      fill.style.width = '100%';
+      txt.textContent = d.message || '校验 SHA-256…';
+      _updDlTimer = setTimeout(updDlPoll, 500);
+    } else if (st === 'done' && d.sha_ok) {
+      document.getElementById('upd-dl-prog').hidden = true;
+      document.getElementById('upd-dl-btn').hidden = true;   // 完成态收起按钮，防重复点击
+      document.getElementById('upd-dl-done').hidden = false;
+    } else if (st === 'error') {
+      updDlReset();
+      toast(d.message || '下载失败', true);
+    } else {
+      _updDlTimer = setTimeout(updDlPoll, 800);
+    }
+  }).catch(function(){ _updDlTimer = setTimeout(updDlPoll, 1200); });
+}
 
 function refreshNotice(){
   fetch('/api/env').then(function(r){ return r.json(); }).then(function(d){
@@ -682,8 +798,11 @@ function renderDevice(d){
     qrBox.querySelector('img').src = 'data:image/png;base64,' + apk.qr;
     let shown = apk.url;
     try { shown = decodeURIComponent(apk.url); } catch (e) {}
-    meta.innerHTML = escHtml(apk.name) + '（' + escHtml(apk.size_text) + '）<br>' + escHtml(shown) +
-      (apk.warning ? '<br><span class="warn-t">⚠ ' + escHtml(apk.warning) + '</span>' : '');
+    meta.innerHTML =
+      '<div class="apk-file"><b>' + escHtml(apk.name) + '</b>' +
+      (apk.size_text ? '<span class="dim">' + escHtml(apk.size_text) + '</span>' : '') + '</div>' +
+      '<div class="apk-hint">扫码打开 Gitee 下载页，选最新版本下载</div>' +
+      '<div class="apk-url mono">' + escHtml(shown) + '</div>';
   } else {
     qrBox.innerHTML =
       '<div style="padding:10px 8px;text-align:center">' +
@@ -698,26 +817,31 @@ function renderDevice(d){
 
 async function restartApkService(){
   const btn = document.getElementById('btn-apk-retry');
-  if (btn) { btn.disabled = true; btn.textContent = '重试中…'; }
+  if (btn) { btn.disabled = true; btn.textContent = '生成中…'; }
   try {
-    const d = await postJSON('/api/apk/restart', {});
+    const d = await postJSON('/api/settings', {});
+    const apk = d.apk || {};
     const box = document.getElementById('apk-qr');
     const meta = document.getElementById('apk-meta');
-    if (d.available && d.qr) {
+    if (apk.available && apk.qr) {
       box.innerHTML = '<img alt="APK 下载二维码">';
-      box.querySelector('img').src = 'data:image/png;base64,' + d.qr;
-      let shown = d.url;
-      try { shown = decodeURIComponent(d.url); } catch (e) {}
-      meta.innerHTML = escHtml(d.name) + '（' + escHtml(d.size_text) + '）<br>' + escHtml(shown);
-      toast('下载服务已就绪，端口 ' + d.port);
+      box.querySelector('img').src = 'data:image/png;base64,' + apk.qr;
+      let shown = apk.url;
+      try { shown = decodeURIComponent(apk.url); } catch (e) {}
+      meta.innerHTML =
+        '<div class="apk-file"><b>' + escHtml(apk.name) + '</b>' +
+        (apk.size_text ? '<span class="dim">' + escHtml(apk.size_text) + '</span>' : '') + '</div>' +
+        '<div class="apk-hint">扫码打开 Gitee 下载页，选最新版本下载</div>' +
+        '<div class="apk-url mono">' + escHtml(shown) + '</div>';
+      toast('二维码已更新');
     } else {
       if (btn) { btn.disabled = false; btn.textContent = '生成下载二维码'; }
-      meta.innerHTML = '<span class="warn-t">' + escHtml(d.message || '仍然不可用') + '</span>';
-      toast('仍然不可用：' + (d.message || ''), true);
+      meta.innerHTML = '<span class="warn-t">' + escHtml(apk.message || '二维码不可用') + '</span>';
+      toast('生成失败：' + (apk.message || ''), true);
     }
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = '生成下载二维码'; }
-    toast('重启失败：' + e.message, true);
+    toast('生成失败：' + e.message, true);
   }
 }
 
@@ -1308,10 +1432,12 @@ const BGR_ORDER = ['genshin', 'starrail', 'zzz', 'arknights', 'endfield', 'wuwa'
 const BGR_DEFAULT = { genshin: 60, starrail: 60, zzz: 60, bh3: 60,
   wuwa: 60, pgr: 60, arknights: 180, endfield: 180 };
 let bgrOverrides = {};
+let bgrLastPayload = null;   // 最近一次服务端渲染载荷（取消时还原行状态用）
 
 function renderBgRefresh(d){
   const enabled = (d && d.bg_refresh_enabled !== false);
   bgrOverrides = (d && d.bg_refresh_overrides) || {};
+  if (d) bgrLastPayload = d;
   const box = document.getElementById('bg-refresh-toggle');
   if (box) box.checked = enabled;
   const item = document.getElementById('acc-bgrefresh');
@@ -1357,74 +1483,102 @@ async function toggleBgRefresh(){
 }
 document.getElementById('bg-refresh-toggle').addEventListener('change', toggleBgRefresh);
 
-/* 每款设置：行内改动只暂存，点保存才提交——提交前弹风险告知（5 秒阅读门） */
+/* 每款设置：开启或改间隔=增加查询 → 立即弹风险告知（5 秒门只锁确认）；
+   关闭=降低风险，直接落盘不弹窗（2026-11-13 用户裁决） */
 document.getElementById('bg-refresh-grid').addEventListener('change', function(e){
   const row = e.target.closest('.bgr-row');
   if (!row) return;
-  const on = row.querySelector('.bgr-on');
-  const min = row.querySelector('.bgr-min');
-  if (e.target === on) {
-    row.classList.toggle('is-off', !on.checked);
-    min.disabled = !on.checked;
-  }
-  if (e.target === min) {
-    let v = parseInt(min.value, 10);
+  const gid = e.target.dataset.game;
+  if (!gid) return;
+  if (e.target.classList.contains('bgr-on')) {
+    row.classList.toggle('is-off', !e.target.checked);
+    row.querySelector('.bgr-min').disabled = !e.target.checked;
+    const merged = mergedOverrides(gid, {
+      enabled: e.target.checked,
+      interval: clampBgrMin(row.querySelector('.bgr-min').value),
+    });
+    if (e.target.checked) {
+      askBgrisk(merged);   // 开启=增加查询，弹窗
+    } else {
+      saveBgOverrides(merged);   // 关闭=降低风险，静默落盘
+    }
+  } else if (e.target.classList.contains('bgr-min')) {
+    let v = parseInt(e.target.value, 10);
     if (isNaN(v) || v < 5) v = 5;
     if (v > 1440) v = 1440;
-    min.value = v;
+    e.target.value = v;
+    const merged = mergedOverrides(gid, {
+      enabled: row.querySelector('.bgr-on').checked,
+      interval: v,
+    });
+    askBgrisk(merged);   // 改间隔=改查询频率，弹窗
   }
 });
+
+async function saveBgOverrides(merged){
+  try {
+    const d = await postJSON('/api/bg_refresh', {
+      enabled: document.getElementById('bg-refresh-toggle').checked,
+      overrides: merged,
+    });
+    if (!d.ok) { toast(d.message || '保存失败', true); return; }
+    renderBgRefresh(d);
+  } catch (e) {
+    toast('保存失败：' + e, true);
+  }
+}
+
+function clampBgrMin(v){
+  let n = parseInt(v, 10);
+  if (isNaN(n) || n < 5) n = 5;
+  if (n > 1440) n = 1440;
+  return n;
+}
+
+function mergedOverrides(gid, change){
+  const out = {};
+  Object.keys(bgrOverrides).forEach(function(g){
+    out[g] = Object.assign({}, bgrOverrides[g]);
+  });
+  out[gid] = Object.assign({}, out[gid] || {}, change);
+  return out;
+}
 
 let bgrPending = null;   // 待保存的 overrides（弹窗确认后提交）
 let bgrLeft = 0;         // 阅读门倒计时（>0 期间弹窗不可关）
 
-function openBgriskModal(pending){
-  bgrPending = pending;
+let bgrTimer = null;
+
+function askBgrisk(merged){
+  bgrPending = merged;
   bgrLeft = 5;
+  if (bgrTimer) clearInterval(bgrTimer);
   document.getElementById('bgrisk-modal').hidden = false;
-  const cancel = document.getElementById('bgrisk-cancel');
   const ok = document.getElementById('bgrisk-ok');
-  const x = document.getElementById('bgrisk-x');
-  cancel.disabled = ok.disabled = x.disabled = true;
-  cancel.textContent = '取消（5s）'; ok.textContent = '确认保存（5s）';
+  /* 5s 阅读门只锁「确认修改」；取消/✕/遮罩随时可关（2026-11-13 用户裁决） */
+  ok.disabled = true;
+  ok.textContent = '确认修改（5s）';
   const timer = setInterval(function(){
     bgrLeft -= 1;
     if (bgrLeft > 0) {
-      cancel.textContent = '取消（' + bgrLeft + 's）';
-      ok.textContent = '确认保存（' + bgrLeft + 's）';
+      ok.textContent = '确认修改（' + bgrLeft + 's）';
       return;
     }
     clearInterval(timer);
-    cancel.disabled = ok.disabled = x.disabled = false;
-    cancel.textContent = '取消'; ok.textContent = '确认保存';
+    bgrTimer = null;
+    ok.disabled = false;
+    ok.textContent = '确认修改';
   }, 1000);
+  bgrTimer = timer;
 }
 
-function closeBgriskModal(){
+function closeBgriskModal(revert){
+  if (bgrTimer) { clearInterval(bgrTimer); bgrTimer = null; }
   bgrLeft = 0;
   document.getElementById('bgrisk-modal').hidden = true;
   bgrPending = null;
+  if (revert) renderBgRefresh(bgrLastPayload || {});   // 取消=还原行状态
 }
-
-document.getElementById('btn-bgrefresh-save').addEventListener('click', function(){
-  const staged = {};
-  document.querySelectorAll('#bg-refresh-grid .bgr-row').forEach(function(row){
-    const gid = row.querySelector('.bgr-on').dataset.game;
-    let v = parseInt(row.querySelector('.bgr-min').value, 10);
-    if (isNaN(v) || v < 5) v = 5;
-    if (v > 1440) v = 1440;
-    staged[gid] = { enabled: row.querySelector('.bgr-on').checked, interval: v };
-  });
-  const changed = BGR_ORDER.some(function(gid){
-    if (!staged[gid]) return false;   // 未启用游戏没有行，不参与对比
-    const cur = bgrOverrides[gid] || {};
-    const curOn = cur.enabled !== false;
-    const curMin = cur.interval || BGR_DEFAULT[gid] || 60;
-    return staged[gid].enabled !== curOn || staged[gid].interval !== curMin;
-  });
-  if (!changed) { toast('没有改动'); return; }
-  openBgriskModal(staged);
-});
 
 document.getElementById('bgrisk-ok').addEventListener('click', async function(){
   if (bgrLeft > 0 || !bgrPending) return;
@@ -1436,7 +1590,7 @@ document.getElementById('bgrisk-ok').addEventListener('click', async function(){
       overrides: bgrPending,
     });
     if (!d.ok) { toast(d.message || '保存失败', true); return; }
-    closeBgriskModal();
+    closeBgriskModal(false);
     renderBgRefresh(d);
     toast('已保存');
   } catch (e) {
@@ -1446,19 +1600,18 @@ document.getElementById('bgrisk-ok').addEventListener('click', async function(){
   }
 });
 document.getElementById('bgrisk-cancel').addEventListener('click', function(){
-  if (bgrLeft > 0) return;   // 阅读门内不可关
-  closeBgriskModal();
+  closeBgriskModal(true);
 });
 document.getElementById('bgrisk-x').addEventListener('click', function(){
-  if (bgrLeft > 0) return;
-  closeBgriskModal();
+  closeBgriskModal(true);
 });
 document.getElementById('bgrisk-modal').addEventListener('click', function(e){
-  if (e.target === this && bgrLeft <= 0) closeBgriskModal();   // 点遮罩关闭（阅读门内不行）
+  if (e.target === this) closeBgriskModal(true);
 });
 document.addEventListener('keydown', function(e){
-  if (e.key === 'Escape' && !document.getElementById('bgrisk-modal').hidden
-      && bgrLeft <= 0) closeBgriskModal();
+  if (e.key === 'Escape' && !document.getElementById('bgrisk-modal').hidden) {
+    closeBgriskModal(true);
+  }
 });
 
 /* 活动结束提醒：config.app.activity_alert_enabled / activity_alert_days /
@@ -1830,9 +1983,12 @@ function renderManualGroup(){
   const box = document.getElementById('manual-group');
   if (!box) return;
   const items = dlState.items || [];
-  if (!items.length) { box.hidden = true; box.innerHTML = ''; return; }
+  /* 非计划日（周计划没勾今天）的项不进概览卡（2026-11-13 用户裁决：
+     还没到星期四就不显示）；planned_today 由后端按逐项 reset 时刻算好 */
+  const shown = items.filter(function(it){ return it.planned_today !== false; });
+  if (!shown.length) { box.hidden = true; box.innerHTML = ''; return; }
   box.hidden = false;
-  box.innerHTML = '<div class="gcards">' + items.map(function(it){
+  box.innerHTML = '<div class="gcards">' + shown.map(function(it){
     const done = !!it.done_today;
     const first = (it.name || '?').trim().charAt(0) || '?';
     const modeTxt = it.mode === 'standalone'
@@ -1845,15 +2001,18 @@ function renderManualGroup(){
       '<div class="gcard-head">' +
         '<span class="gcard-ico ph">' + escHtml(first) + '</span>' +
         '<div class="gcard-name"><b>' + escHtml(it.name) + '</b></div>' +
-        '<button type="button" class="dl-toggle' + (done ? ' done' : '') +
-        '" data-id="' + escHtml(it.id) + '" title="点击勾掉/恢复今日">' +
-        (done ? '✓ 已打卡' : '打卡') + '</button>' +
         '<div class="gcard-streak"><b class="value">' + Number(it.streak || 0) +
         '</b><small>连续天数</small></div>' +
       '</div>' +
       /* 二值状态没有「进度」可言（2026-11-12 用户裁）：去伪进度条，
          底行只留模式文字——完成态由打卡钮颜色表达 */
-      '<div class="gcard-daily"><span class="dim">' + escHtml(modeTxt) + '</span></div>' +
+      /* 打卡钮在底行右端（2026-11-14 用户裁决）：与「每天」行中线对齐，
+         不贴角——卡片自身 padding 即空隙 */
+      '<div class="gcard-daily"><span class="dim">' + escHtml(modeTxt) + '</span>' +
+        '<button type="button" class="dl-toggle' + (done ? ' done' : '') +
+        '" data-id="' + escHtml(it.id) + '" title="点击勾掉/恢复今日">' +
+        (done ? '✓ 已打卡' : '打卡') + '</button>' +
+      '</div>' +
       '</div>';
   }).join('');
 }
@@ -2250,7 +2409,7 @@ function rlSelect(t){
   const input = document.getElementById('d-new-time');
   if (input) input.value = t;
   rlPaintSel();
-  toast('已选中 ' + t + '：▲▼ 微调 1 分钟，或左右拖动圆点');
+  toast('已选中 ' + t + '：点箭头微调 1 分钟，或左右拖动圆点');
 }
 
 /* 拖动圆点改时间。24 小时铺在 ~600px 上，1px≈2.4 分钟，不做吸附就会每个像素乱跳，
@@ -2942,6 +3101,10 @@ function fillCapIcons(){
 fillCapIcons();
 
 function actIconHtml(it){
+  /* 跨游戏合成卡：图标 = HopOn logo（蓝底 H 方块），不再冒充首个游戏 */
+  if (it.cross_game) {
+    return '<span class="act-icon act-logo">H</span>';
+  }
   const base = GAME_ICON[it.game];
   if (!base) {
     return '<span class="act-icon ph">' +
@@ -2989,7 +3152,7 @@ function actCardHtml(it, isHero, heroSlim){
   const prog = actProgHtml(it);
   /* 三段段位标记（2026-11-11 #9，与英雄卡关联）：已设档位显示「档名+阈值」，
      已推的打勾，-1 档显「关」——数据全部来自后端 payload，前端零推算 */
-  const tierNames = {1: '规划', 2: '行动', 3: '冲刺'};
+  const tierNames = {1: '规划', 2: '冲刺', 3: '抢救'};
   const tierBadge = (function(){
     const set = Array.isArray(it.tiers_set) ? it.tiers_set : [];
     if (!set.some(function(t){ return t >= 0; })) return '';
@@ -3016,9 +3179,7 @@ function actCardHtml(it, isHero, heroSlim){
       }).join('') + '</div>'
     : '';
   const delBtn = it.merged
-    ? '<button type="button" class="act-merged-tag act-merged-toggle" onclick="toggleMergedMembers(this)" title="展开成员列表，可分别删除">' +
-      it.merged.length + ' 项同止</button>' +
-      '<button type="button" class="act-del-g" onclick="deleteMergedActivity(this)" data-del-merged="' +
+    ? '<button type="button" class="act-del act-del-g" onclick="deleteMergedActivity(this)" data-del-merged="' +
       escHtml((it.merged_ids || []).join(',')) + '" title="整组删除，之后这 ' +
       it.merged.length + ' 项都不再提醒">×</button>'
     : '<button type="button" class="act-del" data-del="' + id +
@@ -3028,16 +3189,23 @@ function actCardHtml(it, isHero, heroSlim){
     : '';
   return '<div class="card acard' + (isHero && !heroSlim ? ' hero' : '') + '"' +
     actUrgencyAttr(it, isHero) + ' data-id="' + id + '"' + memberTip +
-    ' style="--gc:' + gameDotColor(it.game) + '">' +
+    ' style="--gc:' + (it.cross_game ? 'var(--brand)' : gameDotColor(it.game)) + '">' +
     '<div class="acard-top"><span class="act-game">' + actIconHtml(it) +
       '<span class="act-name">' + escHtml(it.game_name) + '</span></span>' +
       delBtn + '</div>' +
-    '<div class="acard-title"><span class="acard-title-txt" title="' + escHtml(it.title) + '">' + escHtml(it.title) + '</span>' + reward + '</div>' +
+    '<div class="acard-title"><span class="acard-title-txt" title="' + escHtml(it.title) + '">' +
+      (it.merged && it.merged.length > 1
+        ? '<span class="act-count-wrap">' +
+          escHtml(String(it.title).replace(/ 等 \d+ 项$/, '')) +
+          '<span class="act-count-anchor">' +
+          '<button type="button" class="act-count-toggle" onclick="toggleMergedMembers(this)"' +
+          ' title="展开/收起成员列表，可分别删除">等 ' + it.merged.length + ' 项</button>' +
+          mergedList + '</span></span>'
+        : escHtml(it.title)) + '</span>' + reward + '</div>' +
     '<div class="act-time ' + timeCls + '">始 ' + (st || '时间待定') +
       (en ? ' · 止 ' + en : '') + '</div>' +
     '<div class="act-cd ' + cdCls + '">' + escHtml(it.countdown || '') + '</div>' +
     tierBadge +
-    mergedList +
     prog +
     '</div>';
 }
@@ -3075,14 +3243,24 @@ function buildMergedItem(members){
       if (t && rewards.indexOf(t) < 0) rewards.push(t);
     });
   });
+  var gameSet = [];
+  members.forEach(function(x){
+    if (x.game && gameSet.indexOf(x.game) < 0) gameSet.push(x.game);
+  });
   return Object.assign({}, first, {
     id: 'merged:' + members.map(function(x){ return x.id || ''; }).join('|'),
+    cross_game: gameSet.length > 1,
     title: (first.title || '') + ' 等 ' + members.length + ' 项',
     reward: rewards.join('、'),
     progress: '',
     merged: members.map(function(x){
-      /* 跨游戏合并时成员带游戏名前缀（同游戏的重复前缀无意义不加） */
+      /* 跨游戏合并：所有成员都带游戏名前缀（第一个成员也不例外——
+         卡头图标已是 HopOn logo，成员行不标游戏名就无从归属，用户实证）；
+         同游戏合并维持原逻辑（重复前缀无意义不加） */
       var t = x.title || '';
+      if (gameSet.length > 1) {
+        return (x.game_name ? x.game_name + ' ' : '') + t;
+      }
       return (x.game_name && x.game_name !== first.game_name ? x.game_name + ' ' : '') + t;
     }),
     merged_ids: members.map(function(x){ return x.id || ''; }),
@@ -3138,12 +3316,21 @@ function renderActivities(d){
     const upcoming = items.filter(function(x){ return x.group === 'upcoming'; });
     const finished = items.filter(function(x){ return x.status === '已完成'; });
     const hlOf = function(x){ const h = +x.hours_left; return h > 0 ? h : Infinity; };
-    /* 显示排序 = 唯一裁决（2026-11-05 英雄卡三改）：hours_left 升序 →
-       平局「有内容可展示」的卡排前（英雄给谁一目了然，不再依赖后端返回序）
-       → 再平局标题 zh 序。英雄 = 排序后 pool 的第一张，最紧急 = 视觉第一。 */
+    /* 显示排序（2026-11-14 用户裁决改版）：
+       主键 = hours_left **向上取整到小时**——差 1 秒的两个活动显示粒度相同，
+       按秒决出英雄位等于掷硬币（用户实证：绝区零 03:59:59 vs 星铁 04:00:00）；
+       并列 → **未做完优先**（英雄卡=最该打的活动：进度打满的卡降位，
+       无进度的合并卡按未做对待）；再平 → 「有内容可展示」优先 → 标题 zh 序。 */
+    const hlCeil = function(x){ const h = +x.hours_left; return h > 0 ? Math.ceil(h) : Infinity; };
+    const isActDone = function(x){
+      const m = String(x.progress || '').match(/(\d+)\s*\/\s*(\d+)/);
+      return !!(m && +m[2] > 0 && +m[1] >= +m[2]);
+    };
     const byUrgency = function(a, b){
-      const diff = hlOf(a) - hlOf(b);
+      const diff = hlCeil(a) - hlCeil(b);
       if (diff) return diff;
+      const da = isActDone(a) ? 1 : 0, db = isActDone(b) ? 1 : 0;
+      if (da !== db) return da - db;
       const ra = actHasContent(a) ? 1 : 0, rb = actHasContent(b) ? 1 : 0;
       if (ra !== rb) return rb - ra;
       return String(a.title || '').localeCompare(String(b.title || ''), 'zh');
@@ -3154,10 +3341,13 @@ function renderActivities(d){
     const mergeBuckets = {};
     const mergedOngoing = [];
     ongoing.forEach(function(x){
-      /* 合并桶不带游戏维度（2026-11-09 用户需求）：不同游戏同截止也并成
-         一张特殊合并卡；成员行带游戏名前缀防混 */
-      const bucket = (x.ending_soon && (+x.hours_left || 0) <= winH)
-        ? 'm:' + String(x.end || '') : null;
+      /* 合并桶（2026-11-09 用户需求 + 2026-11-14 用户实证修订）：
+         不带游戏维度 + **小时粒度分桶**——按精确 end 秒级分桶会让
+         03:59:59 vs 04:00:00 这种 1 秒差「并列」活动分家（用户实证：
+         星铁支配遗忘没并入绝区零+原神合并卡）。同一小时内到期并成一卡。 */
+      const h = (+x.hours_left || 0);
+      const bucket = (x.ending_soon && h <= winH)
+        ? 'm:' + Math.max(1, Math.ceil(h)) : null;
       if (!bucket) { mergedOngoing.push(x); return; }
       (mergeBuckets[bucket] = mergeBuckets[bucket] || []).push(x);
     });
@@ -3197,7 +3387,9 @@ function renderActivities(d){
       groups.sort(function(a, b){ return a.mins - b.mins; });
 
       if (groups.length) {
-        html = (heroIt ? actCardHtml(heroIt, true, heroSlim) : '') + groups.map(function(g){
+        /* 英雄卡套进 act-grid 只占 2×2 轨道（2026-11-13 用户裁决：全屏下
+           裸卡通栏霸整排难看；≤660px 窄容器仍有 1/-1 回退） */
+        html = (heroIt ? '<div class="act-grid">' + actCardHtml(heroIt, true, heroSlim) + '</div>' : '') + groups.map(function(g){
           return '<div class="act-group">' +
             '<div class="act-group-head">' +
               '<span class="gdot" style="background:' + gameDotColor(g.gid) + '"></span>' +
@@ -3215,7 +3407,7 @@ function renderActivities(d){
       /* 英雄强制第一位（2026-11-09 用户需求）：dense 自动流会被更紧急的
          无内容卡挤到第二行——英雄出池通栏置顶，其余照紧迫序跟后排 */
       const pool = mergedOngoing.concat(upcoming).filter(function(x){ return x !== heroIt; }).sort(byUrgency);
-      html = (heroIt ? actCardHtml(heroIt, true, heroSlim) : '') +
+      html = (heroIt ? '<div class="act-grid">' + actCardHtml(heroIt, true, heroSlim) + '</div>' : '') +
         '<div class="act-grid">' +
         pool.map(function(x){ return actCardHtml(x, false); }).join('') +
         '</div>';
@@ -3243,11 +3435,47 @@ function renderActivities(d){
   }
 }
 
-/* 合并组卡成员列表展开/收起（8 项同止角标即开关） */
+/* 合并组卡成员列表展开/收起（「等 N 项」按钮即开关；任意 N 通用）。
+   浮层 position:fixed + JS 按按钮 rect 摆位（2026-11-15 用户实证：absolute
+   浮层被 .hm-scroll overflow 裁剪——卡片贴滚动容器底部时浮层整层不可见，
+   表现为「按了没反应」）。滚动即收（fixed 不随内容滚，留着会脱钩）。 */
 function toggleMergedMembers(btn){
   const card = btn.closest('.acard');
-  if (card) card.classList.toggle('mopen');
+  if (!card) return;
+  /* 开浮层前先掐掉本卡的闪光：filter 动画会劫持 fixed 定位（浮层偏回卡片
+     坐标系被裁）——刷新后首渲染必闪的 950ms 内点击也会中招 */
+  card.querySelectorAll('.rl-flash').forEach(function(el) {
+    el.classList.remove('rl-flash');
+  });
+  const willOpen = !card.classList.contains('mopen');
+  document.querySelectorAll('.acard.mopen').forEach(function(c) {
+    if (c !== card) c.classList.remove('mopen');
+  });
+  card.classList.toggle('mopen', willOpen);
+  const merged = card.querySelector('.act-merged');
+  if (willOpen && merged) {
+    const r = btn.getBoundingClientRect();
+    merged.style.position = 'fixed';
+    merged.style.left = Math.round(r.left) + 'px';
+    merged.style.right = 'auto';
+    const h = Math.min(merged.scrollHeight || 180, 180);
+    merged.style.top = (r.bottom + 3 + h > innerHeight
+      ? Math.max(8, r.top - 3 - h) : r.bottom + 3) + 'px';
+  }
 }
+/* 点浮层外任意处收起（下拉菜单惯例） */
+document.addEventListener('pointerdown', function(e) {
+  if (!e.target.closest) return;
+  document.querySelectorAll('.acard.mopen').forEach(function(card) {
+    if (!card.contains(e.target)) card.classList.remove('mopen');
+  });
+}, { passive: true });
+/* 滚动即收（fixed 浮层不随内容滚） */
+window.addEventListener('scroll', function() {
+  document.querySelectorAll('.acard.mopen').forEach(function(c) {
+    c.classList.remove('mopen');
+  });
+}, { passive: true, capture: true });
 
 /* 合并组卡分别删除：只删点名的这一项，整卡重渲保持「等 N 项」计数同步 */
 async function deleteMemberActivity(btn){
@@ -3360,6 +3588,135 @@ async function refreshActivities(){
     btn.disabled = false; btn.innerHTML = old;
   }
 }
+
+/* ---------- 报表长按补录（2026-11-14 用户裁决）----------
+   长按 500ms（HabitKit 同款手势，防误触）→ 确认弹窗 → /api/custom_dailies
+   toggle_done 带 date。范围：手动项格（ok/miss/今日 na）；游戏格是巡检
+   事实记录不可改。 */
+let dlfixTimer = null, dlfixPending = null, dlfixPressing = false;
+/* dlfixTimer = { cell, t0 } 按住会话（非计时器 id）：松手按 held≥300ms 判定 */
+
+function dlfixOpen(cell) {
+  if (cell) cell.classList.remove('dl-pressing');
+  const isGame = !cell.hasAttribute('data-dl-id');
+  const id = isGame ? cell.getAttribute('data-game') : cell.getAttribute('data-dl-id');
+  const name = cell.getAttribute('data-dl-name');
+  const date = cell.getAttribute('data-dl-date');
+  const state = cell.getAttribute('data-dl-state');
+  const manual = cell.getAttribute('data-manual') === '1';
+  if (!id || !date) return;
+  const isToday = !lastHistory ? false :
+    ((lastHistory.days || []).some(function(r) {
+      return r.is_today && r.date === date; }));
+  const undo = state === 'ok';
+  const dLabel = date.slice(5).replace('-', '月') + '日';
+  let what;
+  if (isGame) {
+    what = undo
+      ? (manual ? ('撤销补录：' + name + ' · ' + dLabel + '（恢复巡检记录）？')
+                : ('标记为未完成：' + name + ' · ' + dLabel + '？'))
+      : ('补录：' + name + ' · ' + dLabel + ' 标记为已完成？');
+  } else {
+    what = undo ? ('撤销：' + name + ' · ' + dLabel + ' 的打卡？')
+      : (state === 'miss' ? ('补录：' + name + ' · ' + dLabel + ' 标记为已完成？')
+      : ('打卡：' + name + ' · 今天已完成？'));
+  }
+  document.getElementById('dlfix-text').textContent = what;
+  dlfixPending = { kind: isGame ? 'game' : 'manual', id: id, date: date,
+                   undo: undo, isToday: isToday, manual: manual };
+  document.getElementById('dlfix-modal').hidden = false;
+}
+function dlfixClose() {
+  document.getElementById('dlfix-modal').hidden = true;
+  dlfixPending = null;
+}
+function dlfixCell(cell) {
+  return cell && cell.classList && cell.classList.contains('editable') &&
+    (cell.hasAttribute('data-dl-id') || cell.hasAttribute('data-game')) ? cell : null;
+}
+document.addEventListener('pointerdown', function(e) {
+  const cell = dlfixCell(e.target.closest('.editable'));
+  if (!cell) return;
+  dlfixPressing = true;
+  cell.classList.add('dl-pressing');   // 按住压更深
+  dlfixTimer = { cell: cell, t0: Date.now() };   // 不定时弹出——松手才算（用户裁决）
+});
+/* 结束清理只留 pointerup/pointercancel（2026-11-14 用户实证：果冻缩放
+   会让格子从光标下「缩走」→ pointerleave 误清计时器 → 长按必失败）。
+   语义改为「按住必有结果」：按住不动 500ms 必弹窗，短按早松手即取消，
+   按住期间抖动/格子缩小都不取消。 */
+document.addEventListener('pointerup', function() {
+  const pend = dlfixTimer;
+  dlfixPressing = false;
+  document.querySelectorAll('.dl-pressing').forEach(function(el) {
+    el.classList.remove('dl-pressing');   // 松手瞬间果冻回弹（overshoot 贝塞尔）
+  });
+  if (pend && Date.now() - pend.t0 >= 300) {
+    dlfixTimer = null;
+    dlfixOpen(pend.cell);                 // 松手才弹窗（用户裁决：不要定时弹）
+  } else {
+    dlfixTimer = null;                    // 短按/拖拽路过 = 不弹
+  }
+}, { passive: true });
+document.addEventListener('pointercancel', function() {
+  dlfixPressing = false;
+  document.querySelectorAll('.dl-pressing').forEach(function(el) {
+    el.classList.remove('dl-pressing');
+  });
+  dlfixTimer = null;
+}, { passive: true });
+/* 长按触发了弹窗时，抑制随后的 click 误触（弹窗遮罩已挡，双保险） */
+document.addEventListener('contextmenu', function(e) {
+  if (dlfixCell(e.target.closest('.editable[data-dl-id]'))) e.preventDefault();
+});
+document.getElementById('dlfix-cancel').addEventListener('click', dlfixClose);
+document.getElementById('dlfix-x').addEventListener('click', dlfixClose);
+document.getElementById('dlfix-modal').addEventListener('click', function(e) {
+  if (e.target === this) dlfixClose();
+});
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && !document.getElementById('dlfix-modal').hidden) dlfixClose();
+});
+document.getElementById('dlfix-ok').addEventListener('click', function() {
+  if (!dlfixPending) return;
+  let req;
+  if (dlfixPending.kind === 'game') {
+    // 游戏行 = 巡检记录的报表修正（覆盖账本），不动 history.json 原文
+    req = { url: '/api/history_override',
+      body: { date: dlfixPending.date, game: dlfixPending.id,
+              action: dlfixPending.undo
+                ? (dlfixPending.manual ? 'clear' : 'undone')
+                : 'done' } };
+  } else {
+    const body = { action: 'toggle_done', id: dlfixPending.id,
+                   undo: dlfixPending.undo };
+    if (!dlfixPending.isToday) body.date = dlfixPending.date;
+    req = { url: '/api/custom_dailies', body: body };
+  }
+  fetch(req.url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req.body)
+  }).then(function(r) { return r.json(); }).then(function(res) {
+    dlfixClose();
+    if (res.message) toast(res.message);
+    /* 补录后留在原地（2026-11-14 用户裁决）：重渲染会重置滚动，先记后还 */
+    const keepScroll = {};
+    ['.main', '.hm-scroll', '.month-scroll'].forEach(function(sel) {
+      const el = document.querySelector(sel);
+      if (el) keepScroll[sel] = el.scrollTop;
+    });
+    const p = (typeof loadHistory === 'function') ? loadHistory() : Promise.resolve();
+    const mask = document.getElementById('month-modal');
+    const needMonth = mask && !mask.hidden && typeof openMonthModal === 'function';
+    Promise.resolve(p).then(function() {
+      if (needMonth) openMonthModal();
+      Object.keys(keepScroll).forEach(function(sel) {
+        const el = document.querySelector(sel);
+        if (el) el.scrollTop = keepScroll[sel];
+      });
+    });
+  }).catch(function() { dlfixClose(); });
+});
 
 /* =========================== 每日报表 =========================== */
 function renderHistoryEmpty(message, detail){
@@ -3713,14 +4070,15 @@ function renderHeatmap(d){
   if (!box) return;
   const days = d.days || [];
   const tracked = d.tracked || [];
-  if (!tracked.length) {
+  if (!tracked.length && !(d.manual || []).length) {
     box.innerHTML = '<div class="emptybox">没有启用任何游戏账号。</div>';
     return;
   }
   const nameOf = {};
   (d.games || []).forEach(function(g){ nameOf[g.game] = g.game_name || g.game; });
+  const manualRows = d.manual || [];
 
-  let html = '<div class="heatmap">';
+  let html = '<div class="hm-scroll"><div class="heatmap">';
   html += '<div class="hm-row hm-head"><div class="hm-label"></div>' +
     days.map(function(row){
       return '<div class="hm-cell' + (row.is_today ? ' today' : '') + '">' +
@@ -3736,21 +4094,73 @@ function renderHeatmap(d){
       /* 今日列合并实时查询（与游戏卡/KPI 同一「live 说了算」纪律）：
          live 报告已完成 → 今日格立即变绿，不等下一轮巡检；
          live 未覆盖/未完成 → 维持巡检事实或"等待中"，绝不提前画红叉 */
-      const lv = (row.is_today && window.__liveMap) ? window.__liveMap[gid] : null;
+      /* 补录覆盖优先于 live（2026-11-14 用户裁决：报表全行可长按修正）——
+         手动标记过的格以账本为准，不被实时查询打回 */
+      const lv = (row.is_today && window.__liveMap && !(c && c.manual))
+        ? window.__liveMap[gid] : null;
       const st = hmCellState(c, row, lv);
+      const manual = !!(c && c.manual);
+      const tip2 = '长按补录/撤销｜' + (manual ? (st.mark === '✓' ? '已补录' : '已标记未完成')
+        : st.tip);
       html += '<div class="hm-cell ' + st.cls + (row.is_today ? ' today' : '') +
-        '" title="' + escHtml(st.tip) + '">' + st.mark + '</div>';
+        ' editable" data-game="' + escHtml(gid) + '" data-dl-name="' +
+        escHtml(nameOf[gid] || gid) + '" data-dl-date="' + escHtml(row.date) +
+        '" data-dl-state="' + (st.mark === '✓' ? 'ok' : 'na') + '"' +
+        (manual ? ' data-manual="1"' : '') +
+        '" title="' + escHtml(tip2) + '">' + st.mark + '</div>';
     });
     html += '</div>';
   });
 
-  html += '</div>' +
+  /* 自定义日常行（2026-11-14 用户裁决）：state 由后端单源算好——
+     ok ✓ / miss ✗ / na ⋯（非计划日、开始记录前、今日等待打卡） */
+  manualRows.forEach(function(m){
+    html += '<div class="hm-row"><div class="hm-label">' +
+      '<span class="gdot" style="background:var(--brand)"></span>' +
+      escHtml(m.name) +
+      '<span class="dim" style="font-weight:400">·长按格子可补录</span></div>';
+    (m.days || []).forEach(function(cell, i){
+      /* 非计划日整格不渲染（2026-11-14 用户裁决：还没到星期四就不显示，
+         与概览卡同口径）——visibility:hidden 保列对齐但不画任何东西 */
+      if (cell.state === 'na' && cell.tip === '非计划日') {
+        html += '<div class="hm-cell blank"></div>';
+        return;
+      }
+      const cls = cell.state === 'ok' ? ' ok' : cell.state === 'miss' ? ' err' : ' na';
+      const mark = cell.state === 'ok' ? '✓' : cell.state === 'miss' ? '✗' : '⋯';
+      const today = !!(days[i] && days[i].is_today);
+      /* 可补录：过去的计划日（✓撤销/✗补录）+ 今天（等同打卡键）；
+         开始记录前不可改（tip 已说明原因） */
+      const editable = cell.state === 'ok' || cell.state === 'miss' || today;
+      const tipBase = cell.tip || (cell.state === 'ok' ? '已打卡'
+                      : cell.state === 'miss' ? '漏打' : '等待打卡');
+      const tip = editable ? ('长按补录/撤销｜' + tipBase) : tipBase;
+      html += '<div class="hm-cell ' + cls + (today ? ' today' : '') +
+        (editable ? ' editable' : '') +
+        '" data-dl-id="' + escHtml(m.id) + '" data-dl-name="' + escHtml(m.name) +
+        '" data-dl-date="' + escHtml(cell.date) + '" data-dl-state="' + cell.state +
+        '" title="' + escHtml(tip) + '">' + mark + '</div>';
+    });
+    html += '</div>';
+  });
+
+  html += '</div></div>' +
     '<div class="hm-legend">' +
     '<span class="hm-cell ok">✓</span>完成' +
     '<span class="hm-cell err">✗</span>未完成' +
     '<span class="hm-cell na">⋯</span>等待中/无数据' +
     '</div>';
   box.innerHTML = html;
+  /* 发现性（2026-11-14 用户裁决：长按入口不可见）：首次见到可补录格时
+     页内提示一次，localStorage 持久化「不再显示」 */
+  if ((d.manual || []).some(function(m) {
+        return (m.days || []).some(function(c) {
+          return c.state === 'ok' || c.state === 'miss'; });
+      }) && !localStorage.getItem('rl-dlfix-hint')) {
+    localStorage.setItem('rl-dlfix-hint', '1');
+    toast('提示：长按报表里手动项的格子，可补录/撤销打卡记录');
+  }
+  flashCard(document.getElementById('act-list') ? document.getElementById('act-list').closest('.card') : null);
 }
 
 function loadHistory(){
@@ -4110,12 +4520,22 @@ function renderMonthModal(d){
       const c = (row.games || {})[cur.game] || {};
       const mk = monthGameMark(c, row);
       const cls = mk === '✓' ? ' done' : mk === '✗' ? ' miss' : '';
+      const isManual = cur.game.indexOf('cd:') === 0;
       const tip = (c.known
-        ? (c.finished ? '已完成' : '未完成 ' + (c.unfinished_tasks || 0) + ' 项')
+        ? (c.finished ? (c.manual ? '已补录' : '已完成') : '未完成 ' + (c.unfinished_tasks || 0) + ' 项')
         : ((c.checks || 0) > 0 && c.err) ? '检查失败：' + c.err
         : ((c.checks || 0) > 0) ? '查无数据（当日无有效记录）' : '当日未巡检');
+      const editable = !row.future && !!(row.games || {})[cur.game];
+      const stateAttr = cls === 'done' ? 'ok' : cls === 'miss' ? 'miss' : 'na';
+      const tip2 = editable ? '长按补录/撤销｜' + tip : tip;
+      const gameAttrs = isManual
+        ? '" data-dl-id="' + escHtml(cur.game.slice(3)) + '" data-dl-name="' + escHtml(cur.game_name)
+        : '" data-game="' + escHtml(cur.game) + '" data-dl-name="' + escHtml(cur.game_name) +
+          (c.manual ? '" data-manual="1' : '');
       html += '<div class="mc-day g' + cls + (row.is_today ? ' today' : '') +
-        '" data-tip="' + escHtml(row.label + '｜' + tip) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
+        (editable ? ' editable' : '') +
+        (editable ? gameAttrs + '" data-dl-date="' + escHtml(row.date) + '" data-dl-state="' + stateAttr : '') +
+        '" data-tip="' + escHtml(row.label + '｜' + tip2) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
     });
     for (let i = lead + d.days.length; i % 7 !== 0; i++) html += '<div class="mc-day blank"></div>';
     html += '</div>';
@@ -4490,7 +4910,16 @@ function renderKpiToday(h){
     known++;
     if (c.finished) done++;
   });
-  const total = tracked.length;
+  let total = tracked.length;
+  /* 手动项并入（2026-11-14 用户裁决）：与推送标题同一分数——
+     今日计划的手动项恒为已知（打卡账本本地可查），分母必计、分子按已完成 */
+  const mt = (h && h.manual_today) || {};
+  const manualPlanned = mt.planned || 0;
+  if (manualPlanned) {
+    total += manualPlanned;
+    known += manualPlanned;
+    done += (mt.done || 0);
+  }
   if (!total) {
     el.textContent = '–';
     el.className = 'kpi-value value';
@@ -4530,12 +4959,19 @@ function renderKpiToday(h){
     }
     return;
   }
+  /* 闪光时机（2026-11-14 复查改）：刷新后的**首次渲染必闪**——否则 F5 时
+     数据没变=全程零反馈=「F5 没效果」的体感；之后只在值变化时闪（60s
+     轮询数据没变也闪=噪音）。 */
+  const changed = el.textContent !== (done + '/' + total);
+  const firstRender = !window.__kpiRendered;
   el.textContent = done + '/' + total;
   el.className = 'kpi-value value' + (done !== total ? ' warn' : '');
+  if (changed || firstRender) flashCard(el.closest('.kpi.card') || el.parentElement);
+  window.__kpiRendered = true;
   /* 0 完成 = critical；部分完成 = warn；全部完成 = 无紧迫（紧迫度只看合并结果，不碰统计） */
   setUrgency('k-today', done === total ? '' : (done > 0 ? 'warn' : 'critical'));
   refreshKpiKeep();
-  kpiSet('k-today-sub', done === total ? '今日全部完成' : (total - done) + ' 款未完成');
+  kpiSet('k-today-sub', done === total ? '今日全部完成' : (total - done) + ' 项未完成');
 }
 
 /* 凭证健康：已绑定凭证的账号 / 启用账号（口径=启用，与今日完成 KPI 同分母；
@@ -4780,7 +5216,27 @@ if (pickList) pickList.addEventListener('change', updatePickNext);
    下面的 switchTab 会发起真实请求做后台静默刷新，数据到手平滑替换 */
 renderCachedData();
 const hash = (location.hash || '').replace('#', '');
-switchTab(PANEL_NAMES.indexOf(hash) >= 0 ? hash : 'history');
+/* 卡片数据到达闪光（2026-11-14 用户裁决恢复）：950ms 渐隐，重触发防连点 */
+function flashCard(el) {
+  if (!el || !el.classList) return;
+  el.classList.remove('rl-flash');
+  void el.offsetWidth;   // 强制 reflow 重启动画
+  el.classList.add('rl-flash');
+}
+
+/* 启动页签：URL hash 优先 → F5 记忆（rl-tab）→ 默认每日报表。
+   位置纪律：必须在脚本尾——顶层 let（liveLoaded 等）全就位后才能
+   switchTab 触发加载链，过早调用会撞 TDZ 把整个启动链炸掉（实锤） */
+switchTab(PANEL_NAMES.indexOf(hash) >= 0 ? hash
+  : (PANEL_NAMES.indexOf(localStorage.getItem('rl-tab')) >= 0
+     ? localStorage.getItem('rl-tab') : 'history'));
+/* 预载每日报表数据（接口秒回）：恢复到任意页签时切回 history 零等待，
+   消除「切页先空后填」的卡顿感 */
+/* 恢复 history 页时 switchTab 已加载过，双份请求+闪两次——只补其它页签 */
+if (activeTab !== 'history') {
+  loadHistory();
+  loadLive(false);
+}
 refreshNotice();
 loadDevice();
 loadAccounts();      // 用 config 里的真实巡检开关覆盖页面默认勾选

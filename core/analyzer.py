@@ -176,7 +176,15 @@ class DailyReport:
         total = len(self.statuses)
         # "全部完成"只在真的一款不剩时才说：数据待更新/未创建角色/查询失败
         # 的都算未知，否则会出现标题「5/5 全部完成」而方舟其实一整天没登录过的误导。
-        all_done = not self.unfinished and not self.failed and not self.stale and not self.no_accounts
+        # 2026-11-14 用户裁决：手动项并入——正文列着 [未完成] 火影忍者，
+        # 标题不能写「全部完成」
+        all_done = (not self.unfinished and not self.failed and not self.stale
+                    and not self.no_accounts and not self.manual_lines)
+        # 2026-11-14 用户裁决：前缀「游戏日常」→「日常」，自定义日常并入同一
+        # 分数（游戏完成 + 手动完成 / 游戏总数 + 今日计划手动数），不再分列段
+        manual_total = len(self.manual_finished) + len(self.manual_lines)
+        done_count = len(self.finished) + len(self.manual_finished)
+        total_count = total + manual_total
 
         # 标题一律用「已完成」做进度分子：查询失败的游戏仍占分母，但不会让标题
         # 出现「1/5 个未完成」却和正文「已完成 2 款」对不上的观感。
@@ -186,9 +194,9 @@ class DailyReport:
             # （来自活动日历与资源预警，与完成度无关），但标题必须诚实。
             title = "账号数据未就绪"
         elif all_done:
-            title = f"游戏日常：{total}/{total} 全部完成"
+            title = f"日常：{total_count}/{total_count} 全部完成"
         else:
-            title = f"游戏日常：{len(self.finished)}/{total} 已完成"
+            title = f"日常：{done_count}/{total_count} 已完成"
         if self.resource_alerts:
             # 全部满格（current == max，恢复已停）时不再说「将溢出」——
             # 2026-11-09 用户裁决：已满的就别说即将溢出
@@ -206,9 +214,12 @@ class DailyReport:
             lines.append("（本轮未获得有效账号数据：查询失败或快照过期；"
                          "以下提醒来自活动日历与资源预警，与日常完成度无关）")
         # 2026-11-13 用户裁决：日常完成态块放最前（先看今天做完没），体力警告后移
+        # 2026-11-14 用户裁决：手动未完成行并进同一未完成块（不再挂尾分家）
         for item in self.unfinished:
             tasks = "、".join(task.describe() for task in item.unfinished_tasks)
             lines.append(f"[未完成] {item.game_name}：{tasks}")
+        if self.manual_lines:
+            lines.extend(self.manual_lines)
 
         # 已完成汇总：游戏 + 已完成手动项并列（2026-11-13 用户裁决：
         # 手动项完成态不独立成行，与游戏同一行交代）
@@ -249,7 +260,8 @@ class DailyReport:
             else:
                 lines.append("没查到的几款先检查凭证或换个网络，别当成已经做完了。")
         else:
-            lines.append(f"共漏 {self.unfinished_task_count} 项，别拖到 23:59。")
+            # 共漏数含手动项（2026-11-14）：正文 [未完成] 行与尾句口径一致
+            lines.append(f"共漏 {self.unfinished_task_count + len(self.manual_lines)} 项，别拖到 23:59。")
 
         # 活动提醒放在消息末尾：不打断"日常做没做完"这个主信息
         if self.activity_alerts or self.activity_start_alerts:
@@ -258,11 +270,6 @@ class DailyReport:
                 lines.append(alert.warn_line())
             for alert in self.activity_start_alerts:
                 lines.append(alert.warn_line())
-        # 手动打卡行（2026-11-13 起含 [已完成] 态）：与游戏日常同款前缀格式
-        if self.manual_lines:
-            lines.append("")
-            for row in self.manual_lines:
-                lines.append(row)
         return title, "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -402,11 +409,11 @@ def build_report(
 # tests/rl_test_push_preview.py 守卫「游戏日常：」不出现在前端源码里。
 # --------------------------------------------------------------------------- #
 
-WAITING_FIRST_CHECK_TITLE = "游戏日常：等待第一次巡检"
+WAITING_FIRST_CHECK_TITLE = "日常：等待第一次巡检"
 WAITING_FIRST_CHECK_BODY = (
     "还没有巡检数据。定时检查跑过一轮后，这里会按真实结果显示推送样式。"
 )
-NO_VALID_RECORDS_TITLE = "游戏日常：暂无有效记录"
+NO_VALID_RECORDS_TITLE = "日常：暂无有效记录"
 NO_VALID_RECORDS_BODY = "今天还没有拿到任何有效的巡检数据。"
 
 

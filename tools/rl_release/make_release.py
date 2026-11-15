@@ -106,6 +106,23 @@ def main() -> None:
         print("\n=== 5/6 安装包审计 ===")
         print("[SKIP] 无 Setup.exe（上一步跳过）——审计随之跳过")
 
+    # 5.5/6 SHA256SUMS 定稿（2026-11-15 根修）：必须在 Setup 归位 dist 之后——
+    # 原 SUMS 在 _build_release 第 7 步生成（早于第 4 步 Setup 编译），Setup 行
+    # 哈希的是上次发版残留，v2.6.0/v2.6.1 线上 SUMS 与资产错位两版实证
+    # （站内下载的 SHA-256 校验正确拦截才暴露）。哈希对象=dist 定稿三件。
+    import hashlib as _hl
+    dist_dir = ROOT / "dist"
+    sums_parts: list[str] = []
+    for artifact in (dist_dir / f"HopOn_v{version}_Windows_x64.zip",
+                     dist_dir / f"HopOn_v{version}_Setup.exe",
+                     ROOT / "release" / f"HopOn_v{version}" / "HopOn.exe"):
+        if not artifact.exists():
+            continue
+        digest = _hl.sha256(artifact.read_bytes()).hexdigest()
+        sums_parts.append(f"{digest}  {artifact.name}")
+    (dist_dir / "SHA256SUMS.txt").write_text("\n".join(sums_parts) + "\n", encoding="utf-8")
+    print(f"\n=== 5.5/6 SHA256SUMS 定稿 ===\n[OK] {len(sums_parts)} 项，已按 dist 定稿产物重生成")
+
     run("6/6 安装内容隐私审计",
         [sys.executable, str(ROOT / "tools" / "check_release_privacy.py")])
 
@@ -128,8 +145,11 @@ def main() -> None:
                 with _uq.urlopen(req, timeout=60) as r:
                     return json.loads(r.read().decode())
 
-            # 7a. 推 main + tags（git 凭据里的 gitee 远端）
-            run("7a Gitee 推代码", ["git", "push", "gitee", "main", "--tags"])
+            # 7a. 推 main + 当前版本 tag（2026-11-15 修正：原 --tags 全量重推
+            #     会撞 Gitee 已有旧 tag「already exists」直接 FATAL 中断；
+            #     只推本版 tag，历史 tag 已在远端）
+            run("7a Gitee 推代码",
+                ["git", "push", "gitee", "main", f"v{version}"])
             # 7b. 建 Release（target_commitish 必填，漏了 400）
             notes_v = ROOT / "tools" / "rl_release" / "notes" / f"v{version}.md"
             rel = _gitee_api(

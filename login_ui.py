@@ -244,6 +244,11 @@ def _get(sid: str) -> Optional[Session]:
 # 二维码
 # --------------------------------------------------------------------------- #
 
+# 设备信息.apk 公网下载页（2026-11-14 用户裁决：软件公开发行，二维码指向
+# Gitee Releases——免梯、手机直开；APK 是跨版本通用独立工具，各版本资产都有）
+GITEE_RELEASES_URL = "https://gitee.com/qianyixi/HopOn/releases"
+
+
 
 def qr_png_base64(text: str) -> str:
     """把文本渲染成 PNG 二维码并转 base64；缺依赖时返回空串（前端会降级提示）。"""
@@ -290,6 +295,64 @@ def load_raw_config() -> Dict[str, Any]:
     from core.secure_store import decrypt_config_dict
 
     return decrypt_config_dict(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+
+
+def _attach_manual(payload: Dict[str, Any], *, month_mode: bool) -> None:
+    """报表挂手动项行（2026-11-14 用户裁决：自定义日常进七日/月报表）。
+
+    周报：payload["manual"] = dailies.report_rows 行（前端热力图追加行）。
+    月报：手动项并成伪游戏塞进 games（game="cd:<id>"）并逐日注入格子
+    {known, finished}——选单/月历/统计三处前端零改动复用。
+    """
+    try:
+        from core import dailies as _dl
+
+        items = (load_raw_config().get("app") or {}).get("custom_dailies") or []
+
+        def _is_daily(it: Dict[str, Any]) -> bool:
+            """报表只收「每天推送」的手动项（2026-11-14 用户裁决）：周计划
+            非全勾的项大部分日子是空白格，进报表只会占一行挤高度。"""
+            days = it.get("days") if (
+                isinstance(it.get("days"), list) and len(it.get("days")) == 7
+                and all(isinstance(x, bool) for x in it.get("days"))) else [True] * 7
+            return all(days)
+
+        items = [it for it in items
+                 if isinstance(it, dict) and it.get("enabled", True) and _is_daily(it)]
+        date_keys = [str(row.get("date") or "")
+                     for row in (payload.get("days") or []) if row.get("date")]
+        rows = _dl.report_rows(items, CONFIG_PATH.parent, date_keys)
+        # KPI「今日完成」并入手动项（2026-11-14 用户裁决）：planned=今日计划数
+        # （每天项恒计、周计划项只在其计划日计），done=其中已打卡数
+        st = custom_dailies_status()
+        planned = sum(1 for it in st.get("items", [])
+                      if it.get("enabled", True) and it.get("planned_today"))
+        done = sum(1 for it in st.get("items", [])
+                   if it.get("enabled", True) and it.get("planned_today")
+                   and it.get("done_today"))
+        payload["manual_today"] = {"planned": planned, "done": done}
+        if month_mode:
+            for row in rows:
+                gid = "cd:" + (row["id"] or row["name"])
+                done = sum(1 for c in row["days"] if c["state"] == "ok")
+                miss = sum(1 for c in row["days"] if c["state"] == "miss")
+                nodata = sum(1 for c in row["days"] if c["state"] == "na")
+                payload.setdefault("games", []).append({
+                    "game": gid, "game_name": row["name"],
+                    "done": done, "missed": miss, "nodata": nodata,
+                })
+                by_date = {c["date"]: c["state"] for c in row["days"]}
+                for day in (payload.get("days") or []):
+                    st = by_date.get(str(day.get("date") or ""))
+                    day.setdefault("games", {})[gid] = {
+                        "known": st in ("ok", "miss"),
+                        "finished": st == "ok",
+                        "checks": 1 if st in ("ok", "miss") else 0,
+                    }
+        else:
+            payload["manual"] = rows
+    except Exception:  # noqa: BLE001 - 手动项读不到不影响报表主面
+        logger.exception("报表挂手动项失败，忽略")
 
 
 def _enabled_game_ids() -> List[str]:
@@ -1035,13 +1098,6 @@ TOOLS_SERVER: Optional[Dict[str, Any]] = None
 #: 启动失败的原因。空串表示没失败（要么没试过，要么成功了）
 TOOLS_ERROR: str = ""
 
-#: 是否允许启动 APK 局域网下载服务（--no-lan-tools 关闭）。
-#: 这个服务必须绑 0.0.0.0 手机才能扫码下载，代价是每出现一个新的可执行文件路径，
-#: Windows 防火墙就要问一次「是否允许接受来自网络的连接」。所以启动时不再预热，
-#: 只在用户真的要看下载地址时（/api/apk/restart）才起来 —— 主控制台只绑 127.0.0.1，
-#: 回环流量不经过防火墙，从来不会触发询问。
-LAN_TOOLS_ENABLED: bool = True
-
 _TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
 
@@ -1062,53 +1118,24 @@ def _mask_oaid(value: str) -> str:
 
 
 def apk_info(*, retry: bool = True) -> Dict[str, Any]:
-    """tools/ 里的 APK 信息 + 手机扫码下载地址。
+    """设备信息.apk 的公网下载信息 + 二维码（2026-11-14 用户裁决：软件公开发
+    行，二维码必须指向公网——原局域网 0.0.0.0:8790 方案废弃）。
 
-    ``retry=True``（默认）：服务没起来就**现在再试一次**。
-    这样即使启动时端口被占 / tools 目录当时还是空的，等页面加载、
-    用户把 APK 放进来或关掉占端口的程序之后，刷一下就能出来二维码，
-    不用重启整个控制台。
+    URL = Gitee Releases 页（免梯、手机直开；设备信息.apk 是跨版本通用的
+    独立工具，各版本资产里都有）。本地 tools/ 有 APK 时顺带报大小。
+    ``retry`` 参数保留兼容旧签名，公网方案无服务可重启，忽略。
     """
-    global TOOLS_SERVER
-
-    from core import tools_server
-
-    if not TOOLS_SERVER and retry:
-        start_tools_service()
-
-    if not TOOLS_SERVER:
-        return {
-            "available": False,
-            "message": TOOLS_ERROR or "下载服务未启动",
-            "retryable": True,
-        }
-
-    files = [
-        item for item in tools_server.list_files() if item["name"].lower().endswith(".apk")
-    ]
-    if not files:
-        return {
-            "available": False,
-            "message": f"tools/ 目录里没有 APK（{tools_server.TOOLS_DIR}）",
-            "retryable": True,
-        }
-
-    apk = files[0]
-    url = TOOLS_SERVER["url"] + quote(apk["name"])
-    info = {
+    apk_path = BASE_DIR / "tools" / "设备信息.apk"
+    size_text = ""
+    if apk_path.exists():
+        size_text = _human_size(apk_path.stat().st_size)
+    return {
         "available": True,
-        "name": apk["name"],
-        "size": apk["size"],
-        "size_text": _human_size(apk["size"]),
-        "url": url,
-        "ip": TOOLS_SERVER["ip"],
-        "port": TOOLS_SERVER["port"],
-        "qr": qr_png_base64(url),
+        "name": "设备信息.apk",
+        "size_text": size_text,
+        "url": GITEE_RELEASES_URL,
+        "qr": qr_png_base64(GITEE_RELEASES_URL),
     }
-    if TOOLS_SERVER["ip"] in ("127.0.0.1", "::1"):
-        # 没拿到局域网地址：服务起来了，但手机扫了也下载不了
-        info["warning"] = "没检测到局域网地址（可能没连 WiFi），手机扫码可能打不开"
-    return info
 
 
 def device_status() -> Dict[str, Any]:
@@ -1531,6 +1558,9 @@ def custom_dailies_status() -> Dict[str, Any]:
                 or not all(isinstance(x, bool) for x in days_raw)):
             days_raw = [True] * 7
         _done = dailies.is_done(it, user_dir)
+        # 今日是否在周计划内（2026-11-13 用户裁决：非计划日的概览卡不显示）
+        # 逐项 reset 时刻口径由后端统一算——前端不自己按 Date.now 猜星期
+        _planned = dailies._planned_weekday(it, dailies._period_date(it))
         # 推送效果诚实口径（2026-11-13）：未完成=[未完成] 行；已完成=并入
         # [已完成] 汇总行（不独立成行）——预览与实发同语义
         if _done:
@@ -1538,6 +1568,7 @@ def custom_dailies_status() -> Dict[str, Any]:
         else:
             _push_text = dailies.render_message(it)
         out.append({
+            "planned_today": _planned,
             "id": str(it.get("id") or ""),
             "name": str(it.get("name") or ""),
             "mode": str(it.get("mode") or "merged"),
@@ -1576,10 +1607,25 @@ def custom_dailies_update(payload: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError("项不存在")
         hit = dict(hit)
         hit.setdefault("reset", dailies.DEFAULT_RESET)
-        dailies.mark_done(hit, user_dir, undo=bool(payload.get("undo")))
+        # 报表长按补录（2026-11-14 用户裁决）：payload.date = 历史日历日
+        pdate = None
+        date_raw = str(payload.get("date") or "").strip()
+        if date_raw:
+            try:
+                from datetime import datetime as _dt
+
+                pdate = _dt.strptime(date_raw, "%Y-%m-%d").date()
+            except ValueError:
+                raise ValueError("日期格式不对：" + date_raw)
+        undo = bool(payload.get("undo"))
+        dailies.mark_done(hit, user_dir, undo=undo, period_date=pdate)
         result = custom_dailies_status()
-        result["message"] = ("已勾掉今日（次日 04:00 自动重开）"
-                             if not payload.get("undo") else "已恢复今日待办")
+        if pdate is not None:
+            result["message"] = (("已补录 " + date_raw) if not undo
+                                 else ("已撤销 " + date_raw + " 的打卡"))
+        else:
+            result["message"] = ("已勾掉今日（次日 04:00 自动重开）"
+                                 if not undo else "已恢复今日待办")
         return result
 
     if action == "del":
@@ -2770,12 +2816,14 @@ def tray_summary_status() -> Dict[str, Any]:
             _name = str(_it.get("name") or "?").replace("|", " ").replace("\n", " ")
             _itd = dict(_it)
             _itd.setdefault("reset", _dl.DEFAULT_RESET)
+            # 非计划日的项整个不显示（2026-11-13 用户裁决：与概览卡同口径，
+            # 还没到星期四就不显示）——也不进待办点名
+            _planned = _dl._planned_weekday(_itd, _dl._period_date(_itd))
+            if not _planned:
+                continue
             _done = _dl.is_done(_itd, CONFIG_PATH.parent)
             manual_rows.append(f"{_id}|{_name}|{1 if _done else 0}")
-            # 非计划日不算待办（行仍显示可提前打卡）；_planned_weekday 对
-            # 缺 days 的旧数据回落 True，行为不变
-            _planned = _dl._planned_weekday(_itd, _dl._period_date(_itd))
-            if not _done and _planned:
+            if not _done:
                 pending_descs.append(f"{_name} 未清")
     except Exception:  # noqa: BLE001 - 手动打卡读不到不影响托盘主面
         pass
@@ -2851,12 +2899,10 @@ def tray_summary_status() -> Dict[str, Any]:
                 lines.append(f"{short}　{cur:>3}/{mx:>3}{stale_tag}")
 
     if pending_descs:
-        shown = " · ".join(pending_descs[:3])
-        more = len(pending_descs) - 3
-        headline = (
-            f"{len(pending_descs)} 项待办：{shown}"
-            + (f" 等共{len(pending_descs)}项" if more > 0 else "")
-        )
+        # 标题只点名第一条（2026-11-14 用户裁决：托盘菜单宽度由最长行决定，
+        # 全量拼进标题把菜单撑成宽条；完整明细本来就在下面的逐行里）
+        n = len(pending_descs)
+        headline = f"待办 {n} 项：{pending_descs[0]}" + (f" 等 {n - 1} 项" if n > 1 else "")
     elif not lines:
         headline = "尚无巡检数据"
     else:
@@ -3304,6 +3350,7 @@ class Handler(BaseHTTPRequestHandler):
                     logger.exception("读取月报失败，返回空月历")
                     payload = {"ok": False, "message": "读取月报失败（详见运行日志）",
                                "days": [], "games": []}
+                _attach_manual(payload, month_mode=True)
                 self._json(payload)
                 return
             try:
@@ -3312,6 +3359,7 @@ class Handler(BaseHTTPRequestHandler):
                 logger.exception("读取历史记录失败，返回空报表")
                 payload = history.empty_payload(days=days)
                 payload["message"] = "读取历史记录失败，已显示空报表（详见 logs/dailycheck.log）"
+            _attach_manual(payload, month_mode=False)
             self._json(payload)
             return
 
@@ -3340,6 +3388,15 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:  # noqa: BLE001 - 查更新失败不该 500
                 logger.debug("检查更新失败：%s", exc)
                 self._json({"ok": False, "message": "检查更新失败：可稍后重试"})
+            return
+
+        if parsed.path == "/api/update/download":
+            # 站内下载进度查询（GET）：下载在引擎后台线程跑（Gitee 主通道
+            # 实测 1.9MB/s），前端轮询状态；发起=POST /api/update/download，
+            # 取消=POST /api/update/download/cancel。
+            from core import update as _update
+
+            self._json(_update.download_status())
             return
 
         if parsed.path == "/api/logtail":
@@ -3512,6 +3569,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._handle_save_push(payload)
             return
 
+        if path in ("/api/update/download", "/api/update/download/cancel"):
+            # 站内下载发起/取消（2026-11-15）：进度走 GET /api/update/download。
+            from core import update as _update
+
+            if path.endswith("/cancel"):
+                self._json(_update.cancel_download())
+            else:
+                payload = self._read_json_body()
+                if payload is None:
+                    return
+                self._json(_update.start_download(
+                    payload.get("version") or "", payload.get("asset") or ""))
+            return
+
         if path == "/api/accounts/enabled":
             payload = self._read_json_body()
             if payload is not None:
@@ -3680,6 +3751,35 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"ok": False, "message": f"刷新失败：{exc}"}, 500)
             return
 
+        if path == "/api/history_override":
+            payload = self._read_json_body()
+            try:
+                from core import history as _hist
+
+                date_key = str((payload or {}).get("date") or "")
+                game = str((payload or {}).get("game") or "")
+                action = str((payload or {}).get("action") or "")
+                if not date_key or not game or action not in ("done", "undone", "clear"):
+                    raise ValueError("参数不完整")
+                if game not in _hist.GAME_ORDER:
+                    raise ValueError("未知游戏：" + game)
+                if action == "done":
+                    _hist.set_override(date_key, game, True)
+                    msg = "已补录 " + game + " " + date_key + " 为完成"
+                elif action == "undone":
+                    _hist.set_override(date_key, game, False)
+                    msg = "已将 " + game + " " + date_key + " 标记为未完成"
+                else:
+                    _hist.clear_override(date_key, game)
+                    msg = "已撤销 " + game + " " + date_key + " 的补录（恢复巡检记录）"
+                self._json({"ok": True, "message": msg})
+            except ValueError as exc:
+                self._json({"ok": False, "message": str(exc)}, 400)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("保存报表补录失败")
+                self._json({"ok": False, "message": f"保存失败：{exc}"}, 500)
+            return
+
         if path == "/api/settings":
             payload = self._read_json_body()
             if payload is not None:
@@ -3827,15 +3927,27 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": f"打开失败：{exc}"}, 500)
             return
 
-        if path == "/api/apk/restart":
-            payload = self._read_json_body()
-            if payload is not None:
-                try:
-                    self._json(restart_tools_service())
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("重启 APK 下载服务失败")
-                    self._json({"ok": False, "message": f"重启失败：{exc}"}, 500)
+        if path == "/api/update/open-folder":
+            # 资源管理器定位已下载并校验通过的安装包（站内下载完成态）
+            try:
+                from core import update as _update
+
+                st = _update.download_status()
+                file_path = str(st.get("file") or "")
+                if st.get("stage") != "done" or not st.get("sha_ok") or not file_path:
+                    self._json({"ok": False, "error": "还没有校验通过的安装包"}, 404)
+                    return
+                if not os.path.isfile(file_path):
+                    self._json({"ok": False, "error": "安装包文件不存在（可能已被移动）"}, 404)
+                    return
+                import subprocess
+
+                subprocess.Popen(["explorer", "/select,", file_path])
+                self._json({"ok": True, "message": "已在资源管理器中定位安装包，双击即可安装"})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"ok": False, "error": f"打开失败：{exc}"}, 500)
             return
+
 
         if path == "/api/daemon/quiet-run":
             # 关机前落盘（2026-11-06）：壳「彻底退出」/系统关机前调用。写
@@ -3995,54 +4107,6 @@ class LocalHTTPServer(ThreadingHTTPServer):
 
     daemon_threads = True
     allow_reuse_address = os.name != "nt"
-
-
-def start_tools_service() -> Optional[Dict[str, Any]]:
-    """启动 APK 局域网下载服务（进程内只起一次，重复调用返回同一实例）。
-
-    它监听 0.0.0.0 的独立端口，只读地暴露 tools/ 一层文件；
-    主控制台始终只听 127.0.0.1，避免 /api/* 被同一 WiFi 的人调用。
-
-    失败时**不抛异常**，而是把原因写进 :data:`TOOLS_ERROR`——界面要把它
-    显示出来，否则用户只看到一句"下载服务未启动"，根本没法自己排查。
-    """
-    global TOOLS_SERVER, TOOLS_ERROR
-
-    if TOOLS_SERVER is not None:
-        return TOOLS_SERVER
-    if not LAN_TOOLS_ENABLED:
-        TOOLS_ERROR = "局域网下载服务已被禁用（--no-lan-tools）"
-        logger.info("APK 下载服务未启动：%s", TOOLS_ERROR)
-        return None
-    try:
-        from core import tools_server
-
-        TOOLS_SERVER = tools_server.start()
-        TOOLS_ERROR = "" if TOOLS_SERVER else (tools_server.LAST_ERROR or "下载服务未启动")
-    except Exception as exc:  # noqa: BLE001
-        TOOLS_ERROR = f"启动异常：{type(exc).__name__}: {exc}"
-        logger.warning("APK 下载服务启动失败：%s", TOOLS_ERROR)
-        TOOLS_SERVER = None
-    if TOOLS_SERVER is None and TOOLS_ERROR:
-        logger.warning("APK 下载服务不可用：%s", TOOLS_ERROR)
-    return TOOLS_SERVER
-
-
-def restart_tools_service() -> Dict[str, Any]:
-    """关掉现有下载服务、换端口重新起一个，并把新的二维码信息一并返回。
-
-    用于界面上的「换个端口重试」：比如 8790 被别的程序占了、或者用户刚把
-    APK 拷进 tools/，点一下就能刷新，不用重启控制台。
-    """
-    global TOOLS_SERVER, TOOLS_ERROR
-
-    from core import tools_server as ts
-
-    ts.stop(TOOLS_SERVER)
-    TOOLS_SERVER = None
-    TOOLS_ERROR = ""
-    start_tools_service()
-    return apk_info(retry=False)
 
 
 def serve(

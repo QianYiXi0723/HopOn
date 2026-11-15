@@ -460,19 +460,11 @@ def main() -> None:
         zip_path.unlink()
     archive = shutil.make_archive(str(zip_path), "zip", root_dir=OUT.parent, base_dir=OUT.name)
 
-    # 7) 校验和清单（最佳实践：哈希自己的构建产物并随发布附 SHA256SUMS）
-    import hashlib
-    lines = []
-    artifacts = {archive, str(OUT / "HopOn.exe")}
-    setup_exe = ROOT / "installer" / "Output" / f"HopOn_v{VERSION}_Setup.exe"
-    if setup_exe.exists():
-        artifacts.add(str(setup_exe))
-    for artifact in sorted(artifacts):
-        digest = hashlib.sha256(Path(artifact).read_bytes()).hexdigest()
-        lines.append(f"{digest}  {Path(artifact).name}")
-    sums = ZIP_DIR / "SHA256SUMS.txt"
-    sums.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"SHA256SUMS: {sums}")
+    # 7) 校验和清单 —— 已移出（2026-11-15 根修）：原在此处生成 SHA256SUMS，
+    #    但 Setup.exe 要到 make_release 第 4 步才编译，此处哈希的 Setup 是
+    #    上次发版的残留文件——v2.6.0/v2.6.1 线上 SUMS 与资产错位两版实证
+    #    （站内下载的 SHA-256 校验正确拦截才暴露）。SUMS 改由 make_release
+    #    在 Setup 归位 dist 之后定稿（见 make_release 5.5 步）。
 
     total = sum(f.stat().st_size for f in OUT.rglob("*") if f.is_file())
     print(f"OUT_DIR   : {OUT}")
