@@ -3959,14 +3959,46 @@ class Handler(BaseHTTPRequestHandler):
                     log_path.parent.mkdir(parents=True, exist_ok=True)
                 except OSError:
                     log_path = Path("install.log")
-                subprocess.Popen(
-                    [pkg, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
-                     "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS",
-                     '/LOG=' + str(log_path)],   # 路径无空格不加引号——subprocess 列表→命令行的内嵌引号会被转义破坏（实测 /LOG 未生效教训）
-                    cwd=str(Path(pkg).parent), creationflags=0x00000008)  # DETACHED_PROCESS
-                logger.info("已发起静默安装：%s——本进程将被安装器关闭并自动重启", pkg)
+                # 中间脚本方案（2026-11-15 根治「锁赛跑」）：第一版自杀链里
+                # 安装器与引擎退出赛跑——VERYSILENT 扫描到文件锁就静默跳过
+                # （install.log 报 succeeded 但 engine 全没装）。改为：引擎只负责
+                # 停 daemon + 启动独立桥接进程后退出；桥接进程等锁全清
+                # （引擎退出后 2s）才启动安装器，装完自己拉壳拉全家。
+                bridge = Path(os.environ.get("TEMP", str(Path.cwd()))) / "hopon_install_bridge.py"
+                bridge.write_text(
+                    "import subprocess, sys, time\n"
+                    "setup, shell_dir, logf = sys.argv[1], sys.argv[2], sys.argv[3]\n"
+                    "time.sleep(2.0)\n"                       # 等引擎退出、文件锁全清
+                    "p = subprocess.Popen([setup, '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',"
+                    " '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS', '/LOG=' + logf])\n"
+                    "p.wait()\n"
+                    "time.sleep(1.0)\n"
+                    "subprocess.Popen([shell_dir + r'\\HopOn.exe'], cwd=shell_dir)\n",   # 直接执行 exe——不能过 sys.executable（那是 python，会把 exe 当脚本）
+                    encoding="utf-8")
+                logger.info("已发起静默安装：%s——引擎将清锁退出，桥接进程接管安装并重启壳", pkg)
                 self._json({"ok": True,
                             "message": "静默安装已启动：应用将自动关闭，安装完成后自动重启"})
+                # 自杀链：停 daemon（旗标+等退出）→ 启动桥接进程 → 引擎 os._exit
+                # 释放全部文件锁 → 桥接等 2s 锁全清 → 安装器全量安装 → 拉壳。
+                def _self_terminate():
+                    try:
+                        import time as _t
+
+                        _t.sleep(2.0)   # 先让 HTTP 响应送达客户端
+                        import daemon as _d
+
+                        _d.stop_daemon()   # 停守护（旗标+等退出，≤3s）
+                    except Exception:  # noqa: BLE001
+                        pass
+                    try:
+                        subprocess.Popen(
+                            [str(Path(sys.executable)), str(bridge), pkg,
+                             str(Path(__file__).resolve().parent), str(log_path)],
+                            creationflags=0x00000008)  # DETACHED_PROCESS
+                    except Exception:  # noqa: BLE001
+                        logger.exception("桥接进程启动失败")
+                    os._exit(0)
+                threading.Timer(1.5, _self_terminate).start()
             except Exception as exc:  # noqa: BLE001
                 logger.exception("静默安装发起失败")
                 self._json({"ok": False, "error": f"安装启动失败：{exc}"}, 500)
