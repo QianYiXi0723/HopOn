@@ -3951,6 +3951,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not os.path.isfile(pkg):
                     self._json({"ok": False, "error": "安装包文件不存在"}, 404)
                     return
+                # VERYSILENT 静默安装已收起（2026-11-15）：Inno 7 在 VERYSILENT+
+                # 跨目录升级（本机散装部署 E:\Apps\HopOn vs Inno 记忆的影子安装
+                # C:\...\Programs\HopOn）走「先卸旧版」语义，卸完即退出零文件安装
+                # ——需继续实验（AppId 策略/卸载后二段安装/安装器 UI 形态）。
+                # 端点保留防降级校验与日志，静默安装路径 v2.6.6+ 完善后重开。
+                self._json({"ok": False,
+                            "error": "静默自动安装暂未开放——请点「打开文件夹手动安装」，双击 Setup.exe 完成（数据不受影响）"}, 400)
+                return
                 import subprocess
 
                 # /LOG 落安装日志（VERYSILENT 失败无 UI，日志是唯一诊断线索）
@@ -3967,10 +3975,10 @@ class Handler(BaseHTTPRequestHandler):
                 bridge = Path(os.environ.get("TEMP", str(Path.cwd()))) / "hopon_install_bridge.py"
                 bridge.write_text(
                     "import subprocess, sys, time\n"
-                    "setup, shell_dir, logf = sys.argv[1], sys.argv[2], sys.argv[3]\n"
+                    "setup, shell_dir, logf, dstdir = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]\n"
                     "time.sleep(2.0)\n"                       # 等引擎退出、文件锁全清
                     "p = subprocess.Popen([setup, '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',"
-                    " '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS', '/LOG=' + logf])\n"
+                    " '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS', '/DIR=' + dstdir, '/LOG=' + logf])\n"
                     "p.wait()\n"
                     "time.sleep(1.0)\n"
                     "subprocess.Popen([shell_dir + r'\\HopOn.exe'], cwd=shell_dir)\n",   # 直接执行 exe——不能过 sys.executable（那是 python，会把 exe 当脚本）
@@ -3993,7 +4001,9 @@ class Handler(BaseHTTPRequestHandler):
                     try:
                         subprocess.Popen(
                             [str(Path(sys.executable)), str(bridge), pkg,
-                             str(Path(__file__).resolve().parent), str(log_path)],
+                             str(Path(__file__).resolve().parent.parent),
+                             str(log_path),
+                             str(Path(__file__).resolve().parent.parent)],   # /DIR= 显式指定安装目录——UsePreviousAppDir 会读错上次目录（2026-11-15 实弹：装到影子安装 C:\...\Programs\HopOn），engine 上级=真实安装根
                             creationflags=0x00000008)  # DETACHED_PROCESS
                     except Exception:  # noqa: BLE001
                         logger.exception("桥接进程启动失败")
