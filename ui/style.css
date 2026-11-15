@@ -688,10 +688,9 @@
            flex:none;margin-bottom:16px;
            position:sticky;top:0;z-index:50;min-height:80px;background:var(--bg-base);
            transition:min-height 250ms ease-out, padding 250ms ease-out}
-  /* 收起态（2026-11-16 二次修订·用户实测裁决）：真收起——卡片整体隐藏，
-     条上只留展开键；完整信息回展开态看。旧「压成一行摘要」被否：
-     悬停卡片时 .card:hover 的 z-index:60 会盖住摘要条上的按钮 */
-  .kpi-bar.compact{min-height:44px}
+  /* 收起态（2026-11-16 三次修订·用户实测裁决）：黑杠也不要——条缩到按钮
+     大小、背景透明，视觉上只剩一颗「展开」按钮浮在原位；信息回展开态看 */
+  .kpi-bar.compact{min-height:24px;background:transparent;margin-bottom:8px}
   .kpi-bar.compact .kpi{display:none}
   .kpi{background:var(--bg-elevated);border:none;border-radius:8px;
        padding:12px 20px;min-width:0}
