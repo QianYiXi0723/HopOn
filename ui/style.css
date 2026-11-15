@@ -1388,7 +1388,7 @@
            transition:background .15s}
   .upd-btn:hover{background:var(--btn-hover)}
   .upd-btn b{font-size:13px;color:var(--fg)}
-  .upd-src-sub{font-size:11px;color:var(--subtle)}
+  .upd-src-sub{font-size:12px;color:var(--fg);opacity:.72}
   .upd-pkg{font-size:12px;color:var(--muted);margin-top:8px;text-align:center;
            white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* 站内下载区：按钮→进度→完成三态切换 */
