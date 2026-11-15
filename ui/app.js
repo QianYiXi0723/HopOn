@@ -131,7 +131,7 @@ function cacheSet(key, val){
 let kpiBusyCount = 0;
 function kpiBusy(on){
   kpiBusyCount = Math.max(0, kpiBusyCount + (on ? 1 : -1));
-  ['k-today', 'k-resin', 'k-cred'].forEach(function(id){
+  ['k-today', 'k-resin'].forEach(function(id){
     const el = document.getElementById(id);
     if (el) el.classList.toggle('refreshing', kpiBusyCount > 0);
   });
@@ -232,16 +232,14 @@ function loadAccounts(){
       if (!window.__accounts[box.value]) { box.checked = false; syncSelCard(box); }
     });
     renderCredHealth(d);
-    renderKpiCred(d);
     renderCapsuleDots(d);
     updateLoginButtons();
   }).catch(credLoadFailed);
 }
 
-/* 读取失败要有真反馈：凭证健康/KPI 停在「读取中…」是假加载 */
+/* 读取失败要有真反馈：凭证健康抽屉停在「读取中…」是假加载 */
 function credLoadFailed(){
   renderCredHealth({ ok: false, items: [] });
-  kpiSet('k-cred-sub', '读取失败');
 }
 
 /* 胶囊黄点：该平台任一游戏未绑定凭证 → 点亮 */
@@ -1486,10 +1484,8 @@ function renderSchedule(d, force){
   }
   renderRuler(times);
   document.getElementById('d-count').textContent = times.length + ' 个';
-  /* 下次提醒：守护进程停止时与 KPI 保持一致显示「已暂停」；
-     时间只保留 月-日 时:分（年份对「下次」没有信息量，纯占宽） */
-  document.getElementById('d-next').textContent =
-    (d.daemon && d.daemon.running) ? (d.next_run || '-').replace(/^\d{4}-/, '') : '已暂停';
+  /* 「下次巡查」2026-11-16 起只由 renderNextRun（心跳驱动）写 #d-next，
+     这里不再重复写——双写者会在 3s 轮询下互相覆盖造成闪烁 */
 
   // 参与检查的账号：只给数量，完整清单走 title（来自后端，不写死）
   const gamesBox = document.getElementById('d-games');
@@ -4425,18 +4421,19 @@ document.getElementById('btn-run-now').addEventListener('click', function(){
     .then(function(res){
       btn.disabled = false; btn.textContent = '立即巡检';
       if (res && res.ok) {
-        kpiSet('k-next-sub', '已触发巡检，约十几秒后自动更新报表');
+        /* 2026-11-16：k-next-sub 卡已删，反馈改走全局 toast（文案不变） */
+        toast('已触发巡检，约十几秒后自动更新报表');
         setTimeout(function(){
           Promise.resolve(loadHistory()).catch(function(){});
         }, 12000);
       } else {
-        kpiSet('k-next-sub', (res && res.message) || '触发失败，请查看运行日志');
+        toast((res && res.message) || '触发失败，请查看运行日志', true);
       }
     })
     .catch(function(err){
       btn.disabled = false; btn.textContent = '立即巡检';
       console.error('立即巡检失败', err);
-      kpiSet('k-next-sub', '触发失败：' + err);
+      toast('触发失败：' + err, true);
     });
 });
 
@@ -4925,21 +4922,6 @@ function setUrgency(id, level){
 const kpiBarEl = document.getElementById('kpi-bar');
 const kpiMainEl = document.querySelector('.main');
 
-function kpiUrgencyScore(card){
-  const u = card.dataset.urgency;
-  return u === 'critical' ? 2 : (u === 'warn' ? 1 : 0);
-}
-
-/* compact 态只保留最紧急的 2 个信号（不足 2 个紧急时用普通卡补位） */
-function refreshKpiKeep(){
-  if (!kpiBarEl) return;
-  const cards = Array.prototype.slice.call(kpiBarEl.querySelectorAll('.kpi'));
-  const sorted = cards.slice().sort(function(a, b){
-    return kpiUrgencyScore(b) - kpiUrgencyScore(a);
-  });
-  sorted.forEach(function(c, i){ c.classList.toggle('keep', i < 2); });
-}
-
 /* KPI 吸顶收缩：进入 >进档线、退出 <40px —— 两个阈值必须分开（滞回），不能共用一个。
    为什么共用会出事：compact 会把 KPI 条压矮，浏览器为保持视觉位置不动（滚动锚定）
    会同步把 scrollTop 下调同样的落差。若退出阈值也是进档线，则
@@ -4950,14 +4932,19 @@ function refreshKpiKeep(){
    落差不是常数：宽幅 ~24px（80→56），≤1000px 双列两行卡实测 133px（914×600：
    213→80）——固定 40px 间隙在窄幅照样振荡（压缩后 scrollTop 被锚定推到 40 以下）。
    进档线因此按两档实测高度差自适应：max(80, 40+落差+8)，保证压缩后 scrollTop
-   仍 ≥48，永远跌不破退档线 40。落差随窗口/主题漂移在每次滚动事件里重测自愈。 */
+   仍 ≥48，永远跌不破退档线 40。落差随窗口/主题漂移在每次滚动事件里重测自愈。
+   2026-11-16 四卡减两卡后：常态 ~81px / compact 44px，落差 ~36px，公式照常自适应。 */
 const KPI_COMPACT_ENTER = 80;   /* 进档线；宽幅下即最终进档线，窄幅被自适应抬高 */
 const KPI_COMPACT_EXIT  = 40;   /* 退档线；压缩后 scrollTop ≥ 48，留 8px 余量 */
 let kpiCompact = false;
 const kpiBarH = { normal: 0, compact: 0 };   /* 两档实高缓存，落差 = normal - compact */
+/* 手动收起/展开的压制窗（2026-11-16）：点击 kpi-toggle 后 3 分钟内
+   滚动阈值不得覆盖手动状态，防「刚点展开又被自动收起」的拉锯 */
+let kpiManual = { until: 0 };
 
 function updateKpiCompact(){
   if (!kpiBarEl || !kpiMainEl) return;
+  if (Date.now() < kpiManual.until) return;
   const on = kpiBarEl.classList.contains('compact');
   kpiBarH[on ? 'compact' : 'normal'] = kpiBarEl.offsetHeight;
   const delta = (kpiBarH.normal > 0 && kpiBarH.compact > 0)
@@ -4978,6 +4965,19 @@ if (kpiBarEl) {
   kpiBarH.normal = kpiBarEl.offsetHeight;
 }
 updateKpiCompact();
+
+/* 手动收起/展开（2026-11-16）：点击即切态 + 同步 aria-expanded/文案，
+   并压制滚动阈值 3 分钟 */
+const kpiToggle = document.getElementById('kpi-toggle');
+if (kpiToggle && kpiBarEl) {
+  kpiToggle.addEventListener('click', function(){
+    kpiCompact = !kpiCompact;
+    kpiBarEl.classList.toggle('compact', kpiCompact);
+    kpiToggle.setAttribute('aria-expanded', String(!kpiCompact));
+    kpiToggle.textContent = kpiCompact ? '展开' : '收起';
+    kpiManual.until = Date.now() + 180000;
+  });
+}
 
 /* 今日完成：巡检历史 + 实时查询合并统计。
    数据源纪律：/api/live 查询成功的游戏以 live 为准（现场状态最权威）；
@@ -5028,7 +5028,6 @@ function renderKpiToday(h){
     el.textContent = '–';
     el.className = 'kpi-value value';
     setUrgency('k-today', '');
-    refreshKpiKeep();
     /* 三态区分（2026-11-05 P2）：检查过但失败 ≠ 从未检查。
        /api/history 现为 known=false 的格子保留 checks/last 与
        err/stale/noacc 尾巴，这里据此分流 */
@@ -5066,31 +5065,11 @@ function renderKpiToday(h){
   window.__kpiRendered = true;
   /* 0 完成 = critical；部分完成 = warn；全部完成 = 无紧迫（紧迫度只看合并结果，不碰统计） */
   setUrgency('k-today', done === total ? '' : (done > 0 ? 'warn' : 'critical'));
-  refreshKpiKeep();
   kpiSet('k-today-sub', done === total ? '今日全部完成' : (total - done) + ' 项未完成');
 }
 
-/* 凭证健康：已绑定凭证的账号 / 启用账号（口径=启用，与今日完成 KPI 同分母；
-   未勾选游戏不计入 —— payload 自带 enabled 字段，此前两处消费都无视了它） */
-function renderKpiCred(d){
-  const el = document.getElementById('k-cred');
-  if (!el) return;
-  const items = ((d && d.items) || []).filter(function(i){ return i.enabled; });
-  if (!items.length) {
-    el.textContent = '–';
-    el.className = 'kpi-value value';
-    setUrgency('k-cred', '');
-    kpiSet('k-cred-sub', '没有账号');
-    return;
-  }
-  const bound = items.filter(function(i){ return i.has_credential; }).length;
-  el.textContent = bound + '/' + items.length;
-  el.className = 'kpi-value value' + (bound === items.length ? '' : ' warn');
-  setUrgency('k-cred', bound === items.length ? '' : 'warn');
-  refreshKpiKeep();
-  kpiSet('k-cred-sub', bound === items.length ? '全部已绑定'
-    : (items.length - bound) + ' 个未绑定');
-}
+/* 凭证健康的顶部 KPI 卡已删（2026-11-16 四卡减两卡）：绑定数摘要由账号页
+   凭证健康抽屉 renderCredHealth 继续承担，此处不再有第二份写入。 */
 
 /* =========================== 心跳：已运行 + 下次巡查 ===========================
    全局唯一的 heartbeatTimer（30 秒一拍），「已运行」和「下次巡查」都从这里刷。
@@ -5144,22 +5123,20 @@ function renderUptime(){
 }
 
 function renderNextRun(){
-  const el = document.getElementById('k-next');
-  const sub = document.getElementById('k-next-sub');
-  if (!el || !sub) return;
-  if (!hbState.running) {
-    el.textContent = '已暂停';
-    sub.textContent = '守护进程未运行';
-    return;
-  }
+  /* 2026-11-16 四卡减两卡：顶部「下次巡查」卡删除，唯一落点是定时页状态条
+     #d-next（原先 loadSchedule 也写它=双写者，已拆除，此处是唯一写者）。
+     格式：运行中 = 'HH:MM · N 小时 N 分后'；已暂停 = '已暂停'；无时间点 = '—' */
+  const el = document.getElementById('d-next');
+  if (!el) return;
+  if (!hbState.running) { el.textContent = '已暂停'; return; }
   const next = computeNextRun(new Date());
-  if (!next) { el.textContent = '–'; sub.textContent = '未设置巡查时间点'; return; }
+  if (!next) { el.textContent = '—'; return; }
   const pad = function(n){ return (n < 10 ? '0' : '') + n; };
-  el.textContent = pad(next.getHours()) + ':' + pad(next.getMinutes());
   const min = Math.round(Math.max(0, next.getTime() - Date.now()) / 60000);
   const h = Math.floor(min / 60), m = min % 60;
-  sub.textContent = min === 0 ? '即将执行'
+  const rel = min === 0 ? '即将执行'
     : (h > 0 ? h + ' 小时 ' + m + ' 分后' : m + ' 分钟后');
+  el.textContent = pad(next.getHours()) + ':' + pad(next.getMinutes()) + ' · ' + rel;
 }
 
 function tickHeartbeat(){ renderUptime(); renderNextRun(); }
@@ -5186,7 +5163,6 @@ function renderKpiResin(d){
   el.textContent = withRes ? String(hot) : '–';
   el.className = 'kpi-value value' + (hot ? ' warn' : '');
   setUrgency('k-resin', hot > 0 ? 'warn' : '');
-  refreshKpiKeep();
   kpiSet('k-resin-sub', withRes
     ? (hot ? hot + ' 款即将溢出' : '体力都还充裕')
     : '到「信息查询」查询后显示');
