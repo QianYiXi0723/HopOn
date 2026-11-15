@@ -695,14 +695,14 @@ function openUpdateModal(d){
   const box = document.getElementById('upd-notes');
   box.textContent = body || '（本次更新暂无说明）';
   box.hidden = !body;
+  // 只显示安装包（一键安装装的就是 Setup.exe；zip 与流程无关不展示）
   const pkgs = (d.assets || []).filter(function(a){
-    const n = String(a.name || '').toLowerCase();
-    return /\.(exe|zip)$/.test(n);
+    return /\.exe$/i.test(String(a.name || ''));
   }).map(function(a){
     return String(a.name || '') + ' ' + ((a.size || 0) / 1048576).toFixed(1) + 'MB';
   });
   document.getElementById('upd-pkg').textContent =
-    pkgs.length ? ('包含 ' + pkgs.join('　·　')) : '';
+    pkgs.length ? ('安装包 ' + pkgs.join('　·　')) : '';
   document.getElementById('update-modal').hidden = false;
 }
 function closeUpdateModal(){
@@ -710,57 +710,15 @@ function closeUpdateModal(){
   updDlReset();   // 关弹窗停轮询（下载任务在后端继续跑也不刷 UI）
 }
 
-/* 站内下载按钮绑定（addEventListener 纪律；元素在全局弹窗区，页面加载即存在） */
+/* 站内下载+一键安装按钮绑定（addEventListener 纪律；元素在全局弹窗区） */
 (function(){
   const btn = document.getElementById('upd-dl-btn');
   const open = document.getElementById('upd-dl-open');
-  const inst = document.getElementById('upd-dl-install');
   if (btn) btn.addEventListener('click', updDlStart);
   if (open) open.addEventListener('click', function(){
     fetch('/api/update/open-folder').then(function(r){ return r.json(); }).then(function(d){
       if (d && !d.ok) toast(d.error || '打开失败', true);
     }).catch(function(){ toast('无法连接本地服务', true); });
-  });
-  /* 一键安装（2026-11-15 优化：两击确认+标记+黑暗期提示层+结果确认+超时，
-     对标 Chrome「重启即更新」+ 官方验收「更新未完成要可见」）：
-     静默安装→壳被关闭→装完自动重启壳→引擎回来→页面恢复 reload */
-  if (inst) inst.addEventListener('click', function(){
-    if (inst.dataset.confirm !== '1') {          // 两击确认：首击只变文案，3s 超时还原
-      inst.dataset.confirm = '1';
-      inst.textContent = '再点一次确认安装';
-      setTimeout(function(){ if (inst.dataset.confirm === '1') { inst.dataset.confirm = ''; inst.textContent = '一键安装更新'; } }, 3000);
-      return;
-    }
-    inst.dataset.confirm = '';
-    localStorage.setItem('rl-updating', window.__updateInfo ? window.__updateInfo.latest : '');
-    document.getElementById('installing-mask').hidden = false;
-    document.getElementById('inst-ver').textContent = 'v' + (window.__updateInfo ? window.__updateInfo.latest : '');
-    inst.disabled = true;
-    inst.textContent = '安装中…';
-    updInstallProgress();   // 时间基进度+阶段文案（黑暗期无 API 可查，业界惯例）
-    fetch('/api/update/install').then(function(r){ return r.json(); }).then(function(d){
-      if (d && !d.ok) {
-        document.getElementById('installing-mask').hidden = true;
-        localStorage.removeItem('rl-updating');
-        toast(d.error || '安装发起失败', true);
-        inst.disabled = false; inst.textContent = '一键安装更新';
-        return;
-      }
-      let tries = 0;
-      const probe = function(){
-        tries++;
-        fetch('/api/update/download').then(function(){
-          if (tries > 60) {
-            localStorage.removeItem('rl-updating');
-            document.getElementById('installing-mask').hidden = true;
-            toast('等待重启超时——请手动启动 HopOn，或到「打开文件夹」手动安装', true);
-            return;
-          }
-          setTimeout(function(){ location.reload(); }, 800);
-        }).catch(function(){ setTimeout(probe, 1500); });
-      };
-      setTimeout(probe, 6000);   // 给安装器留关闭+安装的窗口
-    }).catch(function(){ toast('无法连接本地服务', true); inst.disabled = false; });
   });
 })();
 
@@ -780,15 +738,16 @@ function updDlPick(){
   const pkg = (d.assets || []).find(function(a){
     return /\.exe$/i.test(String(a.name || ''));
   }) || { name: 'HopOn_v' + d.latest + '_Setup.exe' };
-  return { version: d.latest, asset: pkg.name };
+  return { version: d.latest, asset: pkg.name, size: pkg.size };
 }
 function updDlStart(){
   const pick = updDlPick();
   updDlReset();
-  document.getElementById('upd-dl-btn').hidden = true;
+  localStorage.setItem('rl-updating', pick.version);
+  const btn = document.getElementById('upd-dl-btn');
+  btn.disabled = true;
+  btn.textContent = '准备下载…';
   document.getElementById('upd-dl-prog').hidden = false;
-  document.getElementById('upd-dl-fill').style.width = '0%';
-  document.getElementById('upd-dl-txt').textContent = '发起下载…';
   postJSON('/api/update/download', pick).then(function(d){
     if (!d || !d.ok) {
       updDlReset();
@@ -798,11 +757,46 @@ function updDlStart(){
     updDlPoll();
   }).catch(function(){ updDlReset(); toast('无法连接本地服务', true); });
 }
+/* done→自动接安装（单按钮贯穿全流程）；error→按钮复位+toast */
+function updDlAutoInstall(){
+  document.getElementById('upd-dl-prog').hidden = true;
+  const btn = document.getElementById('upd-dl-btn');
+  btn.hidden = false;
+  btn.disabled = true;
+  btn.textContent = '正在静默安装… 应用将自动重启';
+  fetch('/api/update/install').then(function(r){ return r.json(); }).then(function(d){
+    if (d && !d.ok) {
+      localStorage.removeItem('rl-updating');
+      document.getElementById('installing-mask').hidden = true;
+      toast(d.error || '安装发起失败', true);
+      updDlReset();
+      return;
+    }
+    document.getElementById('installing-mask').hidden = false;
+    document.getElementById('inst-ver').textContent = 'v' + (window.__updateInfo ? window.__updateInfo.latest : '');
+    updInstallProgress();   // 黑暗期时间基进度+阶段文案（业界惯例）
+    let tries = 0;
+    const probe = function(){
+      tries++;
+      fetch('/api/update/download').then(function(){
+        if (tries > 60) {
+          localStorage.removeItem('rl-updating');
+          document.getElementById('installing-mask').hidden = true;
+          toast('等待重启超时——请手动启动 HopOn，或到「打开文件夹」手动安装', true);
+          return;
+        }
+        setTimeout(function(){ location.reload(); }, 800);
+      }).catch(function(){ setTimeout(probe, 1500); });
+    };
+    setTimeout(probe, 6000);
+  }).catch(function(){ updDlReset(); toast('无法连接本地服务', true); });
+}
 function updDlPoll(){
   fetch('/api/update/download').then(function(r){ return r.json(); }).then(function(d){
     const st = d.stage || 'idle';
     const fill = document.getElementById('upd-dl-fill');
     const txt = document.getElementById('upd-dl-txt');
+    const btn = document.getElementById('upd-dl-btn');
     if (st === 'downloading') {
       const pct = d.total ? Math.min(100, Math.round(d.bytes / d.total * 100)) : 0;
       fill.style.width = pct + '%';
@@ -815,9 +809,10 @@ function updDlPoll(){
       _updDlTimer = setTimeout(updDlPoll, 500);
     } else if (st === 'done' && d.sha_ok) {
       document.getElementById('upd-dl-prog').hidden = true;
-      document.getElementById('upd-dl-btn').hidden = true;   // 完成态收起按钮，防重复点击
-      document.getElementById('upd-dl-done').hidden = false;
+      updDlAutoInstall();            // 单按钮贯穿：校验通过自动接安装（#20 闭环）
     } else if (st === 'error') {
+      localStorage.removeItem('rl-updating');
+      document.getElementById('installing-mask').hidden = true;
       updDlReset();
       toast(d.message || '下载失败', true);
     } else {

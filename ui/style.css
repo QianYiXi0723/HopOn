@@ -1383,7 +1383,7 @@
   .upd-notes{white-space:pre-wrap;word-break:break-word;font:12px/1.6 inherit;
              background:var(--bg-sub);border-radius:6px;padding:10px 12px;
              max-height:180px;overflow-y:auto;margin:0 0 10px;color:var(--fg)}
-  .upd-src-title{font-size:12px;color:var(--subtle);margin-bottom:6px}
+  .upd-src-title{font-size:12px;color:var(--muted);margin-bottom:6px}
   .upd-card{display:flex;align-items:center;gap:10px;padding:10px 12px;
             border-radius:8px;background:var(--bg-sub);text-decoration:none;
             margin-bottom:6px;transition:background .15s}
