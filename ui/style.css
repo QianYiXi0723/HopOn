@@ -1408,7 +1408,7 @@
   .upd-dl-txt{font-size:11px;color:var(--subtle);margin-top:4px;text-align:center}
   .upd-dl-done{display:flex;align-items:center;justify-content:center;gap:10px}
   .upd-dl-done[hidden]{display:none}
-  .upd-dl-ok{font-size:12px;font-weight:600;color:#3fb972}
+    .upd-dl-ok{font-size:12px;font-weight:600;color:#3fb972}
   .month-toolbar{display:flex;align-items:center;gap:10px;margin:-6px 0 12px}
   .month-nav{display:flex;gap:4px}
   .month-nav .btn{min-width:34px;padding:4px 10px;font-weight:700}
