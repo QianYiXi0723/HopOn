@@ -3962,7 +3962,7 @@ class Handler(BaseHTTPRequestHandler):
                 subprocess.Popen(
                     [pkg, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
                      "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS",
-                     '/LOG="' + str(log_path) + '"'],
+                     '/LOG=' + str(log_path)],   # 路径无空格不加引号——subprocess 列表→命令行的内嵌引号会被转义破坏（实测 /LOG 未生效教训）
                     cwd=str(Path(pkg).parent), creationflags=0x00000008)  # DETACHED_PROCESS
                 logger.info("已发起静默安装：%s——本进程将被安装器关闭并自动重启", pkg)
                 self._json({"ok": True,
