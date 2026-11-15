@@ -672,11 +672,30 @@ function closeUpdateModal(){
 (function(){
   const btn = document.getElementById('upd-dl-btn');
   const open = document.getElementById('upd-dl-open');
+  const inst = document.getElementById('upd-dl-install');
   if (btn) btn.addEventListener('click', updDlStart);
   if (open) open.addEventListener('click', function(){
     fetch('/api/update/open-folder').then(function(r){ return r.json(); }).then(function(d){
       if (d && !d.ok) toast(d.error || '打开失败', true);
     }).catch(function(){ toast('无法连接本地服务', true); });
+  });
+  /* 一键安装：静默安装→壳被安装器关闭→装完自动重启壳→引擎回来→页面恢复。
+     断连期间轮询失败重试；重连成功=新版本就位，reload 换新界面（#20 第二步） */
+  if (inst) inst.addEventListener('click', function(){
+    inst.disabled = true;
+    inst.textContent = '安装中… 应用将自动关闭并重启';
+    fetch('/api/update/install').then(function(r){ return r.json(); }).then(function(d){
+      if (d && !d.ok) { toast(d.error || '安装发起失败', true); inst.disabled = false; inst.textContent = '一键安装更新'; return; }
+      let tries = 0;
+      const probe = function(){
+        tries++;
+        fetch('/api/update/download').then(function(){ 
+          if (tries > 60) return;
+          setTimeout(function(){ location.reload(); }, 800);
+        }).catch(function(){ setTimeout(probe, 1500); });
+      };
+      setTimeout(probe, 6000);   // 给安装器留关闭+安装的窗口
+    }).catch(function(){ toast('无法连接本地服务', true); inst.disabled = false; });
   });
 })();
 
