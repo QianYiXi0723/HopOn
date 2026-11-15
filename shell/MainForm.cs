@@ -582,7 +582,23 @@ namespace HopOn
                 // 文档创建时 documentElement 可能还不存在，直接 appendChild 会抛 null 引用
                 "if(document.documentElement){apply()}else{document.addEventListener('DOMContentLoaded',apply)}" +
                 "})();");
-            _web.CoreWebView2.NewWindowRequested += (s2, e2) => { e2.Handled = true; };  // 屏蔽弹新窗
+            _web.CoreWebView2.NewWindowRequested += (s2, e2) =>
+            {
+                // 外部链接（检查更新弹窗的 GitHub/Gitee 渠道按钮、window.open 等）
+                // 交给系统默认浏览器打开——2026-11-15 根修：原 Handled=true 把新窗
+                // 请求静默吞掉，v2.6.1 用户点「检查更新」toast 说「打开下载页」却
+                // 什么都不发生；v2.6.2 弹窗的渠道按钮（target=_blank）同样中招。
+                e2.Handled = true;
+                try
+                {
+                    if (!string.IsNullOrEmpty(e2.Uri))
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e2.Uri) { UseShellExecute = true });
+                        Log("外部链接已交系统浏览器：" + e2.Uri);
+                    }
+                }
+                catch (Exception ex) { Log("外部链接打开失败：" + ex.Message); }
+            };
             Log("WebView2 就绪：右键菜单/DevTools/加速键已关，滚动条已隐藏");
         }
 
