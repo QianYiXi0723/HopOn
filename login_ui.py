@@ -3940,7 +3940,14 @@ class Handler(BaseHTTPRequestHandler):
                 if st.get("stage") != "done" or not st.get("sha_ok"):
                     self._json({"ok": False, "error": "还没有校验通过的安装包，请先完成站内下载"}, 400)
                     return
+                # 防降级（官方验收：本地版本更高时不安装）：包名解析版本须新于当前
                 pkg = str(st.get("file") or "")
+                pkg_ver = _update._parse(str(st.get("version") or ""))
+                if pkg_ver <= _update._parse(_update.current_version()):
+                    self._json({"ok": False,
+                                "error": "安装包版本（%s）不高于当前版本，已拒绝（防降级）"
+                                         % (".".join(str(x) for x in pkg_ver))}, 400)
+                    return
                 if not os.path.isfile(pkg):
                     self._json({"ok": False, "error": "安装包文件不存在"}, 404)
                     return
