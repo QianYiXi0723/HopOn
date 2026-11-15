@@ -57,6 +57,26 @@ def test_engine_py_syntax():
     check("engine/*.py 全部可编译（%d 个）" % count, not bad, "; ".join(bad[:5]))
 
 
+def test_ui_js_syntax():
+    """ui/*.js 全量 node --check——一个 SyntaxError 就会让整个前端拒执行
+    （2026-11-15 实锤：indexOf 裸换行炸掉整个 app.js，F5 后全页空）。"""
+    print("== ui/*.js 语法门禁（node --check）==")
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        check("node 可用", False, "PATH 里没有 node，语法门禁跳过不了也不能假过")
+        return
+    bad = []
+    js_files = sorted((ROOT / "ui").glob("*.js")) + sorted((ROOT / "tests").glob("*.js"))
+    for f in js_files:
+        proc = subprocess.run([node, "--check", str(f)], capture_output=True,
+                              text=True, encoding="utf-8", errors="replace", timeout=60)
+        if proc.returncode != 0:
+            bad.append(f.name + ": " + (proc.stderr or "").strip().splitlines()[-1][:120])
+    check("ui/*.js + tests/*.js 全部可解析（%d 个）" % len(js_files), not bad,
+          "; ".join(bad))
+
+
 def test_engine_ui_present():
     """engine/ui 三件套在位——漏同步会让实机跑旧前端（页面旧 JS 实锤）。"""
     print("== engine/ui 关键文件在位 ==")
@@ -68,6 +88,7 @@ def test_engine_ui_present():
 if __name__ == "__main__":
     test_sync_check()
     test_engine_py_syntax()
+    test_ui_js_syntax()
     test_engine_ui_present()
     print("== mirror_sync: %d PASS / %d FAIL ==" % (PASS, FAIL))
     sys.exit(1 if FAIL else 0)

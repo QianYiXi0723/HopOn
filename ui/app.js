@@ -630,6 +630,48 @@ function checkUpdate(){
 }
 document.getElementById('ver-line').addEventListener('click', checkUpdate);
 
+/* 安装黑暗期进度（2026-11-15）：VERYSILENT 无 UI 且壳已死 API 断——
+   时间基平滑推进+阶段文案，诚实标注「预计」；业界（Chrome/Edge 重启更新期）同款 */
+function updInstallProgress(){
+  const fill = document.getElementById('inst-fill');
+  const txt = document.getElementById('inst-stage');
+  if (!fill || !txt) return;
+  const stages = [
+    [0,   10, '连接安装器…'],
+    [1.5, 25, '关闭运行中的应用…'],
+    [3,   35, '复制新版本文件（预计 10 秒左右）…'],
+    [11,  88, '重启应用…'],
+    [14,  96, '即将完成…'],
+  ];
+  const t0 = Date.now();
+  const tick = function(){
+    const el = (Date.now() - t0) / 1000;
+    let pct = 96, msg = '即将完成…';
+    for (const s of stages) { if (el < s[0]) { pct = s[1]; msg = s[2]; break; } }
+    fill.style.width = pct + '%';
+    txt.textContent = '预计进度 ' + pct + '% · ' + msg;
+    if (el < 20) setTimeout(tick, 300);
+    else txt.textContent = '即将完成…（超过 20 秒仍未重启请检查应用是否已启动）';
+  };
+  tick();
+}
+
+/* 更新结果确认（2026-11-15）：一键安装留下的 rl-updating 标记，重启后
+   对比版本——成功 toast「已更新」，失败（版本没变）提示重试，均清标记 */
+(function(){
+  const pending = localStorage.getItem('rl-updating');
+  if (!pending) return;
+  localStorage.removeItem('rl-updating');
+  fetch('/api/update').then(function(r){ return r.json(); }).catch(function(){ return null; }).then(function(d){
+    const cur = d && d.current ? d.current : '';
+    if (cur && cur === pending) {
+      toast('✓ 已成功更新到 v' + cur + '，欢迎回来');
+    } else if (cur && cur !== pending) {
+      toast('更新未完成（当前仍是 v' + cur + '）——可重新检查更新后安装，或到下载页手动安装', true);
+    }
+  });
+})();
+
 /* 发现新版本弹窗（2026-11-15 双渠道版）：公告+下载途径选择。
    数据来自 /api/update 现有字段（notes/assets），零后端改动；
    渠道按钮写死两仓 releases/latest 页——不依赖检查通道（Gitee 通道
@@ -645,9 +687,14 @@ function openUpdateModal(d){
     '当前 v' + d.current + (d.published_at ? (' · 发布于 ' + String(d.published_at).slice(0, 10)) : '');
   const notes = String(d.notes || '')
     .replace(/^#{1,6}\s*/gm, '').replace(/\*\*|`/g, '').trim();
+  // 公告首行去重：首行若只是版本号（与标题重复）则跳过，不白占一行
+  const nl = notes.indexOf('\n');
+  const head = nl !== -1 ? notes.slice(0, nl).trim() : '';
+  const body = head && head.replace(/\s/g, '').indexOf('v' + d.latest) !== -1
+    ? notes.slice(nl + 1).trim() : notes;
   const box = document.getElementById('upd-notes');
-  box.textContent = notes || '（本次更新暂无说明）';
-  box.hidden = !notes;
+  box.textContent = body || '（本次更新暂无说明）';
+  box.hidden = !body;
   const pkgs = (d.assets || []).filter(function(a){
     const n = String(a.name || '').toLowerCase();
     return /\.(exe|zip)$/.test(n);
@@ -667,11 +714,53 @@ function closeUpdateModal(){
 (function(){
   const btn = document.getElementById('upd-dl-btn');
   const open = document.getElementById('upd-dl-open');
+  const inst = document.getElementById('upd-dl-install');
   if (btn) btn.addEventListener('click', updDlStart);
   if (open) open.addEventListener('click', function(){
     fetch('/api/update/open-folder').then(function(r){ return r.json(); }).then(function(d){
       if (d && !d.ok) toast(d.error || '打开失败', true);
     }).catch(function(){ toast('无法连接本地服务', true); });
+  });
+  /* 一键安装（2026-11-15 优化：两击确认+标记+黑暗期提示层+结果确认+超时，
+     对标 Chrome「重启即更新」+ 官方验收「更新未完成要可见」）：
+     静默安装→壳被关闭→装完自动重启壳→引擎回来→页面恢复 reload */
+  if (inst) inst.addEventListener('click', function(){
+    if (inst.dataset.confirm !== '1') {          // 两击确认：首击只变文案，3s 超时还原
+      inst.dataset.confirm = '1';
+      inst.textContent = '再点一次确认安装';
+      setTimeout(function(){ if (inst.dataset.confirm === '1') { inst.dataset.confirm = ''; inst.textContent = '一键安装更新'; } }, 3000);
+      return;
+    }
+    inst.dataset.confirm = '';
+    localStorage.setItem('rl-updating', window.__updateInfo ? window.__updateInfo.latest : '');
+    document.getElementById('installing-mask').hidden = false;
+    document.getElementById('inst-ver').textContent = 'v' + (window.__updateInfo ? window.__updateInfo.latest : '');
+    inst.disabled = true;
+    inst.textContent = '安装中…';
+    updInstallProgress();   // 时间基进度+阶段文案（黑暗期无 API 可查，业界惯例）
+    fetch('/api/update/install').then(function(r){ return r.json(); }).then(function(d){
+      if (d && !d.ok) {
+        document.getElementById('installing-mask').hidden = true;
+        localStorage.removeItem('rl-updating');
+        toast(d.error || '安装发起失败', true);
+        inst.disabled = false; inst.textContent = '一键安装更新';
+        return;
+      }
+      let tries = 0;
+      const probe = function(){
+        tries++;
+        fetch('/api/update/download').then(function(){
+          if (tries > 60) {
+            localStorage.removeItem('rl-updating');
+            document.getElementById('installing-mask').hidden = true;
+            toast('等待重启超时——请手动启动 HopOn，或到「打开文件夹」手动安装', true);
+            return;
+          }
+          setTimeout(function(){ location.reload(); }, 800);
+        }).catch(function(){ setTimeout(probe, 1500); });
+      };
+      setTimeout(probe, 6000);   // 给安装器留关闭+安装的窗口
+    }).catch(function(){ toast('无法连接本地服务', true); inst.disabled = false; });
   });
 })();
 

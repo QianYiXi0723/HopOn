@@ -843,10 +843,13 @@
     <div class="modal-mask" id="update-modal" hidden>
       <div class="modal modal--update">
         <div class="modal-head">
-          <b>发现新版本 <span id="upd-latest"></span></b>
+          <b>发现新版本</b>
           <button type="button" class="modal-x" onclick="closeUpdateModal()" title="关闭">✕</button>
         </div>
-        <div class="upd-cur" id="upd-cur"></div>
+        <div class="upd-hero">
+          <span class="upd-hero-ver" id="upd-latest"></span>
+          <span class="upd-cur" id="upd-cur"></span>
+        </div>
         <pre class="upd-notes" id="upd-notes" hidden></pre>
         <div class="upd-src-title">下载途径</div>
         <div class="upd-src">
@@ -869,7 +872,8 @@
           </div>
           <div class="upd-dl-done" id="upd-dl-done" hidden>
             <span class="upd-dl-ok">✓ 校验通过</span>
-            <button type="button" class="btn sm" id="upd-dl-open">打开文件夹安装</button>
+            <button type="button" class="btn primary sm" id="upd-dl-install">一键安装更新</button>
+            <button type="button" class="btn sm" id="upd-dl-open">打开文件夹</button>
           </div>
         </div>
       </div>
@@ -1006,6 +1010,14 @@
 </div>
 
 <div id="toast"></div>
+    <!-- 安装黑暗期提示层（2026-11-15）：壳被安装器关闭后浏览器场景的页面仍活着，
+         有这层遮罩用户就知道「在装、会自动回来」；壳内场景窗口随壳关闭，物理无解 -->
+    <div id="installing-mask" hidden style="position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.78);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#e8e8e8">
+      <div style="font-size:18px;font-weight:700">正在安装更新 <span id="inst-ver"></span></div>
+      <div style="width:min(360px,80vw);height:8px;border-radius:4px;background:rgba(255,255,255,.15);overflow:hidden"><i id="inst-fill" style="display:block;height:100%;width:0;background:#5b9cf5;transition:width .4s"></i></div>
+      <div style="font-size:12px;opacity:.75" id="inst-stage">连接安装器…</div>
+      <div style="font-size:12px;opacity:.6">应用已自动关闭，安装完成后将自动重启——请稍候，无需任何操作</div>
+    </div>
 
 <script>__APP_JS__</script>
 </body>

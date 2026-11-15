@@ -3927,6 +3927,51 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": f"打开失败：{exc}"}, 500)
             return
 
+        if path == "/api/update/install":
+            # 一键静默安装（2026-11-15，#20 第二步）：前置=站内下载 done 且
+            # sha_ok——不满足拒绝。VERYSILENT 无 UI；/CLOSEAPPLICATIONS+
+            # /RESTARTAPPLICATIONS 命令行覆盖 iss 指令：安装器自动关闭运行中的
+            # HopOn（文件锁）、装完经 Restart Manager 重启壳——壳拉起全家，
+            # 新版本上线。响应发出后本进程即将被关闭，写完就 return。
+            try:
+                from core import update as _update
+
+                st = _update.download_status()
+                if st.get("stage") != "done" or not st.get("sha_ok"):
+                    self._json({"ok": False, "error": "还没有校验通过的安装包，请先完成站内下载"}, 400)
+                    return
+                # 防降级（官方验收：本地版本更高时不安装）：包名解析版本须新于当前
+                pkg = str(st.get("file") or "")
+                pkg_ver = _update._parse(str(st.get("version") or ""))
+                if pkg_ver <= _update._parse(_update.current_version()):
+                    self._json({"ok": False,
+                                "error": "安装包版本（%s）不高于当前版本，已拒绝（防降级）"
+                                         % (".".join(str(x) for x in pkg_ver))}, 400)
+                    return
+                if not os.path.isfile(pkg):
+                    self._json({"ok": False, "error": "安装包文件不存在"}, 404)
+                    return
+                import subprocess
+
+                # /LOG 落安装日志（VERYSILENT 失败无 UI，日志是唯一诊断线索）
+                log_path = Path(os.environ.get("LOCALAPPDATA", str(ROOT if False else '.'))) / "HopOn" / "logs" / "install.log"
+                try:
+                    log_path.parent.mkdir(parents=True, exist_ok=True)
+                except OSError:
+                    log_path = Path("install.log")
+                subprocess.Popen(
+                    [pkg, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+                     "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS",
+                     '/LOG=' + str(log_path)],   # 路径无空格不加引号——subprocess 列表→命令行的内嵌引号会被转义破坏（实测 /LOG 未生效教训）
+                    cwd=str(Path(pkg).parent), creationflags=0x00000008)  # DETACHED_PROCESS
+                logger.info("已发起静默安装：%s——本进程将被安装器关闭并自动重启", pkg)
+                self._json({"ok": True,
+                            "message": "静默安装已启动：应用将自动关闭，安装完成后自动重启"})
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("静默安装发起失败")
+                self._json({"ok": False, "error": f"安装启动失败：{exc}"}, 500)
+            return
+
         if path == "/api/update/open-folder":
             # 资源管理器定位已下载并校验通过的安装包（站内下载完成态）
             try:
