@@ -3953,9 +3953,16 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 import subprocess
 
+                # /LOG 落安装日志（VERYSILENT 失败无 UI，日志是唯一诊断线索）
+                log_path = Path(os.environ.get("LOCALAPPDATA", str(ROOT if False else '.'))) / "HopOn" / "logs" / "install.log"
+                try:
+                    log_path.parent.mkdir(parents=True, exist_ok=True)
+                except OSError:
+                    log_path = Path("install.log")
                 subprocess.Popen(
                     [pkg, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
-                     "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS"],
+                     "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS",
+                     '/LOG="' + str(log_path) + '"'],
                     cwd=str(Path(pkg).parent), creationflags=0x00000008)  # DETACHED_PROCESS
                 logger.info("已发起静默安装：%s——本进程将被安装器关闭并自动重启", pkg)
                 self._json({"ok": True,

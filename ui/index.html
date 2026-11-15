@@ -1014,7 +1014,9 @@
          有这层遮罩用户就知道「在装、会自动回来」；壳内场景窗口随壳关闭，物理无解 -->
     <div id="installing-mask" hidden style="position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.78);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#e8e8e8">
       <div style="font-size:18px;font-weight:700">正在安装更新 <span id="inst-ver"></span></div>
-      <div style="font-size:13px;opacity:.75">应用已自动关闭，安装完成后将自动重启——请稍候，无需任何操作</div>
+      <div style="width:min(360px,80vw);height:8px;border-radius:4px;background:rgba(255,255,255,.15);overflow:hidden"><i id="inst-fill" style="display:block;height:100%;width:0;background:#5b9cf5;transition:width .4s"></i></div>
+      <div style="font-size:12px;opacity:.75" id="inst-stage">连接安装器…</div>
+      <div style="font-size:12px;opacity:.6">应用已自动关闭，安装完成后将自动重启——请稍候，无需任何操作</div>
     </div>
 
 <script>__APP_JS__</script>

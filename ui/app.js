@@ -630,6 +630,32 @@ function checkUpdate(){
 }
 document.getElementById('ver-line').addEventListener('click', checkUpdate);
 
+/* 安装黑暗期进度（2026-11-15）：VERYSILENT 无 UI 且壳已死 API 断——
+   时间基平滑推进+阶段文案，诚实标注「预计」；业界（Chrome/Edge 重启更新期）同款 */
+function updInstallProgress(){
+  const fill = document.getElementById('inst-fill');
+  const txt = document.getElementById('inst-stage');
+  if (!fill || !txt) return;
+  const stages = [
+    [0,   10, '连接安装器…'],
+    [1.5, 25, '关闭运行中的应用…'],
+    [3,   35, '复制新版本文件（预计 10 秒左右）…'],
+    [11,  88, '重启应用…'],
+    [14,  96, '即将完成…'],
+  ];
+  const t0 = Date.now();
+  const tick = function(){
+    const el = (Date.now() - t0) / 1000;
+    let pct = 96, msg = '即将完成…';
+    for (const s of stages) { if (el < s[0]) { pct = s[1]; msg = s[2]; break; } }
+    fill.style.width = pct + '%';
+    txt.textContent = '预计进度 ' + pct + '% · ' + msg;
+    if (el < 20) setTimeout(tick, 300);
+    else txt.textContent = '即将完成…（超过 20 秒仍未重启请检查应用是否已启动）';
+  };
+  tick();
+}
+
 /* 更新结果确认（2026-11-15）：一键安装留下的 rl-updating 标记，重启后
    对比版本——成功 toast「已更新」，失败（版本没变）提示重试，均清标记 */
 (function(){
@@ -711,6 +737,7 @@ function closeUpdateModal(){
     document.getElementById('inst-ver').textContent = 'v' + (window.__updateInfo ? window.__updateInfo.latest : '');
     inst.disabled = true;
     inst.textContent = '安装中…';
+    updInstallProgress();   // 时间基进度+阶段文案（黑暗期无 API 可查，业界惯例）
     fetch('/api/update/install').then(function(r){ return r.json(); }).then(function(d){
       if (d && !d.ok) {
         document.getElementById('installing-mask').hidden = true;
