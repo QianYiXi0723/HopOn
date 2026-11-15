@@ -645,9 +645,14 @@ function openUpdateModal(d){
     '当前 v' + d.current + (d.published_at ? (' · 发布于 ' + String(d.published_at).slice(0, 10)) : '');
   const notes = String(d.notes || '')
     .replace(/^#{1,6}\s*/gm, '').replace(/\*\*|`/g, '').trim();
+  // 公告首行去重：首行若只是版本号（与标题重复）则跳过，不白占一行
+  const nl = notes.indexOf('\n');
+  const head = nl !== -1 ? notes.slice(0, nl).trim() : '';
+  const body = head && head.replace(/\s/g, '').indexOf('v' + d.latest) !== -1
+    ? notes.slice(nl + 1).trim() : notes;
   const box = document.getElementById('upd-notes');
-  box.textContent = notes || '（本次更新暂无说明）';
-  box.hidden = !notes;
+  box.textContent = body || '（本次更新暂无说明）';
+  box.hidden = !body;
   const pkgs = (d.assets || []).filter(function(a){
     const n = String(a.name || '').toLowerCase();
     return /\.(exe|zip)$/.test(n);

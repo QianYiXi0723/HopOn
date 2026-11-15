@@ -843,10 +843,13 @@
     <div class="modal-mask" id="update-modal" hidden>
       <div class="modal modal--update">
         <div class="modal-head">
-          <b>发现新版本 <span id="upd-latest"></span></b>
+          <b>发现新版本</b>
           <button type="button" class="modal-x" onclick="closeUpdateModal()" title="关闭">✕</button>
         </div>
-        <div class="upd-cur" id="upd-cur"></div>
+        <div class="upd-hero">
+          <span class="upd-hero-ver" id="upd-latest"></span>
+          <span class="upd-cur" id="upd-cur"></span>
+        </div>
         <pre class="upd-notes" id="upd-notes" hidden></pre>
         <div class="upd-src-title">下载途径</div>
         <div class="upd-src">
