@@ -725,7 +725,44 @@
   .kpi-toggle:hover{background:var(--btn-hover);color:var(--fg)}
   @media (max-width:520px){ .kpi-bar{grid-template-columns:1fr} }
 
-  /* ---------- 底部日志控制台：固定底栏（不随内容滚动、不悬浮遮挡） ----------
+  /* ============ 账号与通知页布局（2026-11-16 用户实测重排）============
+     旧问题：4 个流式块（s7/s5/s7/s5）各自按内容撑高，两行分界虽对齐，
+     但左右底部参差、卡内留大量空白——用户点名「定时与状态那个才叫整齐」。
+     现学定时页范式：**两列网格 + 显式行位**，左列 = 账号绑定 / 通知绑定，
+     右列 = 凭证健康+设备伪装 / 推送预览，两列底部由 stretch 对齐。
+     高度链与定时页同源。 ===================================================================== */
+  #tab-account.on{display:grid;
+    grid-template-columns:minmax(0,1.55fr) minmax(0,1fr) !important;
+    grid-template-rows:auto auto;
+    gap:16px;align-items:stretch}
+  /* 四块显式落位：左列 1、右列 2；上排 1、下排 2。
+     !important 是必须的——.tabpanel.on 的 12 列规则与 .s7/.s5 的
+     grid-column:span N 同时存在，会把这些块重新按 12 栅格摊开、
+     把两列压成 344/222px（2026-11-16 实测） */
+  #tab-account .acct-col.s7{grid-column:1 / 2 !important;grid-row:1 !important}
+  #tab-account .acct-col.s5{grid-column:2 / 3 !important;grid-row:1 !important}
+  #tab-account .card.s7{grid-column:1 / 2 !important;grid-row:2 !important}
+  #tab-account .s5.stack{grid-column:2 / 3 !important;grid-row:2 !important}
+  /* 落位后栅格宽度类失效，由列宽接管 */
+  #tab-account > .acct-col,#tab-account > .card.s7,#tab-account > .s5.stack{width:auto}
+  /* 窄屏回退（学定时页 681 行同款）：≤1099px 时 .tabpanel.on > *{grid-column:1/-1}
+     会把四块压成整行、两列塌成一列——显式改单列按原序堆叠，
+     顺序还原为：账号绑定 → 凭证健康/设备 → 通知绑定 → 推送预览 */
+  @media (max-width:1099px){
+    #tab-account.on{grid-template-columns:minmax(0,1fr) !important;
+      grid-template-rows:auto auto auto auto}
+    #tab-account .acct-col.s7{grid-column:1 / -1 !important;grid-row:1 !important}
+    #tab-account .acct-col.s5{grid-column:1 / -1 !important;grid-row:2 !important}
+    #tab-account .card.s7{grid-column:1 / -1 !important;grid-row:3 !important}
+    #tab-account .s5.stack{grid-column:1 / -1 !important;grid-row:4 !important}
+  }
+  /* 右列两块（凭证+设备）保持原堆叠间距 */
+  #tab-account .acct-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+  #tab-account .s5.stack{display:flex;flex-direction:column;gap:16px;min-width:0}
+  /* 推送预览气泡在窄列/小窗下不被文字换行拉长：卡体内部滚动 */
+  #tab-account .pv-bubble{max-height:420px;overflow-y:auto}
+
+
      收缩 48px（只有把手）/ 展开 200px（把手 48 + 日志体 152） */
   .console{flex-shrink:0;background:var(--surface);
            border-radius:0;overflow:hidden}
