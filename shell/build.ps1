@@ -39,8 +39,22 @@ $shellFiles = @(
 )
 
 Write-Host "==> dotnet publish"
-& dotnet publish $shellDir -c Release -o $publishDir
+# 必须显式指定 csproj：shell\ 下现在有两个项目（HopOn + HopOnUpdater），
+# 传目录会让 dotnet 报 MSB1050「包含多个项目」（2026-11-16 实测）
+& dotnet publish (Join-Path $shellDir "HopOn.csproj") -c Release -o $publishDir
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失败（exit $LASTEXITCODE）" }
+
+# 独立更新器（2026-11-16）：自己不被替换，才能在主进程退出后换文件。
+# 独立编译到 publish-updater——绝不混进 HopOn 的 publish（避免重复带 WebView2）
+Write-Host "==> dotnet build HopOnUpdater（独立更新器）"
+$updaterProj = Join-Path $shellDir "HopOnUpdater.csproj"
+$updaterOut  = Join-Path $shellDir "publish-updater"
+& dotnet build $updaterProj -c Release -o $updaterOut
+if ($LASTEXITCODE -ne 0) { throw "HopOnUpdater 编译失败（exit $LASTEXITCODE）" }
+$updaterExe = Join-Path $updaterOut "HopOnUpdater.exe"
+if (-not (Test-Path $updaterExe)) { throw "缺少产物：$updaterExe" }
+Copy-Item $updaterExe (Join-Path $root "HopOnUpdater.exe") -Force
+Write-Host ("    {0,-42} {1,10:N0} B" -f "HopOnUpdater.exe", (Get-Item (Join-Path $root "HopOnUpdater.exe")).Length)
 
 # 清掉上一轮遗留：旧的合并版 exe 与 Wpf.dll 绝不能混进发行包
 foreach ($name in ($shellFiles + @("Microsoft.Web.WebView2.Wpf.dll", "HopOn.exe.config"))) {

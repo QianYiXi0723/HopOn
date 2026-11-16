@@ -423,6 +423,10 @@ def main() -> None:
     shutil.copy2(_require(SHELL_EXE, "C# 壳 HopOn.exe（先跑 shell\\build.ps1）"), OUT / "HopOn.exe")
     for name in SHELL_COMPANIONS:
         shutil.copy2(_require(ROOT / name, name), OUT / name)
+    # 1b) 独立更新器（2026-11-16）：自己不被替换，才能绕开 Job Object 死锁
+    shutil.copy2(_require(ROOT / "HopOnUpdater.exe",
+                          "独立更新器 HopOnUpdater.exe（先跑 shell\\build.ps1）"),
+                 OUT / "HopOnUpdater.exe")
 
     # 2) engine（含 diet 瘦身 + 瘦身后运行时冒烟，失败即中止）
     build_engine(OUT / "engine")
