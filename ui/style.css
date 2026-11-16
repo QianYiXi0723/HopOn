@@ -179,7 +179,12 @@
               flex:none;padding:12px 24px;background:var(--bg-head);
               border-radius:8px 8px 0 0}
   .card-head h2,.card__header h2{font-size:15px;font-weight:600;margin:0;display:flex;
-                 align-items:center;gap:8px;min-width:0}
+                 align-items:center;gap:8px;min-width:0;white-space:nowrap}
+  /* 标题永不被右侧徽章挤压换行（2026-11-16：账号页推送预览卡在 5 栅格宽度下
+     标题被长徽章「推送到 Server酱 + Qmsg 酱」压成竖排单字） */
+  .card-head h2,.card__header h2{flex:none}
+  /* 徽章超长时自己截断，不侵占标题 */
+  .card-head .badge,.card__header .badge{overflow:hidden;text-overflow:ellipsis;max-width:60%}
   .card-head .spacer,.card__header .spacer{flex:1}
   /* 卡体：吃掉剩余高度并可压缩（滚动交给各页按需开启，避免全局多出滚动槽） */
   .card-body,.card__body{padding:20px 24px;flex:1 1 auto;min-height:0}

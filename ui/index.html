@@ -361,10 +361,12 @@
     </div>
 
     <!-- ======== 通知绑定（并入账号页）：渠道切换改分段控件——约定形态自带
-         可点击意符（Norman），原「渠道」空卡删除；两卡 8+4 配满 12 栅格
+         可点击意符（Norman），原「渠道」空卡删除；两卡配满 12 栅格
          2026-11-06 用户要求：标题固定为「通知绑定」而不是跟随渠道名
-         （渠道名在下方分段控件已明确显示，标题再变一次是重复信息） ======== -->
-    <section class="card s8">
+         （渠道名在下方分段控件已明确显示，标题再变一次是重复信息）
+         2026-11-16 用户实测：原本 8+4 与上一行 7+5 分界不齐（上下列缝错开
+         参差不齐），改为 7+5 与首行同分界，两行左边缘一条竖线对齐 ======== -->
+    <section class="card s7">
       <div class="card-head">
         <h2 id="ed-title"><svg class="ico"><use href="#i-send"/></svg> 通知绑定
           <span class="q" data-tip="出于安全，已保存的 Key 以掩码显示：不修改输入框即保持原值，清空后保存则删除该 Key"></span>
@@ -405,7 +407,7 @@
       </div>
     </section>
 
-    <div class="s4 stack">
+    <div class="s5 stack">
       <section class="card">
         <div class="card-head">
           <h2><svg class="ico"><use href="#i-mail"/></svg> 推送预览
