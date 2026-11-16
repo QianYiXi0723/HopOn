@@ -3264,7 +3264,7 @@ function actCardHtml(it, isHero, heroSlim){
   const reward = it.reward
     ? '<span class="act-reward" title="' + escHtml(it.reward) + ' · 抽卡资源">' + escHtml(it.reward) + '</span>'
     : '';
-  const prog = actProgHtml(it);
+  const prog = it.not_started ? '' : actProgHtml(it);
   /* 三段段位标记（2026-11-11 #9，与英雄卡关联）：已设档位显示「档名+阈值」，
      已推的打勾，-1 档显「关」——数据全部来自后端 payload，前端零推算 */
   const tierNames = {1: '规划', 2: '冲刺', 3: '抢救'};
@@ -4172,7 +4172,7 @@ function gameCardHtml(g){
   }
   const missed = Number(g.month_missed || 0);
   const tip = '上次检查 ' + (today && today.last ? shortStamp(today.last) : '—') +
-    ' ｜ 每日任务：' + taskTip +
+    ' ｜ ' + taskTip +
     ' ｜ 本月完成 ' + Number(g.month_done || 0) + ' 天' + (missed > 0 ? ' · 漏 ' + missed : '');
 
   /* 连续天数保护话术：streak > 0 且今天还没做完时，用损失厌恶框架提醒
