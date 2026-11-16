@@ -3496,7 +3496,8 @@ function renderActivities(d){
          组内按剩余时间升序；组间按「最近将有活动结束」升序 */
       const groups = [], byGid = {};
       mergedOngoing.concat(upcoming).forEach(function(x){
-        if (x === heroIt) return;   /* 英雄已通栏置顶，不进分组 */
+        /* 2026-11-16：英雄卡不再"通栏置顶"，进它所属的分组——
+           渲染时靠 .acard.hero 的 span 2×2 占位，同组小卡 dense 补位 */
         const gid = x.game || '';
         if (!byGid[gid]) {
           byGid[gid] = { gid: gid, name: x.game_name || '未知游戏', items: [] };
@@ -3512,8 +3513,11 @@ function renderActivities(d){
 
       if (groups.length) {
         /* 英雄卡套进 act-grid 只占 2×2 轨道（2026-11-13 用户裁决：全屏下
-           裸卡通栏霸整排难看；≤660px 窄容器仍有 1/-1 回退） */
-        html = (heroIt ? '<div class="act-grid">' + actCardHtml(heroIt, true, heroSlim) + '</div>' : '') + groups.map(function(g){
+           裸卡通栏霸整排难看；≤660px 窄容器仍有 1/-1 回退）。
+           2026-11-16 用户实测修订：英雄卡不能独占一个 .act-grid——那样
+           它单独撑满整排、右侧全是空白。现改为英雄进所属分组网格，
+           靠 dense 自动流让同组小卡补进右侧轨道。 */
+        html = groups.map(function(g){
           return '<div class="act-group">' +
             '<div class="act-group-head">' +
               '<span class="gdot" style="background:' + gameDotColor(g.gid) + '"></span>' +
@@ -3529,10 +3533,13 @@ function renderActivities(d){
       /* 模式 B · 按剩余时间升序，同时间按标题首字母（localeCompare zh）；
          平坦网格无组头，最紧急一张仍是英雄卡 */
       /* 英雄强制第一位（2026-11-09 用户需求）：dense 自动流会被更紧急的
-         无内容卡挤到第二行——英雄出池通栏置顶，其余照紧迫序跟后排 */
+         无内容卡挤到第二行——英雄置于首位，其余照紧迫序跟排。
+         2026-11-16 用户实测修订：英雄卡不能再独占一个 .act-grid（那样整排
+         只剩它+右侧大片空白）；与其余卡同一网格，靠 span 2×2 占位，
+         dense 自动流会把小卡填进右侧两列。 */
       const pool = mergedOngoing.concat(upcoming).filter(function(x){ return x !== heroIt; }).sort(byUrgency);
-      html = (heroIt ? '<div class="act-grid">' + actCardHtml(heroIt, true, heroSlim) + '</div>' : '') +
-        '<div class="act-grid">' +
+      html = '<div class="act-grid">' +
+        (heroIt ? actCardHtml(heroIt, true, heroSlim) : '') +
         pool.map(function(x){ return actCardHtml(x, false); }).join('') +
         '</div>';
     }
