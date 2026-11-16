@@ -4028,159 +4028,66 @@ class Handler(BaseHTTPRequestHandler):
                 if not os.path.isfile(pkg):
                     self._json({"ok": False, "error": "安装包文件不存在"}, 404)
                     return
-                # 静默安装已恢复（2026-11-16，δ1 结论）：目标目录固定为标准安装
-                # 位置 {LOCALAPPDATA}\Programs\HopOn（与 installer/HopOn.iss 的
-                # ProgramDir 一致），**不再**用 engine 上级目录——本机 engine 上级
-                # 是 git 工作树 E:\Apps\HopOn，装进去会覆盖源码并污染版本控制。
+                # 一键安装（2026-11-16 三改）：改为启动独立 HopOnUpdater.exe。
+                # 为什么不再跑 Setup.exe：Inno 靠 RestartManager 关运行中进程，
+                # 而引擎 pythonw 被壳挂在 Job Object 里内核层面关不掉 →
+                # 安装器 Abort → 整体回滚（2026-11-16 19:35 实弹 rc=5）。
+                # Updater 自己不在替换集合里，可先等本进程退出再换文件，
+                # 两阶段替换 + 完整备份，失败能回滚。
                 import subprocess
 
-                # /LOG 落安装日志（VERYSILENT 失败无 UI，日志是唯一诊断线索）
-                log_path = Path(os.environ.get("LOCALAPPDATA", str(ROOT if False else '.'))) / "HopOn" / "logs" / "install.log"
-                try:
-                    log_path.parent.mkdir(parents=True, exist_ok=True)
-                except OSError:
-                    log_path = Path("install.log")
-                # 中间脚本方案（2026-11-15 根治「锁赛跑」）：第一版自杀链里
-                # 安装器与引擎退出赛跑——VERYSILENT 扫描到文件锁就静默跳过
-                # （install.log 报 succeeded 但 engine 全没装）。改为：引擎只负责
-                # 停 daemon + 启动独立桥接进程后退出；桥接进程等锁全清
-                # （引擎退出后 2s）才启动安装器，装完自己拉壳拉全家。
-                bridge = Path(os.environ.get("TEMP", str(Path.cwd()))) / "hopon_install_bridge.py"
-                # 桥接日志与 install.log 同目录（装到一半失败时两者对照看）
-                bridge_log = log_path.parent / "install_bridge.log"
-                bridge.write_text(
-                    "import subprocess, sys, time, os\n"
-                    "setup, shell_dir, logf, dstdir, blog = sys.argv[1:6]\n"
-                    "\n"
-                    "def _blog(msg):\n"
-                    "    try:\n"
-                    "        with open(blog, 'a', encoding='utf-8') as fh:\n"
-                    "            fh.write(time.strftime('%Y-%m-%d %H:%M:%S') + '  ' + msg + '\\n')\n"
-                    "    except OSError:\n"
-                    "        pass\n"
-                    "\n"
-                    "time.sleep(2.0)   # 等引擎退出、文件锁全清\n"
-                    "_blog('桥接启动：setup=%s dstdir=%s' % (setup, dstdir))\n"
-                    "if not os.path.isfile(setup):\n"
-                    "    _blog('FATAL 安装包不存在：' + setup)\n"
-                    "    sys.exit(2)\n"
-                    "# 2026-11-16 实弹：安装版自我升级时壳 HopOn.exe 仍持有目标文件，\n"
-                    "# RestartManager 在 Job Object 里关不掉 → Installer Abort → 回滚。\n"
-                    "# 装之前先精确清场：只杀「镜像路径在目标安装目录内」的进程，\n"
-                    "# 绝不按名字杀——否则会误伤工作树实例与其它测试端口实例。\n"
-                    "def _kill_under(root):\n"
-                    "    root = os.path.normcase(os.path.abspath(root))\n"
-                    "    # 一次性用 PowerShell CIM 枚举「PID|路径」——wmic 在 Windows 11 已移除\n"
-                    "    # （2026-11-16 实测 command not found）；逐进程起 powershell 太慢，一条搞定。\n"
-                    "    ps = (\"Get-CimInstance Win32_Process | \"\n"
-                    "          \"Where-Object { $_.ExecutablePath } | \"\n"
-                    "          \"ForEach-Object { Write-Output ($_.ProcessId.ToString() + '|' + $_.ExecutablePath) }\")\n"
-                    "    try:\n"
-                    "        # 坑1：PowerShell 输出在中文 Windows 默认 GBK，用 utf-8 解码会\n"
-                    "        #    UnicodeDecodeError 整段失败（2026-11-16 实测=清场零杀）。\n"
-                    "        # 解法：让 PowerShell 自己输出 UTF-8（-OutputFormat Text + 代码里设\n"
-                    "        #    [Console]::OutputEncoding），并用 errors='replace' 兜底。\n"
-                    "        ps_utf8 = \"[Console]::OutputEncoding=[Text.Encoding]::UTF8; \" + ps\n"
-                    "        out = subprocess.run(['powershell', '-NoProfile', '-Command', ps_utf8],\n"
-                    "                             capture_output=True, text=True,\n"
-                    "                             encoding='utf-8', errors='replace', timeout=30).stdout\n"
-                    "    except Exception as exc:\n"
-                    "        _blog('WARN 列举进程失败（跳过清场）：' + repr(exc))\n"
-                    "        return []\n"
-                    "    killed = []\n"
-                    "    for line in (out or '').splitlines():\n"
-                    "        if '|' not in line:\n"
-                    "            continue\n"
-                    "        pid_s, ep = line.split('|', 1)\n"
-                    "        try:\n"
-                    "            npid = int(pid_s.strip())\n"
-                    "        except ValueError:\n"
-                    "            continue\n"
-                    "        ep = ep.strip()\n"
-                    "        if not ep or npid == os.getpid():\n"
-                    "            continue\n"
-                    "        if not os.path.normcase(os.path.abspath(ep)).startswith(root + os.sep):\n"
-                    "            continue   # 不在目标目录内 —— 放过（工作树/测试实例）\n"
-                    "        try:\n"
-                    "            subprocess.run(['taskkill', '/F', '/PID', str(npid)],\n"
-                    "                           capture_output=True, timeout=15)\n"
-                    "            killed.append('%s(%d)' % (os.path.basename(ep), npid))\n"
-                    "        except Exception as exc:\n"
-                    "            _blog('WARN 结束进程失败 %d：%s' % (npid, exc))\n"
-                    "    return killed\n"
-                    "\n"
-                    "_killed = _kill_under(dstdir)\n"
-                    "if not _killed:\n"
-                    "    # 兜底：若 CIM 枚举不可用（如 PowerShell 被策略禁用），只按名杀 HopOn.exe。\n"
-                    "    # 绝不按名杀 pythonw.exe——引擎那时已 os._exit，多杀会误伤工作树/测试实例。\n"
-                    "    try:\n"
-                    "        r = subprocess.run(['taskkill', '/F', '/IM', 'HopOn.exe'],\n"
-                    "                           capture_output=True, text=True, timeout=15)\n"
-                    "        if r.returncode == 0:\n"
-                    "            _killed = ['HopOn.exe(按名兜底)']\n"
-                    "    except Exception as exc:\n"
-                    "        _blog('WARN 按名兜底也失败：' + repr(exc))\n"
-                    "_blog('清场结果：' + ('、'.join(_killed) if _killed else '无需清理'))\n"
-                    "time.sleep(1.5)   # 等文件句柄真正释放\n"
-                    "cmd = [setup, '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',\n"
-                    "       '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS',\n"
-                    "       '/FORCECLOSEAPPLICATIONS',\n"
-                    "       '/DIR=' + dstdir, '/LOG=' + logf]\n"
-                    "_blog('执行：' + ' '.join(cmd))\n"
-                    "try:\n"
-                    "    p = subprocess.Popen(cmd)\n"
-                    "    rc = p.wait()\n"
-                    "except Exception as exc:\n"
-                    "    _blog('FATAL 安装器启动异常：' + repr(exc))\n"
-                    "    rc = -1\n"
-                    "_blog('安装器退出码 = %d' % rc)\n"
-                    "if rc != 0:\n"
-                    "    _blog('FATAL 安装器非零退出（rc=%d）——详见 install.log' % rc)\n"
-                    "    sys.exit(1)\n"
-                    "time.sleep(1.0)\n"
-                    "# 落盘校验：防「Installation process succeeded 但文件全没装」\n"
-                    "# （2026-11-15 实弹：先卸后装语义导致卸载完就退出、零文件安装）\n"
-                    "exe = os.path.join(dstdir, 'HopOn.exe')\n"
-                    "if not os.path.isfile(exe):\n"
-                    "    _blog('FATAL 安装器报成功但目标目录内没有 HopOn.exe：' + exe)\n"
-                    "    sys.exit(3)\n"
-                    "_blog('落盘校验通过：' + exe)\n"
-                    "_blog('拉起壳：' + shell_dir)\n"
-                    "subprocess.Popen([os.path.join(shell_dir, 'HopOn.exe')], cwd=shell_dir)\n",
-                    encoding="utf-8")
-                logger.info("已发起静默安装：%s——引擎将清锁退出，桥接进程接管安装并重启壳", pkg)
-                self._json({"ok": True,
-                            "message": "静默安装已启动：应用将自动关闭，安装完成后自动重启"})
-                # 自杀链：停 daemon（旗标+等退出）→ 启动桥接进程 → 引擎 os._exit
-                # 释放全部文件锁 → 桥接等 2s 锁全清 → 安装器全量安装 → 拉壳。
-                def _self_terminate():
-                    try:
-                        import time as _t
+                # 目标目录固定为标准安装位置（与 installer/HopOn.iss 的
+                # DefaultDirName={localappdata}\Programs\HopOn 一致）。
+                # **绝不**用 engine 上级目录——本机那是 git 工作树 E:\Apps\HopOn。
+                _install_dir = (
+                    Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
+                    / "Programs" / "HopOn")
 
-                        _t.sleep(2.0)   # 先让 HTTP 响应送达客户端
+                # Updater 与主程序同级。用 core.paths.app_root() 而非
+                # Path(sys.executable).parent.parent —— 后者只在安装版成立
+                # （…\HopOn\engine\python\python.exe → …\HopOn），工作树下
+                # 会算成 engine\ 少了根（2026-11-16 实测 → 误报「更新器缺失」）
+                from core.paths import app_root as _app_root
+
+                _updater = _app_root() / "HopOnUpdater.exe"
+                if not _updater.is_file():
+                    self._json({"ok": False,
+                                "error": "更新器缺失（HopOnUpdater.exe 不在安装目录），"
+                                         "请手动运行安装包完成更新"}, 400)
+                    return
+
+                try:
+                    subprocess.Popen(
+                        [str(_updater),
+                         "--pid", str(os.getpid()),
+                         "--root", str(_install_dir),
+                         "--pkg", pkg,
+                         "--restart"],
+                        creationflags=0x00000008)   # DETACHED_PROCESS
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("更新器启动失败")
+                    self._json({"ok": False, "error": f"更新器启动失败：{exc}"}, 500)
+                    return
+
+                logger.info("已启动更新器：%s（root=%s pkg=%s）——本进程即将退出，"
+                            "由更新器等待退出后替换文件并重启", _updater, _install_dir, pkg)
+                self._json({"ok": True,
+                            "message": "更新已启动：应用将关闭，替换完成后自动重启新版"})
+                # 立刻退出让 Updater 的 WaitPidGone 通过（它轮询本进程 PID）；
+                # 先睡 1.5s 保证 HTTP 响应真的送达客户端再走。
+                def _exit_soon():
+                    import time as _t
+
+                    _t.sleep(1.5)
+                    try:
                         import daemon as _d
 
                         _d.stop_daemon()   # 停守护（旗标+等退出，≤3s）
                     except Exception:  # noqa: BLE001
                         pass
-                    try:
-                        # δ1 结论：目标目录固定为标准安装位置，与 iss 的
-                        # DefaultDirName={localappdata}\Programs\HopOn 一致。
-                        # 绝不传 engine 上级——本机那是 git 工作树 E:\Apps\HopOn。
-                        _install_dir = (
-                            Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
-                            / "Programs" / "HopOn")
-                        subprocess.Popen(
-                            [str(Path(sys.executable)), str(bridge), pkg,
-                             str(_install_dir),                    # 装完从这里拉壳
-                             str(log_path),
-                             str(_install_dir),                    # /DIR= 显式指定——UsePreviousAppDir 会读错上次目录（2026-11-15 实弹：装到影子目录）
-                             str(bridge_log)],
-                            creationflags=0x00000008)  # DETACHED_PROCESS
-                    except Exception:  # noqa: BLE001
-                        logger.exception("桥接进程启动失败")
                     os._exit(0)
-                threading.Timer(600.0, _self_terminate).start()  # TEMP-VERIFY
+
+                threading.Thread(target=_exit_soon, daemon=True).start()
             except Exception as exc:  # noqa: BLE001
                 logger.exception("静默安装发起失败")
                 self._json({"ok": False, "error": f"安装启动失败：{exc}"}, 500)
