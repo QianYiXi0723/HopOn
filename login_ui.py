@@ -4057,13 +4057,19 @@ class Handler(BaseHTTPRequestHandler):
                     return
 
                 try:
+                    # 关键：Updater 必须**脱离壳的 Job Object**。
+                    # 壳把引擎（连带引擎派生的一切）挂进 KILL_ON_JOB_CLOSE 的 Job，
+                    # 而 Updater 是引擎起的子进程 → 继承该 Job。这样 Updater 去
+                    # 杀壳时会被 Job 连带杀死（2026-11-16 真机实测：日志停在
+                    # 「结束占用进程」后无任何输出、backup 未清理）。
+                    # CREATE_BREAKAWAY_FROM_JOB = 0x01000000 让它自成一体。
                     subprocess.Popen(
                         [str(_updater),
                          "--pid", str(os.getpid()),
                          "--root", str(_install_dir),
                          "--pkg", pkg,
                          "--restart"],
-                        creationflags=0x00000008)   # DETACHED_PROCESS
+                        creationflags=0x00000008 | 0x01000000)  # DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("更新器启动失败")
                     self._json({"ok": False, "error": f"更新器启动失败：{exc}"}, 500)

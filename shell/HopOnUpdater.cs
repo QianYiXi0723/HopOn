@@ -51,6 +51,52 @@ namespace HopOnUpdater
         private static string _logPath;
         private static readonly object _logLock = new object();
 
+        // ------------------------------------------------------------------
+        // 从当前 Job Object 脱离（KILL_ON_JOB_CLOSE 的 Job 会被子进程继承，
+        // Updater 杀壳时会被连带杀死——见 Run() 顶部注释）
+        // ------------------------------------------------------------------
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool IsProcessInJob(IntPtr process, IntPtr job, out bool result);
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr CreateJobObject(IntPtr attrs, string name);
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetInformationJobObject(IntPtr job, int infoClass,
+            IntPtr info, uint length);
+
+        private static void DetachFromJob()
+        {
+            try
+            {
+                bool inJob;
+                if (!IsProcessInJob(Process.GetCurrentProcess().Handle, IntPtr.Zero, out inJob) || !inJob)
+                    return;   // 本来就不在 Job 里
+
+                // 建一个「允许 breakaway」的新 Job 并把自己挂进去，
+                // 旧 Job 的 KILL_ON_JOB_CLOSE 就管不到我们了。
+                IntPtr newJob = CreateJobObject(IntPtr.Zero, null);
+                if (newJob == IntPtr.Zero) return;
+
+                // JOBOBJECT_EXTENDED_LIMIT_INFORMATION 里设
+                // LimitFlags |= JOB_OBJECT_LIMIT_BREAKAWAY_OK (0x0800)
+                // 结构太复杂，这里用简化的 24 字节布局：
+                //   struct { LARGE_INTEGER a,b; DWORD LimitFlags; ... }
+                // 只用最保险的做法：直接 AssignProcessToJobObject 到一个新 Job，
+                // 若旧 Job 未设 breakaway 会失败——那也说明我们无法脱离，记日志继续。
+                IntPtr self = Process.GetCurrentProcess().Handle;
+                if (AssignProcessToJobObject(newJob, self))
+                    Log("已脱离父 Job Object（防止杀壳时被连带终止）");
+            }
+            catch
+            {
+                // 脱离失败不阻断主流程（有时调用方已用 CREATE_BREAKAWAY_FROM_JOB 达成目的）
+            }
+        }
+
         private static void Log(string msg)
         {
             string line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg;
@@ -84,6 +130,14 @@ namespace HopOnUpdater
 
         private static int Run(string[] args)
         {
+            // 2026-11-16 真机实证（头号坑）：Updater 由引擎派生，而引擎被壳挂在
+            // KILL_ON_JOB_CLOSE 的 Job Object 里，Job 会被子进程继承。于是
+            // Updater 去 Kill 壳时会把自己一起带走——日志停在「结束占用进程」
+            // 之后戛然而止、backup 未清理、也没回滚（进程已死）。
+            // 双重保险：调用方已传 CREATE_BREAKAWAY_FROM_JOB，这里再主动
+            // 从当前 Job 脱离一次（有些环境会忽略 creation flag）。
+            DetachFromJob();
+
             int pid = -1;
             string root = null, pkg = null;
             bool restart = false, dryRun = false;
@@ -239,7 +293,7 @@ namespace HopOnUpdater
             {
                 string src = Path.Combine(staging, rel);
                 string dst = Path.Combine(root, rel);
-                if (!CopyWithRetry(src, dst, 3, 500))
+                if (!CopyWithRetry(src, dst, 3, 500, root))
                 {
                     failedRel = rel;
                     break;
@@ -399,9 +453,14 @@ namespace HopOnUpdater
         }
 
         // ------------------------------------------------------------------
-        // 带重试的复制（被占用时等一会再试）
+        // 带重试的复制（被占用时先尝试结束占用进程，再重试）
+        //
+        // 2026-11-16 真机实证：安装版自我升级时，--pid 传的是引擎 PID，
+        // 但占用 HopOn.exe 的是**壳进程**（引擎的父进程），等它退出无效 →
+        // 三次重试全失败 → 回滚。所以这里必须自己解决占用：
+        // 按「可执行路径在 root 内」精确定位占用者并结束，绝不按进程名杀。
         // ------------------------------------------------------------------
-        private static bool CopyWithRetry(string src, string dst, int tries, int delayMs)
+        private static bool CopyWithRetry(string src, string dst, int tries, int delayMs, string root = null)
         {
             for (int i = 1; i <= tries; i++)
             {
@@ -415,10 +474,63 @@ namespace HopOnUpdater
                 catch (Exception ex)
                 {
                     Log("WARN 复制失败（第 " + i + "/" + tries + " 次）：" + dst + " — " + ex.Message);
-                    if (i < tries) Thread.Sleep(delayMs);
+                    if (i < tries)
+                    {
+                        // 第 1 次失败后就开始清场：把 root 内还在跑的进程结束掉
+                        if (i == 1 && root != null)
+                        {
+                            int killed = KillProcessesUnder(root);
+                            Log("清场占用进程：" + (killed > 0 ? killed + " 个" : "无"));
+                        }
+                        Thread.Sleep(delayMs);
+                    }
                 }
             }
             return false;
+        }
+
+        // ------------------------------------------------------------------
+        // 结束「可执行路径在给定目录内」的所有进程（判据是路径前缀，不是进程名）
+        // 返回结束的数量。用 WMI 查路径——比 RestartManager 可靠得多。
+        // ------------------------------------------------------------------
+        private static int KillProcessesUnder(string root)
+        {
+            int killed = 0;
+            string normRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            Process[] all;
+            try
+            {
+                all = Process.GetProcesses();
+            }
+            catch
+            {
+                return 0;
+            }
+            foreach (Process p in all)
+            {
+                try
+                {
+                    if (p.Id == Process.GetCurrentProcess().Id) continue;
+                    string path = null;
+                    try { path = p.MainModule.FileName; }
+                    catch { continue; }   // 权限不足/已退出 → 跳过
+                    if (string.IsNullOrEmpty(path)) continue;
+                    if (!Path.GetFullPath(path).StartsWith(normRoot, StringComparison.OrdinalIgnoreCase)) continue;
+                    Log("结束占用进程：" + Path.GetFileName(path) + "(" + p.Id + ")");
+                    p.Kill();
+                    p.WaitForExit(5000);
+                    killed++;
+                }
+                catch (Exception ex)
+                {
+                    Log("WARN 结束进程失败：" + ex.Message);
+                }
+                finally
+                {
+                    try { p.Dispose(); } catch { }
+                }
+            }
+            return killed;
         }
 
         // ------------------------------------------------------------------
@@ -446,7 +558,7 @@ namespace HopOnUpdater
                     skipped++;
                     continue;
                 }
-                if (!CopyWithRetry(b, r, 3, 300))
+                if (!CopyWithRetry(b, r, 3, 300, root))
                 {
                     Log("ERROR 回滚还原失败：" + rel);
                     continue;

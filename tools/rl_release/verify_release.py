@@ -44,10 +44,11 @@ chk(ZIP.exists(), "ZIP 存在", ZIP)
 
 print("=== 1. 目录结构 ===")
 top = sorted(p.name for p in OUT.iterdir())
-chk(top == ["HopOn.exe", "LICENSE", "Microsoft.Web.WebView2.Core.dll",
+chk(top == ["HopOn.exe", "HopOnUpdater.exe", "LICENSE",
+            "Microsoft.Web.WebView2.Core.dll",
             "Microsoft.Web.WebView2.WinForms.dll", "WebView2Loader.dll",
             "engine", "小白使用说明.txt"],
-    "顶层七件（2026-11-06 P5：LICENSE 随包；含 WebView2 托管库对）", top)
+    "顶层八件（2026-11-16 起含 HopOnUpdater.exe 独立更新器）", top)
 chk((OUT / "engine" / "python" / "python.exe").exists(), "便携解释器存在")
 chk((OUT / "engine" / "app.py").exists(), "引擎入口存在")
 chk((OUT / "engine" / "ui" / "index.html").exists(), "前端三件套存在")

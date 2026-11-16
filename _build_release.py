@@ -220,7 +220,11 @@ def verify_shell_fresh() -> None:
         p
         for pattern in ("*.cs", "*.csproj")
         for p in SHELL_DIR.rglob(pattern)
-        if p.is_file() and not ({"obj", "bin"} & set(p.relative_to(SHELL_DIR).parts))
+        if p.is_file()
+        and not ({"obj", "bin", "publish", "publish-updater"} & set(p.relative_to(SHELL_DIR).parts))
+        # 2026-11-16：HopOnUpdater 是独立二进制（产物 HopOnUpdater.exe），
+        # 不该跟壳 HopOn.exe 比新旧，否则它一改就误报「壳比源码旧」
+        and p.name not in ("HopOnUpdater.cs", "HopOnUpdater.csproj")
     ]
     if not sources:
         return
