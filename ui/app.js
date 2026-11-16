@@ -26,7 +26,8 @@ function switchTab(name){
   if (name === 'schedule') { loadSchedule(); startSchedPoll(); loadThresholds(); loadAutostart(); loadAlwaysNotify(); loadQuiet(); loadRunLog(); } else { stopSchedPoll(); }
   /* 账号与通知已合并为一页：通知的三路加载并入 account 分支 */
   if (name === 'account') { loadDevice(); loadAccounts(); refreshNotice(); loadPush(); loadPushPreview(); loadPushRecent(); }
-  if (name === 'history') { loadHistory(); loadLive(false); }
+  if (name === 'history') { loadHistory(); loadLive(false); startHistoryPoll(); }
+  else { stopHistoryPoll(); }
 }
 
 function startSchedPoll(){
@@ -4300,8 +4301,9 @@ function renderHeatmap(d){
   flashCard(document.getElementById('act-list') ? document.getElementById('act-list').closest('.card') : null);
 }
 
-function loadHistory(){
-  kpiBusy(true);
+/* silent=true：静默轮询用——不显示 KPI 转圈、数据指纹未变则不重绘 */
+function loadHistory(silent){
+  if (!silent) kpiBusy(true);
   return fetch('/api/history?days=7')
     .then(function(r){
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -4310,8 +4312,15 @@ function loadHistory(){
     .then(function(d){
       try {
         cacheSet('history', d);   // 落缓存，下次秒开
-        renderHistory(d);
-        renderKpiToday(d);
+        /* 指纹去重：静默轮询时数据没变就不重绘——
+           否则每 30 秒冲掉滚动位置与 hover 态（2026-11-16） */
+        const sig = historyDataSig(d);
+        const unchanged = silent && sig === historySig;
+        historySig = sig;
+        if (!unchanged) {
+          renderHistory(d);
+          renderKpiToday(d);
+        }
         loadWeekTrend();          // 周对比徽章旁路：独立 fetch，失败不影响主链
         /* 报表刷新时顺带更新月报——两个视图读同一份 history，
            用户点了刷新就该看到全部同步，而不是只更新一半。 */
@@ -4330,7 +4339,50 @@ function loadHistory(){
                            err && err.message ? '（' + err.message + '）' : '');
       }
     })
-    .then(function(){ kpiBusy(false); });
+    .then(function(){ if (!silent) kpiBusy(false); });
+}
+
+/* history 数据指纹（静默轮询去重用）：只看"是否真的变了"——
+   今日各游戏的 known/last/checks/finished 与月度统计 */
+let historySig = '';
+function historyDataSig(d){
+  const parts = [];
+  const days = (d && d.days) || [];
+  const row = days.filter(function(x){ return x.is_today; })[0];
+  if (row) {
+    const gs = row.games || {};
+    Object.keys(gs).sort().forEach(function(k){
+      const c = gs[k] || {};
+      parts.push(k + ':' + (c.known ? 1 : 0) + (c.finished ? 1 : 0) +
+                (c.checks || 0) + '@' + (c.last || ''));
+    });
+  }
+  (d && d.games || []).forEach(function(g){
+    parts.push(g.game + '=' + (g.month_done || 0) + '/' + (g.month_missed || 0));
+  });
+  const mt = (d && d.manual_today) || {};
+  parts.push('m:' + (mt.planned || 0) + '/' + (mt.done || 0));
+  return parts.join(';');
+}
+
+/* 报表页静默轮询（2026-11-16）：daemon 在页面常驻期间跑完一轮巡检后，
+   「上次检查」必须自己跟上，不能等用户切页或手动刷新。
+   只在 history 页签活跃时跑，切走即停；document.hidden 跳过；
+   30 秒与月报同节奏。 */
+let historyTimer = null;
+function startHistoryPoll(){
+  stopHistoryPoll();
+  historyTimer = setInterval(function(){
+    if (document.hidden) return;                 // 窗口最小化/切走不刷
+    if (!document.getElementById('tab-history') ||
+        !document.getElementById('tab-history').classList.contains('on')) {
+      stopHistoryPoll(); return;                 // 已切走，停表
+    }
+    loadHistory(true);                           // silent：不闪转圈、指纹去重不重绘
+  }, 30000);
+}
+function stopHistoryPoll(){
+  if (historyTimer) { clearInterval(historyTimer); historyTimer = null; }
 }
 
 /* 报表页刷新已合并：概览卡的旧「刷新」按钮（2026-11-01 减法裁决移除）与本按钮
