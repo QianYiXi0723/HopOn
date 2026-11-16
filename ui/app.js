@@ -26,7 +26,8 @@ function switchTab(name){
   if (name === 'schedule') { loadSchedule(); startSchedPoll(); loadThresholds(); loadAutostart(); loadAlwaysNotify(); loadQuiet(); loadRunLog(); } else { stopSchedPoll(); }
   /* 账号与通知已合并为一页：通知的三路加载并入 account 分支 */
   if (name === 'account') { loadDevice(); loadAccounts(); refreshNotice(); loadPush(); loadPushPreview(); loadPushRecent(); }
-  if (name === 'history') { loadHistory(); loadLive(false); }
+  if (name === 'history') { loadHistory(); loadLive(false); startHistoryPoll(); }
+  else { stopHistoryPoll(); }
 }
 
 function startSchedPoll(){
@@ -131,7 +132,7 @@ function cacheSet(key, val){
 let kpiBusyCount = 0;
 function kpiBusy(on){
   kpiBusyCount = Math.max(0, kpiBusyCount + (on ? 1 : -1));
-  ['k-today', 'k-resin', 'k-cred'].forEach(function(id){
+  ['k-today', 'k-resin'].forEach(function(id){
     const el = document.getElementById(id);
     if (el) el.classList.toggle('refreshing', kpiBusyCount > 0);
   });
@@ -193,9 +194,19 @@ function pushEnabled(group, games, enabled){
 }
 
 /* 监控开关变化后的缓存跟进（fire-and-forget 不阻塞 UI）：force 全量查询
-   走引擎侧并发闸（连点去重）；新缓存落地后托盘 30s 内自动跟随 */
+   走引擎侧并发闸（连点去重）；新缓存落地后托盘 30s 内自动跟随。
+   2026-11-16 去抖：连续切 N 个开关只在静止 500ms 后发一次，且 5 秒内
+   最多一次——配合服务端 90 秒最短间隔护栏，绝不连环打私有接口 */
+let _kickTimer = null, _kickLast = 0;
 function kickLiveRefresh(){
-  fetch('/api/live?refresh=1').catch(function(){});
+  if (_kickTimer) clearTimeout(_kickTimer);
+  _kickTimer = setTimeout(function(){
+    _kickTimer = null;
+    const now = Date.now();
+    if (now - _kickLast < 5000) return;   // 5 秒内最多一次
+    _kickLast = now;
+    fetch('/api/live?refresh=1').catch(function(){});
+  }, 500);
 }
 
 /* 「全选」按钮文案随状态变化 + 游戏监控抽屉的折叠摘要
@@ -232,16 +243,14 @@ function loadAccounts(){
       if (!window.__accounts[box.value]) { box.checked = false; syncSelCard(box); }
     });
     renderCredHealth(d);
-    renderKpiCred(d);
     renderCapsuleDots(d);
     updateLoginButtons();
   }).catch(credLoadFailed);
 }
 
-/* 读取失败要有真反馈：凭证健康/KPI 停在「读取中…」是假加载 */
+/* 读取失败要有真反馈：凭证健康抽屉停在「读取中…」是假加载 */
 function credLoadFailed(){
   renderCredHealth({ ok: false, items: [] });
-  kpiSet('k-cred-sub', '读取失败');
 }
 
 /* 胶囊黄点：该平台任一游戏未绑定凭证 → 点亮 */
@@ -558,6 +567,24 @@ function startSkland(){
   openPickModal('s');
 }
 
+/* ---------- 未绑定入口（2026-11-16）：统一 document 委托 ----------
+   目标元素都在动态重渲染区（游戏概览卡 / 实时体力空态），逐个绑会被
+   innerHTML 冲掉。data-bind 落点 = 账号页 + 选卡弹窗（forced 只勾本次
+   这一款，沿用凭证行直达语义，绝不触碰监控开关）；平台归属查选卡弹窗
+   现成的 name=m/s/k 分组，不另造映射。 */
+document.addEventListener('click', function(e){
+  if (!e.target.closest) return;
+  if (e.target.closest('#live-go-bind')) { switchTab('account'); return; }
+  const link = e.target.closest('a[data-bind]');
+  if (!link) return;
+  const gid = link.getAttribute('data-bind');
+  switchTab('account');
+  const group = ['m', 's', 'k'].find(function(g){
+    return document.querySelector('input[name="' + g + '"][value="' + gid + '"]');
+  });
+  if (group) openPickModal(group, [gid]);
+});
+
 function showError(msg){
   const stage = document.getElementById('stage');
   stage.hidden = false;
@@ -695,14 +722,14 @@ function openUpdateModal(d){
   const box = document.getElementById('upd-notes');
   box.textContent = body || '（本次更新暂无说明）';
   box.hidden = !body;
+  // 只显示安装包（一键安装装的就是 Setup.exe；zip 与流程无关不展示）
   const pkgs = (d.assets || []).filter(function(a){
-    const n = String(a.name || '').toLowerCase();
-    return /\.(exe|zip)$/.test(n);
+    return /\.exe$/i.test(String(a.name || ''));
   }).map(function(a){
     return String(a.name || '') + ' ' + ((a.size || 0) / 1048576).toFixed(1) + 'MB';
   });
   document.getElementById('upd-pkg').textContent =
-    pkgs.length ? ('包含 ' + pkgs.join('　·　')) : '';
+    pkgs.length ? ('安装包 ' + pkgs.join('　·　')) : '';
   document.getElementById('update-modal').hidden = false;
 }
 function closeUpdateModal(){
@@ -710,57 +737,15 @@ function closeUpdateModal(){
   updDlReset();   // 关弹窗停轮询（下载任务在后端继续跑也不刷 UI）
 }
 
-/* 站内下载按钮绑定（addEventListener 纪律；元素在全局弹窗区，页面加载即存在） */
+/* 站内下载+一键安装按钮绑定（addEventListener 纪律；元素在全局弹窗区） */
 (function(){
   const btn = document.getElementById('upd-dl-btn');
   const open = document.getElementById('upd-dl-open');
-  const inst = document.getElementById('upd-dl-install');
   if (btn) btn.addEventListener('click', updDlStart);
   if (open) open.addEventListener('click', function(){
     fetch('/api/update/open-folder').then(function(r){ return r.json(); }).then(function(d){
       if (d && !d.ok) toast(d.error || '打开失败', true);
     }).catch(function(){ toast('无法连接本地服务', true); });
-  });
-  /* 一键安装（2026-11-15 优化：两击确认+标记+黑暗期提示层+结果确认+超时，
-     对标 Chrome「重启即更新」+ 官方验收「更新未完成要可见」）：
-     静默安装→壳被关闭→装完自动重启壳→引擎回来→页面恢复 reload */
-  if (inst) inst.addEventListener('click', function(){
-    if (inst.dataset.confirm !== '1') {          // 两击确认：首击只变文案，3s 超时还原
-      inst.dataset.confirm = '1';
-      inst.textContent = '再点一次确认安装';
-      setTimeout(function(){ if (inst.dataset.confirm === '1') { inst.dataset.confirm = ''; inst.textContent = '一键安装更新'; } }, 3000);
-      return;
-    }
-    inst.dataset.confirm = '';
-    localStorage.setItem('rl-updating', window.__updateInfo ? window.__updateInfo.latest : '');
-    document.getElementById('installing-mask').hidden = false;
-    document.getElementById('inst-ver').textContent = 'v' + (window.__updateInfo ? window.__updateInfo.latest : '');
-    inst.disabled = true;
-    inst.textContent = '安装中…';
-    updInstallProgress();   // 时间基进度+阶段文案（黑暗期无 API 可查，业界惯例）
-    fetch('/api/update/install').then(function(r){ return r.json(); }).then(function(d){
-      if (d && !d.ok) {
-        document.getElementById('installing-mask').hidden = true;
-        localStorage.removeItem('rl-updating');
-        toast(d.error || '安装发起失败', true);
-        inst.disabled = false; inst.textContent = '一键安装更新';
-        return;
-      }
-      let tries = 0;
-      const probe = function(){
-        tries++;
-        fetch('/api/update/download').then(function(){
-          if (tries > 60) {
-            localStorage.removeItem('rl-updating');
-            document.getElementById('installing-mask').hidden = true;
-            toast('等待重启超时——请手动启动 HopOn，或到「打开文件夹」手动安装', true);
-            return;
-          }
-          setTimeout(function(){ location.reload(); }, 800);
-        }).catch(function(){ setTimeout(probe, 1500); });
-      };
-      setTimeout(probe, 6000);   // 给安装器留关闭+安装的窗口
-    }).catch(function(){ toast('无法连接本地服务', true); inst.disabled = false; });
   });
 })();
 
@@ -780,15 +765,16 @@ function updDlPick(){
   const pkg = (d.assets || []).find(function(a){
     return /\.exe$/i.test(String(a.name || ''));
   }) || { name: 'HopOn_v' + d.latest + '_Setup.exe' };
-  return { version: d.latest, asset: pkg.name };
+  return { version: d.latest, asset: pkg.name, size: pkg.size };
 }
 function updDlStart(){
   const pick = updDlPick();
   updDlReset();
-  document.getElementById('upd-dl-btn').hidden = true;
+  localStorage.setItem('rl-updating', pick.version);
+  const btn = document.getElementById('upd-dl-btn');
+  btn.disabled = true;
+  btn.textContent = '准备下载…';
   document.getElementById('upd-dl-prog').hidden = false;
-  document.getElementById('upd-dl-fill').style.width = '0%';
-  document.getElementById('upd-dl-txt').textContent = '发起下载…';
   postJSON('/api/update/download', pick).then(function(d){
     if (!d || !d.ok) {
       updDlReset();
@@ -798,11 +784,46 @@ function updDlStart(){
     updDlPoll();
   }).catch(function(){ updDlReset(); toast('无法连接本地服务', true); });
 }
+/* done→自动接安装（单按钮贯穿全流程）；error→按钮复位+toast */
+function updDlAutoInstall(){
+  document.getElementById('upd-dl-prog').hidden = true;
+  const btn = document.getElementById('upd-dl-btn');
+  btn.hidden = false;
+  btn.disabled = true;
+  btn.textContent = '正在静默安装… 应用将自动重启';
+  fetch('/api/update/install').then(function(r){ return r.json(); }).then(function(d){
+    if (d && !d.ok) {
+      localStorage.removeItem('rl-updating');
+      document.getElementById('installing-mask').hidden = true;
+      toast(d.error || '安装发起失败', true);
+      updDlReset();
+      return;
+    }
+    document.getElementById('installing-mask').hidden = false;
+    document.getElementById('inst-ver').textContent = 'v' + (window.__updateInfo ? window.__updateInfo.latest : '');
+    updInstallProgress();   // 黑暗期时间基进度+阶段文案（业界惯例）
+    let tries = 0;
+    const probe = function(){
+      tries++;
+      fetch('/api/update/download').then(function(){
+        if (tries > 60) {
+          localStorage.removeItem('rl-updating');
+          document.getElementById('installing-mask').hidden = true;
+          toast('等待重启超时——请手动启动 HopOn，或到「打开文件夹」手动安装', true);
+          return;
+        }
+        setTimeout(function(){ location.reload(); }, 800);
+      }).catch(function(){ setTimeout(probe, 1500); });
+    };
+    setTimeout(probe, 6000);
+  }).catch(function(){ updDlReset(); toast('无法连接本地服务', true); });
+}
 function updDlPoll(){
   fetch('/api/update/download').then(function(r){ return r.json(); }).then(function(d){
     const st = d.stage || 'idle';
     const fill = document.getElementById('upd-dl-fill');
     const txt = document.getElementById('upd-dl-txt');
+    const btn = document.getElementById('upd-dl-btn');
     if (st === 'downloading') {
       const pct = d.total ? Math.min(100, Math.round(d.bytes / d.total * 100)) : 0;
       fill.style.width = pct + '%';
@@ -814,10 +835,15 @@ function updDlPoll(){
       txt.textContent = d.message || '校验 SHA-256…';
       _updDlTimer = setTimeout(updDlPoll, 500);
     } else if (st === 'done' && d.sha_ok) {
+      // 校验通过→完成态：主按钮「立即安装」打开文件夹定位到 Setup.exe
+      // （2026-11-16 用户实测：原「打开文件夹手动安装」是排障话术，
+      //  用户以为流程卡住；VERYSILENT 全自动安装待 Inno 升级语义解决后重开）
       document.getElementById('upd-dl-prog').hidden = true;
-      document.getElementById('upd-dl-btn').hidden = true;   // 完成态收起按钮，防重复点击
+      document.getElementById('upd-dl-btn').hidden = true;
       document.getElementById('upd-dl-done').hidden = false;
     } else if (st === 'error') {
+      localStorage.removeItem('rl-updating');
+      document.getElementById('installing-mask').hidden = true;
       updDlReset();
       toast(d.message || '下载失败', true);
     } else {
@@ -1488,10 +1514,8 @@ function renderSchedule(d, force){
   }
   renderRuler(times);
   document.getElementById('d-count').textContent = times.length + ' 个';
-  /* 下次提醒：守护进程停止时与 KPI 保持一致显示「已暂停」；
-     时间只保留 月-日 时:分（年份对「下次」没有信息量，纯占宽） */
-  document.getElementById('d-next').textContent =
-    (d.daemon && d.daemon.running) ? (d.next_run || '-').replace(/^\d{4}-/, '') : '已暂停';
+  /* 「下次巡查」2026-11-16 起只由 renderNextRun（心跳驱动）写 #d-next，
+     这里不再重复写——双写者会在 3s 轮询下互相覆盖造成闪烁 */
 
   // 参与检查的账号：只给数量，完整清单走 title（来自后端，不写死）
   const gamesBox = document.getElementById('d-games');
@@ -3011,11 +3035,15 @@ function renderLive(d){
     const boundN = enabledIds.filter(function(k){
       return accs[k] && accs[k].has_credential;
     }).length;
-    let msg;
+    let msg, extra = '';
     if (!enabledIds.length) msg = '没有启用的账号。';
-    else if (!boundN) msg = '启用的账号都还没绑定凭证——去「账号与通知」绑定后再来。';
+    else if (!boundN) {
+      msg = '启用的账号都还没绑定凭证——去「账号与通知」绑定后再来。';
+      /* 2026-11-16：空态自带可点的绑定入口（点击行为走 document 委托） */
+      extra = '<button class="btn sm" id="live-go-bind">去绑定账号</button>';
+    }
     else msg = '暂无实时数据（凭证可能失效或角色未创建），稍后重试或查运行日志。';
-    box.innerHTML = '<div class="emptybox">' + msg + '</div>';
+    box.innerHTML = '<div class="emptybox">' + msg + extra + '</div>';
   } else {
     /* 每游戏一张便笺卡（HoYoLAB 实时便笺形态）：卡片直接作为网格子项
        （不加包装层——包装 div 会独占一条网格轨道，把卡片挤成竖排） */
@@ -3238,7 +3266,7 @@ function actCardHtml(it, isHero, heroSlim){
   const reward = it.reward
     ? '<span class="act-reward" title="' + escHtml(it.reward) + ' · 抽卡资源">' + escHtml(it.reward) + '</span>'
     : '';
-  const prog = actProgHtml(it);
+  const prog = it.not_started ? '' : actProgHtml(it);
   /* 三段段位标记（2026-11-11 #9，与英雄卡关联）：已设档位显示「档名+阈值」，
      已推的打勾，-1 档显「关」——数据全部来自后端 payload，前端零推算 */
   const tierNames = {1: '规划', 2: '冲刺', 3: '抢救'};
@@ -3447,12 +3475,21 @@ function renderActivities(d){
       mergedOngoing.push(buildMergedItem(members));
     });
     const heroPool = mergedOngoing.slice().sort(byUrgency);
-    /* 英雄卡选择（2026-11-09 三改）：最紧急优先；但最紧急卡「没有内容可展示」
-       （无进度、奖励空、非组卡——鸣潮活动常这样）时 2x2 只会整卡留白
-       （P6-2 的 241px 教训），此时英雄让给下一张「有内容」的卡，
-       紧急卡保持小卡 + 描边。全都没有内容才回落最紧急卡（slim）。
-       用户实证：只剩两天的鸣潮卡把英雄卡整卡挤没了。 */
-    const heroIt = heroPool.find(actHasContent) || heroPool[0] || (upcoming[0] || null);
+    /* 英雄卡选择（2026-11-09 三改；2026-11-16 四改加时间门槛）：最紧急优先；
+       但最紧急卡「没有内容可展示」（无进度、奖励空、非组卡——鸣潮活动常这样）
+       时 2x2 只会整卡留白（P6-2 的 241px 教训），此时英雄让给下一张「有内容」
+       的卡，紧急卡保持小卡 + 描边。窗口内全都没内容才回落最紧急卡（slim）。
+       用户实证：只剩两天的鸣潮卡把英雄卡整卡挤没了。
+       2026-11-16 用户裁决：剩余时间过长的活动不该占英雄位（实证：find 跳过
+       无内容紧急卡后命中剩 37 天带奖励的卡霸占 2x2）——候选只收提醒窗口内
+       （定时与状态的活动提醒天数，后端随 payload 给 window_hours，与
+       ending_soon 徽章/合并窗同口径）的活动，窗外一律普通网格；
+       未开始（upcoming）同样不参加英雄竞选。 */
+    const nearPool = heroPool.filter(function(x){
+      const h = +x.hours_left;
+      return h > 0 && h <= winH;
+    });
+    const heroIt = nearPool.find(actHasContent) || nearPool[0] || null;
     const heroSlim = !!heroIt && !actHasContent(heroIt);
 
     let html = '';
@@ -3461,7 +3498,8 @@ function renderActivities(d){
          组内按剩余时间升序；组间按「最近将有活动结束」升序 */
       const groups = [], byGid = {};
       mergedOngoing.concat(upcoming).forEach(function(x){
-        if (x === heroIt) return;   /* 英雄已通栏置顶，不进分组 */
+        /* 2026-11-16：英雄卡不再"通栏置顶"，进它所属的分组——
+           渲染时靠 .acard.hero 的 span 2×2 占位，同组小卡 dense 补位 */
         const gid = x.game || '';
         if (!byGid[gid]) {
           byGid[gid] = { gid: gid, name: x.game_name || '未知游戏', items: [] };
@@ -3477,8 +3515,11 @@ function renderActivities(d){
 
       if (groups.length) {
         /* 英雄卡套进 act-grid 只占 2×2 轨道（2026-11-13 用户裁决：全屏下
-           裸卡通栏霸整排难看；≤660px 窄容器仍有 1/-1 回退） */
-        html = (heroIt ? '<div class="act-grid">' + actCardHtml(heroIt, true, heroSlim) + '</div>' : '') + groups.map(function(g){
+           裸卡通栏霸整排难看；≤660px 窄容器仍有 1/-1 回退）。
+           2026-11-16 用户实测修订：英雄卡不能独占一个 .act-grid——那样
+           它单独撑满整排、右侧全是空白。现改为英雄进所属分组网格，
+           靠 dense 自动流让同组小卡补进右侧轨道。 */
+        html = groups.map(function(g){
           return '<div class="act-group">' +
             '<div class="act-group-head">' +
               '<span class="gdot" style="background:' + gameDotColor(g.gid) + '"></span>' +
@@ -3494,10 +3535,13 @@ function renderActivities(d){
       /* 模式 B · 按剩余时间升序，同时间按标题首字母（localeCompare zh）；
          平坦网格无组头，最紧急一张仍是英雄卡 */
       /* 英雄强制第一位（2026-11-09 用户需求）：dense 自动流会被更紧急的
-         无内容卡挤到第二行——英雄出池通栏置顶，其余照紧迫序跟后排 */
+         无内容卡挤到第二行——英雄置于首位，其余照紧迫序跟排。
+         2026-11-16 用户实测修订：英雄卡不能再独占一个 .act-grid（那样整排
+         只剩它+右侧大片空白）；与其余卡同一网格，靠 span 2×2 占位，
+         dense 自动流会把小卡填进右侧两列。 */
       const pool = mergedOngoing.concat(upcoming).filter(function(x){ return x !== heroIt; }).sort(byUrgency);
-      html = (heroIt ? '<div class="act-grid">' + actCardHtml(heroIt, true, heroSlim) + '</div>' : '') +
-        '<div class="act-grid">' +
+      html = '<div class="act-grid">' +
+        (heroIt ? actCardHtml(heroIt, true, heroSlim) : '') +
         pool.map(function(x){ return actCardHtml(x, false); }).join('') +
         '</div>';
     }
@@ -4107,6 +4151,12 @@ function gameCardHtml(g){
     }).join('');
   } else if (raw && raw.no_account) {
     daily = '<div class="gcard-daily"><span class="dim">' + escHtml(raw.no_account) + '</span></div>';
+  } else if ((window.__accounts || {})[gid] &&
+             window.__accounts[gid].has_credential === false) {
+    /* 未绑定兜底（2026-11-16）：卡片直接给可点的绑定入口，
+       不再让用户自己找路；点击行为走 document 委托（见 a[data-bind]） */
+    daily = '<div class="gcard-daily"><span class="dim">还没绑定账号</span> ' +
+      '<a class="link" data-bind="' + escHtml(gid) + '" href="javascript:void(0)">去绑定 →</a></div>';
   } else {
     daily = '<div class="gcard-daily"><span class="dim">今日无日常判定数据</span></div>';
   }
@@ -4131,7 +4181,7 @@ function gameCardHtml(g){
   }
   const missed = Number(g.month_missed || 0);
   const tip = '上次检查 ' + (today && today.last ? shortStamp(today.last) : '—') +
-    ' ｜ 每日任务：' + taskTip +
+    ' ｜ ' + taskTip +
     ' ｜ 本月完成 ' + Number(g.month_done || 0) + ' 天' + (missed > 0 ? ' · 漏 ' + missed : '');
 
   /* 连续天数保护话术：streak > 0 且今天还没做完时，用损失厌恶框架提醒
@@ -4252,8 +4302,9 @@ function renderHeatmap(d){
   flashCard(document.getElementById('act-list') ? document.getElementById('act-list').closest('.card') : null);
 }
 
-function loadHistory(){
-  kpiBusy(true);
+/* silent=true：静默轮询用——不显示 KPI 转圈、数据指纹未变则不重绘 */
+function loadHistory(silent){
+  if (!silent) kpiBusy(true);
   return fetch('/api/history?days=7')
     .then(function(r){
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -4262,8 +4313,15 @@ function loadHistory(){
     .then(function(d){
       try {
         cacheSet('history', d);   // 落缓存，下次秒开
-        renderHistory(d);
-        renderKpiToday(d);
+        /* 指纹去重：静默轮询时数据没变就不重绘——
+           否则每 30 秒冲掉滚动位置与 hover 态（2026-11-16） */
+        const sig = historyDataSig(d);
+        const unchanged = silent && sig === historySig;
+        historySig = sig;
+        if (!unchanged) {
+          renderHistory(d);
+          renderKpiToday(d);
+        }
         loadWeekTrend();          // 周对比徽章旁路：独立 fetch，失败不影响主链
         /* 报表刷新时顺带更新月报——两个视图读同一份 history，
            用户点了刷新就该看到全部同步，而不是只更新一半。 */
@@ -4282,7 +4340,50 @@ function loadHistory(){
                            err && err.message ? '（' + err.message + '）' : '');
       }
     })
-    .then(function(){ kpiBusy(false); });
+    .then(function(){ if (!silent) kpiBusy(false); });
+}
+
+/* history 数据指纹（静默轮询去重用）：只看"是否真的变了"——
+   今日各游戏的 known/last/checks/finished 与月度统计 */
+let historySig = '';
+function historyDataSig(d){
+  const parts = [];
+  const days = (d && d.days) || [];
+  const row = days.filter(function(x){ return x.is_today; })[0];
+  if (row) {
+    const gs = row.games || {};
+    Object.keys(gs).sort().forEach(function(k){
+      const c = gs[k] || {};
+      parts.push(k + ':' + (c.known ? 1 : 0) + (c.finished ? 1 : 0) +
+                (c.checks || 0) + '@' + (c.last || ''));
+    });
+  }
+  (d && d.games || []).forEach(function(g){
+    parts.push(g.game + '=' + (g.month_done || 0) + '/' + (g.month_missed || 0));
+  });
+  const mt = (d && d.manual_today) || {};
+  parts.push('m:' + (mt.planned || 0) + '/' + (mt.done || 0));
+  return parts.join(';');
+}
+
+/* 报表页静默轮询（2026-11-16）：daemon 在页面常驻期间跑完一轮巡检后，
+   「上次检查」必须自己跟上，不能等用户切页或手动刷新。
+   只在 history 页签活跃时跑，切走即停；document.hidden 跳过；
+   30 秒与月报同节奏。 */
+let historyTimer = null;
+function startHistoryPoll(){
+  stopHistoryPoll();
+  historyTimer = setInterval(function(){
+    if (document.hidden) return;                 // 窗口最小化/切走不刷
+    if (!document.getElementById('tab-history') ||
+        !document.getElementById('tab-history').classList.contains('on')) {
+      stopHistoryPoll(); return;                 // 已切走，停表
+    }
+    loadHistory(true);                           // silent：不闪转圈、指纹去重不重绘
+  }, 30000);
+}
+function stopHistoryPoll(){
+  if (historyTimer) { clearInterval(historyTimer); historyTimer = null; }
 }
 
 /* 报表页刷新已合并：概览卡的旧「刷新」按钮（2026-11-01 减法裁决移除）与本按钮
@@ -4418,18 +4519,19 @@ document.getElementById('btn-run-now').addEventListener('click', function(){
     .then(function(res){
       btn.disabled = false; btn.textContent = '立即巡检';
       if (res && res.ok) {
-        kpiSet('k-next-sub', '已触发巡检，约十几秒后自动更新报表');
+        /* 2026-11-16：k-next-sub 卡已删，反馈改走全局 toast（文案不变） */
+        toast('已触发巡检，约十几秒后自动更新报表');
         setTimeout(function(){
           Promise.resolve(loadHistory()).catch(function(){});
         }, 12000);
       } else {
-        kpiSet('k-next-sub', (res && res.message) || '触发失败，请查看运行日志');
+        toast((res && res.message) || '触发失败，请查看运行日志', true);
       }
     })
     .catch(function(err){
       btn.disabled = false; btn.textContent = '立即巡检';
       console.error('立即巡检失败', err);
-      kpiSet('k-next-sub', '触发失败：' + err);
+      toast('触发失败：' + err, true);
     });
 });
 
@@ -4918,21 +5020,6 @@ function setUrgency(id, level){
 const kpiBarEl = document.getElementById('kpi-bar');
 const kpiMainEl = document.querySelector('.main');
 
-function kpiUrgencyScore(card){
-  const u = card.dataset.urgency;
-  return u === 'critical' ? 2 : (u === 'warn' ? 1 : 0);
-}
-
-/* compact 态只保留最紧急的 2 个信号（不足 2 个紧急时用普通卡补位） */
-function refreshKpiKeep(){
-  if (!kpiBarEl) return;
-  const cards = Array.prototype.slice.call(kpiBarEl.querySelectorAll('.kpi'));
-  const sorted = cards.slice().sort(function(a, b){
-    return kpiUrgencyScore(b) - kpiUrgencyScore(a);
-  });
-  sorted.forEach(function(c, i){ c.classList.toggle('keep', i < 2); });
-}
-
 /* KPI 吸顶收缩：进入 >进档线、退出 <40px —— 两个阈值必须分开（滞回），不能共用一个。
    为什么共用会出事：compact 会把 KPI 条压矮，浏览器为保持视觉位置不动（滚动锚定）
    会同步把 scrollTop 下调同样的落差。若退出阈值也是进档线，则
@@ -4943,14 +5030,19 @@ function refreshKpiKeep(){
    落差不是常数：宽幅 ~24px（80→56），≤1000px 双列两行卡实测 133px（914×600：
    213→80）——固定 40px 间隙在窄幅照样振荡（压缩后 scrollTop 被锚定推到 40 以下）。
    进档线因此按两档实测高度差自适应：max(80, 40+落差+8)，保证压缩后 scrollTop
-   仍 ≥48，永远跌不破退档线 40。落差随窗口/主题漂移在每次滚动事件里重测自愈。 */
+   仍 ≥48，永远跌不破退档线 40。落差随窗口/主题漂移在每次滚动事件里重测自愈。
+   2026-11-16 四卡减两卡后：常态 ~81px / compact 44px，落差 ~36px，公式照常自适应。 */
 const KPI_COMPACT_ENTER = 80;   /* 进档线；宽幅下即最终进档线，窄幅被自适应抬高 */
 const KPI_COMPACT_EXIT  = 40;   /* 退档线；压缩后 scrollTop ≥ 48，留 8px 余量 */
 let kpiCompact = false;
 const kpiBarH = { normal: 0, compact: 0 };   /* 两档实高缓存，落差 = normal - compact */
+/* 手动收起/展开的压制窗（2026-11-16）：点击 kpi-toggle 后 3 分钟内
+   滚动阈值不得覆盖手动状态，防「刚点展开又被自动收起」的拉锯 */
+let kpiManual = { until: 0 };
 
 function updateKpiCompact(){
   if (!kpiBarEl || !kpiMainEl) return;
+  if (Date.now() < kpiManual.until) return;
   const on = kpiBarEl.classList.contains('compact');
   kpiBarH[on ? 'compact' : 'normal'] = kpiBarEl.offsetHeight;
   const delta = (kpiBarH.normal > 0 && kpiBarH.compact > 0)
@@ -4971,6 +5063,19 @@ if (kpiBarEl) {
   kpiBarH.normal = kpiBarEl.offsetHeight;
 }
 updateKpiCompact();
+
+/* 手动收起/展开（2026-11-16）：点击即切态 + 同步 aria-expanded/文案，
+   并压制滚动阈值 3 分钟 */
+const kpiToggle = document.getElementById('kpi-toggle');
+if (kpiToggle && kpiBarEl) {
+  kpiToggle.addEventListener('click', function(){
+    kpiCompact = !kpiCompact;
+    kpiBarEl.classList.toggle('compact', kpiCompact);
+    kpiToggle.setAttribute('aria-expanded', String(!kpiCompact));
+    kpiToggle.textContent = kpiCompact ? '展开' : '收起';
+    kpiManual.until = Date.now() + 180000;
+  });
+}
 
 /* 今日完成：巡检历史 + 实时查询合并统计。
    数据源纪律：/api/live 查询成功的游戏以 live 为准（现场状态最权威）；
@@ -5021,7 +5126,6 @@ function renderKpiToday(h){
     el.textContent = '–';
     el.className = 'kpi-value value';
     setUrgency('k-today', '');
-    refreshKpiKeep();
     /* 三态区分（2026-11-05 P2）：检查过但失败 ≠ 从未检查。
        /api/history 现为 known=false 的格子保留 checks/last 与
        err/stale/noacc 尾巴，这里据此分流 */
@@ -5059,31 +5163,11 @@ function renderKpiToday(h){
   window.__kpiRendered = true;
   /* 0 完成 = critical；部分完成 = warn；全部完成 = 无紧迫（紧迫度只看合并结果，不碰统计） */
   setUrgency('k-today', done === total ? '' : (done > 0 ? 'warn' : 'critical'));
-  refreshKpiKeep();
   kpiSet('k-today-sub', done === total ? '今日全部完成' : (total - done) + ' 项未完成');
 }
 
-/* 凭证健康：已绑定凭证的账号 / 启用账号（口径=启用，与今日完成 KPI 同分母；
-   未勾选游戏不计入 —— payload 自带 enabled 字段，此前两处消费都无视了它） */
-function renderKpiCred(d){
-  const el = document.getElementById('k-cred');
-  if (!el) return;
-  const items = ((d && d.items) || []).filter(function(i){ return i.enabled; });
-  if (!items.length) {
-    el.textContent = '–';
-    el.className = 'kpi-value value';
-    setUrgency('k-cred', '');
-    kpiSet('k-cred-sub', '没有账号');
-    return;
-  }
-  const bound = items.filter(function(i){ return i.has_credential; }).length;
-  el.textContent = bound + '/' + items.length;
-  el.className = 'kpi-value value' + (bound === items.length ? '' : ' warn');
-  setUrgency('k-cred', bound === items.length ? '' : 'warn');
-  refreshKpiKeep();
-  kpiSet('k-cred-sub', bound === items.length ? '全部已绑定'
-    : (items.length - bound) + ' 个未绑定');
-}
+/* 凭证健康的顶部 KPI 卡已删（2026-11-16 四卡减两卡）：绑定数摘要由账号页
+   凭证健康抽屉 renderCredHealth 继续承担，此处不再有第二份写入。 */
 
 /* =========================== 心跳：已运行 + 下次巡查 ===========================
    全局唯一的 heartbeatTimer（30 秒一拍），「已运行」和「下次巡查」都从这里刷。
@@ -5137,22 +5221,20 @@ function renderUptime(){
 }
 
 function renderNextRun(){
-  const el = document.getElementById('k-next');
-  const sub = document.getElementById('k-next-sub');
-  if (!el || !sub) return;
-  if (!hbState.running) {
-    el.textContent = '已暂停';
-    sub.textContent = '守护进程未运行';
-    return;
-  }
+  /* 2026-11-16 四卡减两卡：顶部「下次巡查」卡删除，唯一落点是定时页状态条
+     #d-next（原先 loadSchedule 也写它=双写者，已拆除，此处是唯一写者）。
+     格式：运行中 = 'HH:MM · N 小时 N 分后'；已暂停 = '已暂停'；无时间点 = '—' */
+  const el = document.getElementById('d-next');
+  if (!el) return;
+  if (!hbState.running) { el.textContent = '已暂停'; return; }
   const next = computeNextRun(new Date());
-  if (!next) { el.textContent = '–'; sub.textContent = '未设置巡查时间点'; return; }
+  if (!next) { el.textContent = '—'; return; }
   const pad = function(n){ return (n < 10 ? '0' : '') + n; };
-  el.textContent = pad(next.getHours()) + ':' + pad(next.getMinutes());
   const min = Math.round(Math.max(0, next.getTime() - Date.now()) / 60000);
   const h = Math.floor(min / 60), m = min % 60;
-  sub.textContent = min === 0 ? '即将执行'
+  const rel = min === 0 ? '即将执行'
     : (h > 0 ? h + ' 小时 ' + m + ' 分后' : m + ' 分钟后');
+  el.textContent = pad(next.getHours()) + ':' + pad(next.getMinutes()) + ' · ' + rel;
 }
 
 function tickHeartbeat(){ renderUptime(); renderNextRun(); }
@@ -5179,7 +5261,6 @@ function renderKpiResin(d){
   el.textContent = withRes ? String(hot) : '–';
   el.className = 'kpi-value value' + (hot ? ' warn' : '');
   setUrgency('k-resin', hot > 0 ? 'warn' : '');
-  refreshKpiKeep();
   kpiSet('k-resin-sub', withRes
     ? (hot ? hot + ' 款即将溢出' : '体力都还充裕')
     : '到「信息查询」查询后显示');

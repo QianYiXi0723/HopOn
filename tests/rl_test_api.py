@@ -120,8 +120,8 @@ try:
           ".dot{width:8px;height:8px;border-radius:50%" in html)
     check("T1.3 主网格 12 列 grid-template-columns:repeat(12,1fr)",
           "grid-template-columns:repeat(12,1fr)" in html)
-    check("T1.4 KPI 摘要条网格 repeat(4,1fr)",
-          "grid-template-columns:repeat(4,1fr)" in html)
+    check("T1.4 KPI 摘要条网格 repeat(2,1fr)",
+          "grid-template-columns:repeat(2,1fr)" in html)
     check("T1.5 活动日历 auto-fill 网格",
           "repeat(auto-fill, minmax(min(320px, 100%), 1fr))" in html)
 

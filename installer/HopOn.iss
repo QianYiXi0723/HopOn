@@ -71,6 +71,9 @@ UninstallDisplayName={#AppName}
 ; 关闭正在运行的实例，避免覆盖失败
 CloseApplications=yes
 RestartApplications=no
+; 2026-11-16：Job Object 内的进程 RestartManager 关不掉，
+; 桥接已先精确清场；此处显式声明过滤清单（默认值即 *.exe,*.dll,*.chm）
+CloseApplicationsFilter=*.exe,*.dll
 ; 版本信息
 VersionInfoVersion={#AppVersion}
 VersionInfoDescription={#AppName} 安装程序
@@ -85,6 +88,8 @@ Name: "startup"; Description: "开机自动启动"; GroupDescription: "附加任
 [Files]
 ; 壳可执行 + WebView2 三件套
 Source: "{#ReleaseDir}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+; 独立更新器（2026-11-16）：自己不被替换，才能在主进程退出后换文件
+Source: "{#ReleaseDir}\HopOnUpdater.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleaseDir}\Microsoft.Web.WebView2.Core.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleaseDir}\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleaseDir}\WebView2Loader.dll"; DestDir: "{app}"; Flags: ignoreversion

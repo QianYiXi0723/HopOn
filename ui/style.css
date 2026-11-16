@@ -141,11 +141,14 @@
         box-shadow:var(--card-shadow);
         transition:box-shadow .2s ease, background-color .2s ease, padding 400ms ease-out}
   /* ---------- 交互规范（三态统一，box-shadow 描边零布局抖动） ----------
-     Hover 悬浮 / Active 点击保持 / Focus-within 输入聚焦 → 同一蓝色描边 */
+     Hover 悬浮 / Active 点击保持 → 同一蓝色描边。
+     2026-11-16 移除 :focus-within：点过卡内按钮后按钮持焦，蓝框永久驻留
+     （切页/移开鼠标都不消失，且与 hover 卡同时出双框）。键盘焦点环仍由
+     UA 默认样式在按钮自身绘制，无障碍不受影响。 */
   /* 描边用 outline 而非 inset box-shadow：卡片标题条(.card-head)有不透明底色，
      inset 阴影画在子元素之下会被标题条整段盖掉（顶部+两侧上半截「蓝框不完整」）。
      outline 绘制在子元素之上、不参与布局；offset:-1px 内收，避免被祖先 overflow 裁切。 */
-  .card:hover, .card.active, .card:focus-within{
+  .card:hover, .card.active{
     outline:1px solid var(--accent-blue);outline-offset:-1px;
     position:relative;z-index:60}
   /* 控件（图标/按钮/行头）：Hover 不描边，只做背景微变 */
@@ -176,7 +179,12 @@
               flex:none;padding:12px 24px;background:var(--bg-head);
               border-radius:8px 8px 0 0}
   .card-head h2,.card__header h2{font-size:15px;font-weight:600;margin:0;display:flex;
-                 align-items:center;gap:8px;min-width:0}
+                 align-items:center;gap:8px;min-width:0;white-space:nowrap}
+  /* 标题永不被右侧徽章挤压换行（2026-11-16：账号页推送预览卡在 5 栅格宽度下
+     标题被长徽章「推送到 Server酱 + Qmsg 酱」压成竖排单字） */
+  .card-head h2,.card__header h2{flex:none}
+  /* 徽章超长时自己截断，不侵占标题 */
+  .card-head .badge,.card__header .badge{overflow:hidden;text-overflow:ellipsis;max-width:60%}
   .card-head .spacer,.card__header .spacer{flex:1}
   /* 卡体：吃掉剩余高度并可压缩（滚动交给各页按需开启，避免全局多出滚动槽） */
   .card-body,.card__body{padding:20px 24px;flex:1 1 auto;min-height:0}
@@ -284,7 +292,7 @@
   @keyframes dot-pulse{0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,.4)}50%{box-shadow:0 0 0 5px rgba(74,222,128,0)}}
   @media (prefers-reduced-motion: reduce){.dot.on{animation:none}}
   /* 心跳数据等宽字体，数字宽度稳定不跳 */
-  #d-since,#d-heart,#k-next-sub{font-family:ui-monospace,Consolas,"Courier New",monospace;
+  #d-since,#d-heart{font-family:ui-monospace,Consolas,"Courier New",monospace;
     font-variant-numeric:tabular-nums}
   /* 问号气泡随标题文字垂直居中（2026-11-13 用户裁决：vertical-align:-3px
      的静态补偿在小窗/字体场景下漂移，改 flex 居中一劳永逸） */
@@ -682,17 +690,16 @@
     .tl-item{grid-template-columns:52px 18px minmax(0,1fr);column-gap:10px}
   }
 
-  /* ---------- KPI 摘要条（吸顶锚点：80px 常态 / 56px compact 收缩） ---------- */
-  .kpi-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;
+  /* ---------- KPI 摘要条（吸顶锚点：80px 常态 / 44px compact 收缩；
+     2026-11-16 四卡减两卡：下次巡查搬定时页 #d-next、凭证健康搬账号页抽屉） ---------- */
+  .kpi-bar{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;
            flex:none;margin-bottom:16px;
            position:sticky;top:0;z-index:50;min-height:80px;background:var(--bg-base);
            transition:min-height 250ms ease-out, padding 250ms ease-out}
-  .kpi-bar.compact{min-height:56px;grid-template-columns:repeat(2,1fr)}
+  /* 收起态（2026-11-16 三次修订·用户实测裁决）：黑杠也不要——条缩到按钮
+     大小、背景透明，视觉上只剩一颗「展开」按钮浮在原位；信息回展开态看 */
+  .kpi-bar.compact{min-height:24px;background:transparent;margin-bottom:8px}
   .kpi-bar.compact .kpi{display:none}
-  .kpi-bar.compact .kpi.keep{display:block}
-  .kpi-bar.compact .kpi-value{font-size:24px}
-  .kpi-bar.compact .kpi.primary .kpi-value{font-size:28px}
-  .kpi-bar.compact .kpi-sub{display:none}
   .kpi{background:var(--bg-elevated);border:none;border-radius:8px;
        padding:12px 20px;min-width:0}
   .kpi-label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}
@@ -709,10 +716,53 @@
   .kpi-value.refreshing::after{content:"";display:inline-block;width:10px;height:10px;
     margin-left:8px;border:2px solid var(--btn-bg);border-top-color:var(--brand);
     border-radius:50%;animation:s .8s linear infinite;vertical-align:3px}
-  @media (max-width:1000px){ .kpi-bar{grid-template-columns:repeat(2,1fr)} }
+  /* 手动收起/展开小钮（2026-11-16）：右缘悬浮于 kpi-bar（sticky 即包含块），
+     配色复用 .btn 族变量，不新造颜色；z-index 必须压过 .card:hover 的 60，
+     否则鼠标悬停卡片时按钮被盖住（批次 2 实测：展开键凭空消失无法点击） */
+  .kpi-toggle{position:absolute;right:10px;top:50%;transform:translateY(-50%);
+    height:24px;padding:0 10px;font-size:12px;line-height:1;border:none;border-radius:6px;
+    background:var(--btn-bg);color:var(--muted);cursor:pointer;z-index:61}
+  .kpi-toggle:hover{background:var(--btn-hover);color:var(--fg)}
   @media (max-width:520px){ .kpi-bar{grid-template-columns:1fr} }
 
-  /* ---------- 底部日志控制台：固定底栏（不随内容滚动、不悬浮遮挡） ----------
+  /* ============ 账号与通知页布局（2026-11-16 用户实测重排）============
+     旧问题：4 个流式块（s7/s5/s7/s5）各自按内容撑高，两行分界虽对齐，
+     但左右底部参差、卡内留大量空白——用户点名「定时与状态那个才叫整齐」。
+     现学定时页范式：**两列网格 + 显式行位**，左列 = 账号绑定 / 通知绑定，
+     右列 = 凭证健康+设备伪装 / 推送预览，两列底部由 stretch 对齐。
+     高度链与定时页同源。 ===================================================================== */
+  #tab-account.on{display:grid;
+    grid-template-columns:minmax(0,1.55fr) minmax(0,1fr) !important;
+    grid-template-rows:auto auto;
+    gap:16px;align-items:stretch}
+  /* 四块显式落位：左列 1、右列 2；上排 1、下排 2。
+     !important 是必须的——.tabpanel.on 的 12 列规则与 .s7/.s5 的
+     grid-column:span N 同时存在，会把这些块重新按 12 栅格摊开、
+     把两列压成 344/222px（2026-11-16 实测） */
+  #tab-account .acct-col.s7{grid-column:1 / 2 !important;grid-row:1 !important}
+  #tab-account .acct-col.s5{grid-column:2 / 3 !important;grid-row:1 !important}
+  #tab-account .card.s7{grid-column:1 / 2 !important;grid-row:2 !important}
+  #tab-account .s5.stack{grid-column:2 / 3 !important;grid-row:2 !important}
+  /* 落位后栅格宽度类失效，由列宽接管 */
+  #tab-account > .acct-col,#tab-account > .card.s7,#tab-account > .s5.stack{width:auto}
+  /* 窄屏回退（学定时页 681 行同款）：≤1099px 时 .tabpanel.on > *{grid-column:1/-1}
+     会把四块压成整行、两列塌成一列——显式改单列按原序堆叠，
+     顺序还原为：账号绑定 → 凭证健康/设备 → 通知绑定 → 推送预览 */
+  @media (max-width:1099px){
+    #tab-account.on{grid-template-columns:minmax(0,1fr) !important;
+      grid-template-rows:auto auto auto auto}
+    #tab-account .acct-col.s7{grid-column:1 / -1 !important;grid-row:1 !important}
+    #tab-account .acct-col.s5{grid-column:1 / -1 !important;grid-row:2 !important}
+    #tab-account .card.s7{grid-column:1 / -1 !important;grid-row:3 !important}
+    #tab-account .s5.stack{grid-column:1 / -1 !important;grid-row:4 !important}
+  }
+  /* 右列两块（凭证+设备）保持原堆叠间距 */
+  #tab-account .acct-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+  #tab-account .s5.stack{display:flex;flex-direction:column;gap:16px;min-width:0}
+  /* 推送预览气泡在窄列/小窗下不被文字换行拉长：卡体内部滚动 */
+  #tab-account .pv-bubble{max-height:420px;overflow-y:auto}
+
+
      收缩 48px（只有把手）/ 展开 200px（把手 48 + 日志体 152） */
   .console{flex-shrink:0;background:var(--surface);
            border-radius:0;overflow:hidden}
@@ -1229,6 +1279,10 @@
 
   /* ---------- 空状态 / Toast ---------- */
   .emptybox{padding:20px 12px;text-align:center;color:var(--muted);font-size:12px;line-height:1.8}
+  /* 未绑定入口链接（2026-11-16）：品牌色下划线；点击行为走 app.js 的 document 委托 */
+  .link{color:var(--brand);text-decoration:underline;cursor:pointer}
+  .link:hover{filter:brightness(1.15)}
+  .emptybox .btn{margin-top:8px}
   #toast{position:fixed;left:50%;top:18px;transform:translate(-50%,-14px);
          background:var(--fg);color:var(--bg);padding:6px 16px;border-radius:4px;
          font-size:12px;opacity:0;pointer-events:none;z-index:99;
@@ -1350,7 +1404,7 @@
   @keyframes rl-spin{to{transform:rotate(360deg)}}
   /* ---------- 底部日志：用户视图（2026-10-31 方案 A）---------- */
   .console-fold{padding:6px 4px;font-size:12px;color:var(--text-tertiary);
-    border-bottom:1px dashed var(--border);margin-bottom:6px}
+    border-bottom:1px dashed var(--line);margin-bottom:6px}
   #console-toggle{cursor:pointer;color:var(--accent);text-decoration:underline}
 
   /* 活动卡双模式切换（按时间/按游戏）：与渠道分段同款胶囊语言，
@@ -1383,28 +1437,43 @@
   .upd-notes{white-space:pre-wrap;word-break:break-word;font:12px/1.6 inherit;
              background:var(--bg-sub);border-radius:6px;padding:10px 12px;
              max-height:180px;overflow-y:auto;margin:0 0 10px;color:var(--fg)}
-  .upd-src-title{font-size:12px;color:var(--subtle);margin-bottom:6px}
-  .upd-src{display:flex;gap:8px}
-  .upd-btn{flex:1;display:flex;flex-direction:column;gap:2px;align-items:center;
-           justify-content:center;padding:10px 8px;border-radius:8px;
-           background:var(--bg-sub);border:none;text-decoration:none;
-           transition:background .15s}
-  .upd-btn:hover{background:var(--btn-hover)}
-  .upd-btn b{font-size:13px;color:var(--fg)}
-  .upd-btn b::after{content:' ↗';font-size:11px;color:var(--muted)}
+  .upd-src-title{font-size:12px;color:var(--muted);margin-bottom:6px}
+  .upd-card{display:flex;align-items:center;gap:10px;padding:10px 12px;
+            border-radius:8px;background:var(--bg-sub);text-decoration:none;
+            margin-bottom:6px;transition:background .15s}
+  .upd-card:hover{background:var(--btn-hover)}
+  .upd-card-ico{width:18px;height:18px;color:var(--muted);flex:none}
+  .upd-card-ico .ico{width:100%;height:100%}
+  .upd-card-main{display:flex;flex-direction:column;gap:2px;flex:1}
+  .upd-card-main b{font-size:13px;color:var(--fg);font-weight:600}
+  .upd-card-desc{font-size:11px;color:var(--muted)}   /* BGI 副行=Tertiary 三级色 */
+  .upd-card-go{width:14px;height:14px;color:var(--muted);flex:none}
+  .upd-card-go .ico{width:100%;height:100%}
   .upd-src-sub{font-size:12px;color:var(--fg);opacity:.72}
   .upd-pkg{font-size:12px;color:var(--muted);margin-top:8px;text-align:center;
            white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* 站内下载区：按钮→进度→完成三态切换 */
   .upd-dl{margin-top:10px;border-top:1px solid var(--bg-sub);padding-top:10px}
   .upd-dl-btn{width:100%}
+  /* [hidden] 兜底（2026-11-16 实测抓到）：.btn{display:inline-flex} 会压过
+     UA 的 [hidden]{display:none}，导致 done 态的「下载并安装更新」按钮
+     本该隐藏却一直显示、挤在完成态上方 */
+  .upd-dl-btn[hidden]{display:none}
   .upd-dl-prog{padding:2px 0}
+  .upd-dl-prog[hidden]{display:none}
   .upd-dl-bar{height:8px;border-radius:4px;background:var(--bg-sub);overflow:hidden}
   .upd-dl-bar i{display:block;height:100%;width:0;border-radius:4px;
                 background:var(--accent-blue);transition:width .3s}
   .upd-dl-txt{font-size:11px;color:var(--subtle);margin-top:4px;text-align:center}
-  .upd-dl-done{display:flex;align-items:center;justify-content:center;gap:10px}
-  .upd-dl-ok{font-size:12px;font-weight:600;color:#3fb972}
+  /* 完成态（2026-11-16 二改）：主按钮「立即安装」+ 一行小字说明。
+     小字必须换行到按钮下方——.upd-dl-done 原为横排 flex，
+     三项挤一行会把提示挤成窄条（改用 wrap + 小字占满整行） */
+  .upd-dl-done{display:flex;align-items:center;justify-content:center;
+    gap:8px 10px;flex-wrap:wrap}
+  .upd-dl-done[hidden]{display:none}
+  .upd-dl-done .upd-dl-tip{flex:0 0 100%;font-size:11px;color:var(--muted);
+    text-align:center;margin-top:2px}
+    .upd-dl-ok{font-size:12px;font-weight:600;color:#3fb972}
   .month-toolbar{display:flex;align-items:center;gap:10px;margin:-6px 0 12px}
   .month-nav{display:flex;gap:4px}
   .month-nav .btn{min-width:34px;padding:4px 10px;font-weight:700}
@@ -1484,7 +1553,7 @@
   /* ---- 库街区绑定弹窗（鸣潮，2026-11-09 D2b）---- */
   .kuro-modes{margin-bottom:14px}
   .kuro-row{display:flex;gap:8px;margin-bottom:10px}
-  .kuro-row input{flex:1;min-width:0;background:var(--subtle);border:1px solid var(--border);
+  .kuro-row input{flex:1;min-width:0;background:var(--subtle);border:1px solid var(--line);
     border-radius:8px;padding:9px 12px;color:var(--fg);font-family:inherit;font-size:14px}
   .kuro-row input:focus{outline:none;border-color:var(--accent,#7c5cff)}
   .kuro-row .btn{flex:none}
@@ -1535,7 +1604,7 @@
   .dl-toggle:hover{filter:brightness(1.15)}
   .dl-gcard.is-done{opacity:.72}
   .dl-row{display:flex;align-items:center;gap:8px;padding:7px 0;
-    border-bottom:1px solid var(--border)}
+    border-bottom:1px solid var(--line)}
   .dl-row:last-child{border-bottom:none}
   .dl-row.is-done{opacity:.55}
   .dl-row.is-off{opacity:.4}
@@ -1553,7 +1622,7 @@
   .df-row--top{align-items:flex-start}
   .df-label{flex:none;width:64px;color:var(--muted)}
   .df-row input[type=text],.df-row input[type=time],.df-row textarea{
-    flex:1;min-width:0;background:var(--subtle);border:1px solid var(--border);
+    flex:1;min-width:0;background:var(--subtle);border:1px solid var(--line);
     border-radius:8px;padding:8px 10px;color:var(--fg);font-family:inherit;font-size:14px}
   .df-row textarea{resize:vertical}
   .df-row input[type=checkbox]{width:auto}
@@ -1562,7 +1631,7 @@
      紧凑贴左不拉伸（小窗下 flex:1 会把七枚拉成满行宽条，与 seg-mini 节奏打架），
      窄弹窗放不下时自动换行 */
   .wd-picker{display:flex;gap:4px;flex:1;min-width:0;flex-wrap:wrap}
-  .wd-chip{flex:none;min-width:34px;height:28px;border:1px solid var(--border);
+  .wd-chip{flex:none;min-width:34px;height:28px;border:1px solid var(--line);
     background:var(--subtle);color:var(--muted);border-radius:8px;
     font-family:inherit;font-size:13px;cursor:pointer;padding:0 10px}
   .wd-chip:hover{color:var(--fg)}
@@ -1573,7 +1642,7 @@
   .bgr-row{display:flex;align-items:center;gap:8px;font-size:14px}
   .bgr-row.is-off .bgr-min,.bgr-row.is-off .bgr-unit{opacity:.4}
   .bgr-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .bgr-min{background:var(--subtle);border:1px solid var(--border);
+  .bgr-min{background:var(--subtle);border:1px solid var(--line);
     border-radius:8px;color:var(--fg);font-family:inherit;font-size:14px}
   /* 全局 input[type=number]{width:100%;height:42px} 特异性更高（0,1,1），
      必须用属性选择器同杠才能把宽度压回 72px（2026-11-13 用户截图实锤） */

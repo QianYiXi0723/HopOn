@@ -957,7 +957,7 @@ namespace HopOn
             {
                 _job = CreateJobObject(IntPtr.Zero, null);
                 var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
-                info.BasicLimitInformation.LimitFlags = 0x2000;   // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                info.BasicLimitInformation.LimitFlags = 0x2800;   // KILL_ON_JOB_CLOSE | BREAKAWAY_OK（允许 HopOnUpdater 脱离 Job，2026-11-16）
                 int len = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
                 IntPtr ptr = Marshal.AllocHGlobal(len);
                 try

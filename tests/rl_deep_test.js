@@ -51,10 +51,10 @@ api2.setRunning(true);              // 守护进程运行中（否则显示函�
 api2.refresh();
 const diff0 = api2.diffToNext();    // diff 在 VM 内用 mock 时钟计算，避免混入宿主真实时钟
 check('T2.1 21:00:00 时目标解析为 22:00，剩余恰 60 分钟（3600000ms）',
-  els2['k-next'].textContent === '22:00' && diff0 === 3600000,
-  { value: els2['k-next'].textContent, sub: els2['k-next-sub'].textContent, diffMs: diff0 });
-check('T2.2 21:00 显示 "1 小时 0 分后"', els2['k-next-sub'].textContent === '1 小时 0 分后',
-  els2['k-next-sub'].textContent);
+  els2['d-next'].textContent === '22:00 · 1 小时 0 分后' && diff0 === 3600000,
+  { value: els2['d-next'].textContent, diffMs: diff0 });
+check('T2.2 21:00 显示 "1 小时 0 分后"', els2['d-next'].textContent === '22:00 · 1 小时 0 分后',
+  els2['d-next'].textContent);
 
 /* 模拟浏览器切后台 3 分钟：mock 时钟直接 +180000ms，期间一次 tick 都没跑
    （节流场景）。若是 timeLeft -= 1 计数器，此刻仍会显示 60 分钟 → 必 FAIL */
@@ -62,8 +62,8 @@ box.now += 180000;                  // 21:03:00
 api2.refresh();
 const diff1 = api2.diffToNext();
 check('T2.3 跳 180 秒后（零 tick）剩余恰 57 分钟 = 3420000ms，而非 59分57秒',
-  els2['k-next-sub'].textContent === '57 分钟后' && diff1 === 3420000,
-  { sub: els2['k-next-sub'].textContent, diffMs: diff1 });
+  els2['d-next'].textContent === '22:00 · 57 分钟后' && diff1 === 3420000,
+  { value: els2['d-next'].textContent, diffMs: diff1 });
 const tgt1 = api2.nextTarget();
 check('T2.4 目标时刻未被改动（同一 22:00，证明是 target - now 而非递减）',
   tgt1 === new Real(2026, 9, 29, 22, 0, 0).getTime(),
@@ -71,7 +71,7 @@ check('T2.4 目标时刻未被改动（同一 22:00，证明是 target - now 而
 box.now += 60000;                   // 21:04:00 → 56 分钟
 api2.refresh();
 check('T2.5 再走 1 分钟 → "56 分钟后"（随真实时刻线性推进）',
-  els2['k-next-sub'].textContent === '56 分钟后', els2['k-next-sub'].textContent);
+  els2['d-next'].textContent === '22:00 · 56 分钟后', els2['d-next'].textContent);
 
 /* ================= 测试 4：事件监听防重复绑定（全脚本 + 录制式 DOM 桩） ================= */
 section('测试 4：事件监听防重复绑定（全脚本求值 + 两次 Tab 切换）');
@@ -174,8 +174,8 @@ ctx.renderDaemon({ running: false, pid: null, started_at: '',
   heartbeat_age: null, check_times: ['22:00'], last_run: {} });
 check('T5.4 停止：d-dot className = "dot"（灰点静止，无 on/无红）',
   els['d-dot'].className === 'dot', els['d-dot'].className);
-check('T5.5 停止：KPI 下次巡查 = 已暂停（不再给时刻）',
-  els['k-next'].textContent === '已暂停', els['k-next'].textContent);
+check('T5.5 停止：定时页下次巡查 = 已暂停（不再给时刻）',
+  els['d-next'].textContent === '已暂停', els['d-next'].textContent);
 
 console.log(failed ? '\n[Node 侧结论] FAIL（' + failed + ' 项未过）' : '\n[Node 侧结论] 全部通过');
 process.exit(failed ? 1 : 0);

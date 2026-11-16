@@ -12,7 +12,7 @@
     <AssemblyTitle>HopOn · 日常巡查</AssemblyTitle>
     <Product>HopOn</Product>
     <Description>HopOn 桌面壳：静默托管 engine/ 便携 Python 引擎，WebView2 加载本地控制台，托盘常驻。</Description>
-    <Version>2.6.4</Version>
+    <Version>2.6.8</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- PerMonitorV2：不声明的话进程是 DPI-unaware，125% 缩放下窗口只剩 784 逻辑宽且整窗位图拉伸 -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -22,6 +22,15 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
+  </ItemGroup>
+
+  <!-- 2026-11-16：shell\ 下新增了独立更新器 HopOnUpdater（自己的 csproj 与 .cs），
+       SDK 式项目会把同目录所有 .cs 吃进来 → 两个 Main → CS0017 多入口点。
+       必须显式排除，否则壳编译直接崩 -->
+  <ItemGroup>
+    <Compile Remove="HopOnUpdater.cs" />
+    <Compile Remove="publish-updater\**" />
+    <Compile Remove="publish\**" />
   </ItemGroup>
 
 </Project>

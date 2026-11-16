@@ -1771,6 +1771,13 @@ _LIVE_AUTO_REFRESH_MINUTES = 10
 _LIVE_LOCK = threading.Lock()
 #: 磁盘缓存：服务重启后也能秒回上一次的结果，页面冷启动绝不该现场打接口
 _LIVE_DISK_CACHE = USER_DIR / "data" / "live_cache.json"
+#: 同一款游戏两次真实查询的最小间隔（秒）。2026-11-16 用户实测：F5 与连续切
+#: 监控开关会在一分钟内对同一 gid 打多次私有接口，只靠 45 秒进程缓存挡不住。
+#: 与 45 秒 TTL 叠加而非替换：0-45s 吃进程缓存，45-90s 走间隔护栏回放磁盘缓存，
+#: ≥90s 才放行真查。force 也不例外（refresh=1 ≠ 不限频）。
+_LIVE_MIN_INTERVAL_SECONDS = 90
+#: gid -> 上次真实发起查询的 time.time()（进程内，不落盘——落盘会引入新的文件锁问题）
+_LIVE_LAST_QUERY: Dict[str, float] = {}
 
 
 def _live_disk_read() -> Optional[Dict[str, Any]]:
@@ -2102,7 +2109,44 @@ def live_status(force: bool = False, family: Optional[str] = None,
             payload["cached"] = True
             return _annotate_live_cool(_filter_live_games(payload, enabled), cooled)
 
+        # 90 秒最短间隔护栏：距上次真实发起查询不足间隔的 gid 本轮不查，
+        # 磁盘缓存原样回放；全部被限频就直接回磁盘缓存（ok 恒为 true）。
+        # 风控冷却（1034/10041 账本）是另一条独立护栏，两者互不掺和。
+        now_ts = time.time()
+        skip_gids = {
+            a.game for a in cfg.accounts
+            if now_ts - float(_LIVE_LAST_QUERY.get(a.game, 0.0)) < _LIVE_MIN_INTERVAL_SECONDS
+        }
+        throttled_gids: List[str] = []
+        if skip_gids:
+            kept_accounts = [a for a in cfg.accounts if a.game not in skip_gids]
+            throttled_gids = sorted(skip_gids)
+            if not kept_accounts:
+                disk_all = _live_disk_read()
+                if disk_all is not None:
+                    payload = dict(disk_all)
+                    payload["throttled"] = True
+                    logger.info(
+                        "实时查询 90 秒间隔护栏：本轮 %d 款游戏全部在间隔内，回放磁盘缓存",
+                        len(skip_gids))
+                    return payload
+                logger.info(
+                    "实时查询 90 秒间隔护栏：本轮 %d 款游戏全部在间隔内且无磁盘缓存",
+                    len(skip_gids))
+                return {"ok": True, "cached": True, "throttled": True,
+                        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "games": []}
+            from dataclasses import replace as _dc_replace
+
+            cfg = _dc_replace(cfg, accounts=kept_accounts)
+
         statuses = collect_statuses(cfg)
+
+        # 间隔记账：真实发起过查询的 gid 记 now（成功失败都算——护栏保护的是
+        # 「打接口」这个动作本身）；必须在 _LIVE_LOCK 内、写缓存之前
+        sent_at = time.time()
+        for _acc in cfg.accounts:
+            _LIVE_LAST_QUERY[_acc.game] = sent_at
 
         # 风控记账：本轮命中的 1034/10041 写入冷却账本（6 小时内不再实时查询该游戏）
         _live_risk_record([(s.game_id, s.error) for s in statuses if not s.ok and s.error])
@@ -2170,6 +2214,24 @@ def live_status(force: bool = False, family: Optional[str] = None,
                 entry["cooled"] = True
                 games.append(entry)
 
+        # 间隔护栏内的游戏：磁盘缓存原样回放（不设 cooled/cooldown——这不是风控，
+        # 前端按正常数据渲染）；磁盘也没有就给占位条目，绝不缺游戏
+        if throttled_gids:
+            disk_int = _live_disk_read()
+            disk_games_int = (
+                {g.get("game"): g for g in (disk_int.get("games") or []) if isinstance(g, dict)}
+                if disk_int else {}
+            )
+            names_int = _game_display_map()
+            present_int = {g.get("game") for g in games}
+            for gid in throttled_gids:
+                if gid in present_int:
+                    continue
+                old_int = disk_games_int.get(gid)
+                games.append(dict(old_int) if isinstance(old_int, dict) else {
+                    "game": gid, "game_name": names_int.get(gid, gid), "placeholder": True,
+                })
+
         # 点名刷新合并写：集合内条目替换、集合外条目原样保留——局部刷新不丢缓存
         if target_games is not None:
             disk = _live_disk_read() or {}
@@ -2187,9 +2249,14 @@ def live_status(force: bool = False, family: Optional[str] = None,
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "games": games,
         }
+        # 进程/磁盘缓存存不带 throttled 的基线（限频标记只属于本次响应，
+        # 落进缓存会让 45 秒 TTL 消费者读到误导字段）
         _LIVE_CACHE["at"] = time.time()
         _LIVE_CACHE["payload"] = payload
         _live_disk_write(payload)
+        if throttled_gids:
+            payload = dict(payload)
+            payload["throttled"] = True
         return _annotate_live_cool(payload)
 
 
@@ -2229,6 +2296,10 @@ def write_mihoyo(
     有角色的游戏顺手回填 uid / server（修掉模板占位 UID 100000000），
     没角色的游戏只写登录态、不回填 —— 查询层会按"未创建角色"提示，
     玩家日后建号**无需重新扫码**。返回 (已写入, 未创建角色) 两个 id 列表。
+
+    2026-11-16 统一原则：绑定只把本次绑定成功的游戏开启监控（enabled=True），
+    **从不自动关闭任何游戏**——不在 games 列表 / absent 的行，enabled 原样保留
+    （存量 wuwa/bh3/pgr 关着但有凭证，就是靠这条保证不被扫码流程回溯改动）。
     """
     raw = load_raw_config()
     wanted = set(games)
@@ -2266,6 +2337,9 @@ def write_mihoyo(
                 cred["server"] = role["server"]
             if role.get("nickname"):
                 account["nickname"] = role["nickname"]
+            # 2026-11-16 统一原则：只拉起本次绑定成功（进了 updated）的游戏；
+            # absent 与不在 games 列表的行不进这个分支，enabled 原样保留
+            account["enabled"] = True
             updated.append(str(account.get("nickname") or MIHOYO_GAMES.get(game, game)))
         else:
             absent.append(game)
@@ -2294,6 +2368,8 @@ def write_skland(target: str, token: str) -> str:
             cred = account.setdefault("credential", {})
             cred["token"] = token
             cred["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            # 2026-11-16 统一原则：只拉起本次绑定的 target，另一款永不自动关闭
+            account["enabled"] = True
             hit = True
             break
     if not hit:
@@ -2437,6 +2513,7 @@ def write_kuro(token: str, nickname: str = "", games: Optional[List[str]] = None
             hit["nickname"] = real_name            # 真实角色名优先于传入/占位
         elif nickname:
             hit["nickname"] = nickname
+        # 2026-11-16 注记：此处已符合统一原则（绑定=只开本次勾选、从不自动关闭），勿改
         if enabled and not hit.get("enabled", True):
             hit["enabled"] = True   # 绑定了就参与巡检；不想查可以再关开关
         return str(hit.get("nickname") or nickname_default)
@@ -3951,54 +4028,72 @@ class Handler(BaseHTTPRequestHandler):
                 if not os.path.isfile(pkg):
                     self._json({"ok": False, "error": "安装包文件不存在"}, 404)
                     return
+                # 一键安装（2026-11-16 三改）：改为启动独立 HopOnUpdater.exe。
+                # 为什么不再跑 Setup.exe：Inno 靠 RestartManager 关运行中进程，
+                # 而引擎 pythonw 被壳挂在 Job Object 里内核层面关不掉 →
+                # 安装器 Abort → 整体回滚（2026-11-16 19:35 实弹 rc=5）。
+                # Updater 自己不在替换集合里，可先等本进程退出再换文件，
+                # 两阶段替换 + 完整备份，失败能回滚。
                 import subprocess
 
-                # /LOG 落安装日志（VERYSILENT 失败无 UI，日志是唯一诊断线索）
-                log_path = Path(os.environ.get("LOCALAPPDATA", str(ROOT if False else '.'))) / "HopOn" / "logs" / "install.log"
-                try:
-                    log_path.parent.mkdir(parents=True, exist_ok=True)
-                except OSError:
-                    log_path = Path("install.log")
-                # 中间脚本方案（2026-11-15 根治「锁赛跑」）：第一版自杀链里
-                # 安装器与引擎退出赛跑——VERYSILENT 扫描到文件锁就静默跳过
-                # （install.log 报 succeeded 但 engine 全没装）。改为：引擎只负责
-                # 停 daemon + 启动独立桥接进程后退出；桥接进程等锁全清
-                # （引擎退出后 2s）才启动安装器，装完自己拉壳拉全家。
-                bridge = Path(os.environ.get("TEMP", str(Path.cwd()))) / "hopon_install_bridge.py"
-                bridge.write_text(
-                    "import subprocess, sys, time\n"
-                    "setup, shell_dir, logf = sys.argv[1], sys.argv[2], sys.argv[3]\n"
-                    "time.sleep(2.0)\n"                       # 等引擎退出、文件锁全清
-                    "p = subprocess.Popen([setup, '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',"
-                    " '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS', '/LOG=' + logf])\n"
-                    "p.wait()\n"
-                    "time.sleep(1.0)\n"
-                    "subprocess.Popen([shell_dir + r'\\HopOn.exe'], cwd=shell_dir)\n",   # 直接执行 exe——不能过 sys.executable（那是 python，会把 exe 当脚本）
-                    encoding="utf-8")
-                logger.info("已发起静默安装：%s——引擎将清锁退出，桥接进程接管安装并重启壳", pkg)
-                self._json({"ok": True,
-                            "message": "静默安装已启动：应用将自动关闭，安装完成后自动重启"})
-                # 自杀链：停 daemon（旗标+等退出）→ 启动桥接进程 → 引擎 os._exit
-                # 释放全部文件锁 → 桥接等 2s 锁全清 → 安装器全量安装 → 拉壳。
-                def _self_terminate():
-                    try:
-                        import time as _t
+                # 目标目录固定为标准安装位置（与 installer/HopOn.iss 的
+                # DefaultDirName={localappdata}\Programs\HopOn 一致）。
+                # **绝不**用 engine 上级目录——本机那是 git 工作树 E:\Apps\HopOn。
+                _install_dir = (
+                    Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
+                    / "Programs" / "HopOn")
 
-                        _t.sleep(2.0)   # 先让 HTTP 响应送达客户端
+                # Updater 与主程序同级。用 core.paths.app_root() 而非
+                # Path(sys.executable).parent.parent —— 后者只在安装版成立
+                # （…\HopOn\engine\python\python.exe → …\HopOn），工作树下
+                # 会算成 engine\ 少了根（2026-11-16 实测 → 误报「更新器缺失」）
+                from core.paths import app_root as _app_root
+
+                _updater = _app_root() / "HopOnUpdater.exe"
+                if not _updater.is_file():
+                    self._json({"ok": False,
+                                "error": "更新器缺失（HopOnUpdater.exe 不在安装目录），"
+                                         "请手动运行安装包完成更新"}, 400)
+                    return
+
+                try:
+                    # 关键：Updater 必须**脱离壳的 Job Object**。
+                    # 壳把引擎（连带引擎派生的一切）挂进 KILL_ON_JOB_CLOSE 的 Job，
+                    # 而 Updater 是引擎起的子进程 → 继承该 Job。这样 Updater 去
+                    # 杀壳时会被 Job 连带杀死（2026-11-16 真机实测：日志停在
+                    # 「结束占用进程」后无任何输出、backup 未清理）。
+                    # CREATE_BREAKAWAY_FROM_JOB = 0x01000000 让它自成一体。
+                    subprocess.Popen(
+                        [str(_updater),
+                         "--pid", str(os.getpid()),
+                         "--root", str(_install_dir),
+                         "--pkg", pkg,
+                         "--restart"],
+                        creationflags=0x00000008 | 0x01000000)  # DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("更新器启动失败")
+                    self._json({"ok": False, "error": f"更新器启动失败：{exc}"}, 500)
+                    return
+
+                logger.info("已启动更新器：%s（root=%s pkg=%s）——本进程即将退出，"
+                            "由更新器等待退出后替换文件并重启", _updater, _install_dir, pkg)
+                self._json({"ok": True,
+                            "message": "更新已启动：应用将关闭，替换完成后自动重启新版"})
+                # 立刻退出让 Updater 的 WaitPidGone 通过（它轮询本进程 PID）；
+                # 先睡 1.5s 保证 HTTP 响应真的送达客户端再走。
+                def _exit_soon():
+                    import time as _t
+
+                    _t.sleep(1.5)
+                    try:
                         import daemon as _d
 
                         _d.stop_daemon()   # 停守护（旗标+等退出，≤3s）
                     except Exception:  # noqa: BLE001
                         pass
-                    try:
-                        subprocess.Popen(
-                            [str(Path(sys.executable)), str(bridge), pkg,
-                             str(Path(__file__).resolve().parent), str(log_path)],
-                            creationflags=0x00000008)  # DETACHED_PROCESS
-                    except Exception:  # noqa: BLE001
-                        logger.exception("桥接进程启动失败")
                     os._exit(0)
-                threading.Timer(1.5, _self_terminate).start()
+
+                threading.Thread(target=_exit_soon, daemon=True).start()
             except Exception as exc:  # noqa: BLE001
                 logger.exception("静默安装发起失败")
                 self._json({"ok": False, "error": f"安装启动失败：{exc}"}, 500)

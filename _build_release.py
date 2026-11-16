@@ -220,7 +220,11 @@ def verify_shell_fresh() -> None:
         p
         for pattern in ("*.cs", "*.csproj")
         for p in SHELL_DIR.rglob(pattern)
-        if p.is_file() and not ({"obj", "bin"} & set(p.relative_to(SHELL_DIR).parts))
+        if p.is_file()
+        and not ({"obj", "bin", "publish", "publish-updater"} & set(p.relative_to(SHELL_DIR).parts))
+        # 2026-11-16：HopOnUpdater 是独立二进制（产物 HopOnUpdater.exe），
+        # 不该跟壳 HopOn.exe 比新旧，否则它一改就误报「壳比源码旧」
+        and p.name not in ("HopOnUpdater.cs", "HopOnUpdater.csproj")
     ]
     if not sources:
         return
@@ -423,6 +427,10 @@ def main() -> None:
     shutil.copy2(_require(SHELL_EXE, "C# 壳 HopOn.exe（先跑 shell\\build.ps1）"), OUT / "HopOn.exe")
     for name in SHELL_COMPANIONS:
         shutil.copy2(_require(ROOT / name, name), OUT / name)
+    # 1b) 独立更新器（2026-11-16）：自己不被替换，才能绕开 Job Object 死锁
+    shutil.copy2(_require(ROOT / "HopOnUpdater.exe",
+                          "独立更新器 HopOnUpdater.exe（先跑 shell\\build.ps1）"),
+                 OUT / "HopOnUpdater.exe")
 
     # 2) engine（含 diet 瘦身 + 瘦身后运行时冒烟，失败即中止）
     build_engine(OUT / "engine")
