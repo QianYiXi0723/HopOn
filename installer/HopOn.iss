@@ -88,6 +88,8 @@ Name: "startup"; Description: "开机自动启动"; GroupDescription: "附加任
 [Files]
 ; 壳可执行 + WebView2 三件套
 Source: "{#ReleaseDir}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+; 独立更新器（2026-11-16）：自己不被替换，才能在主进程退出后换文件
+Source: "{#ReleaseDir}\HopOnUpdater.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleaseDir}\Microsoft.Web.WebView2.Core.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleaseDir}\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleaseDir}\WebView2Loader.dll"; DestDir: "{app}"; Flags: ignoreversion
