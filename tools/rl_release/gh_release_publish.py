@@ -137,6 +137,15 @@ def main():
     body = notes.read_text(encoding="utf-8") if notes and notes.is_file() else default_body(version)
     if notes and not notes.is_file():
         print("[WARN] notes 文件不存在，用默认正文：%s" % notes)
+    # 字数闸（2026-11-17）：应用内更新弹窗正文被 core/update.py
+    # _strip_notes(limit=500) 截断——strip 后超 500 字静默吞尾。上传前
+    # fail-fast，口径与 _strip_notes 一致（strip 后 len）。
+    if notes and notes.is_file():
+        stripped = body.strip()
+        if len(stripped) > 500:
+            _die("发版说明 %d 字 > 500 字上限，应用内更新弹窗会被静默截断"
+                 "（文件：%s，请压缩后重试）" % (len(stripped), notes))
+        print("[OK] 发版说明 %d/500 字" % len(stripped))
 
     print("=== 目标 ===")
     print("  版本 : %s" % version)

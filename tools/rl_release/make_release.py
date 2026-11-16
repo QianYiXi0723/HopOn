@@ -9,6 +9,8 @@
   --skip-shell  跳过第 1 步壳重编译（壳没改、只改 Python/前端时用）
 
 步骤（即人工发版流程的固化）：
+  0. notes 字数闸               发版说明 >500 字直接 FATAL（应用内更新
+                                弹窗 _strip_notes(500) 会静默截断）
   1. shell/build.ps1            壳编译 + 全新目录冒烟门禁
   2. _build_release.py          组装 OUT + diet 瘦身 + 运行时冒烟
                                 + 泄漏自检 + zip + SHA256SUMS
@@ -21,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -62,7 +65,33 @@ def run(step: str, cmd: list[str]) -> None:
         sys.exit(result.returncode or 1)
 
 
+def _check_notes(version: str) -> None:
+    """0/6 发版说明字数闸（2026-11-17）：应用内更新弹窗正文由
+    core/update.py:_strip_notes(limit=500) 截断——strip 后超 500 字静默吞尾，
+    用户只看到半截公告。本闸语义与 _strip_notes 逐字一致（strip 后 len），
+    在打包最前面 fail-fast，不许带超长 notes 进任何昂贵步骤。"""
+    notes = ROOT / "tools" / "rl_release" / "notes" / f"v{version}.md"
+    if not notes.exists():
+        print(f"[WARN] 无发版说明 notes/v{version}.md（两渠道将用默认正文，弹窗只有版本号）")
+        return
+    text = notes.read_text(encoding="utf-8").strip()
+    if len(text) > 500:
+        print(f"[FATAL] 发版说明 {len(text)} 字 > 500 字上限——应用内更新弹窗会被静默截断")
+        print(f"        文件：{notes}（计数含标点/换行，与弹窗截断同口径）")
+        print("        请压缩到 500 字以内再打包")
+        sys.exit(1)
+    print(f"[OK] 发版说明 {len(text)}/500 字（notes/v{version}.md）")
+
+
 def main() -> None:
+    version = re.search(
+        r'^__version__\s*=\s*"([^"]+)"',
+        (ROOT / "core" / "__init__.py").read_text(encoding="utf-8"),
+        re.M,
+    ).group(1)
+    print("\n=== 0/6 发版说明字数闸 ===")
+    _check_notes(version)
+
     skip_shell = "--skip-shell" in sys.argv
     if skip_shell:
         print("== 跳过壳重编译（--skip-shell）==")
@@ -79,13 +108,6 @@ def main() -> None:
     run("3/6 结构/隐私/品牌门禁",
         [sys.executable, str(ROOT / "tools" / "rl_release" / "verify_release.py")])
 
-    import re
-
-    version = re.search(
-        r'^__version__\s*=\s*"([^"]+)"',
-        (ROOT / "core" / "__init__.py").read_text(encoding="utf-8"),
-        re.M,
-    ).group(1)
     iss = ROOT / "installer" / "HopOn.iss"
     iscc = _find_iscc()
     if iss.exists() and iscc is not None:
