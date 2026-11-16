@@ -4028,14 +4028,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not os.path.isfile(pkg):
                     self._json({"ok": False, "error": "安装包文件不存在"}, 404)
                     return
-                # VERYSILENT 静默安装已收起（2026-11-15）：Inno 7 在 VERYSILENT+
-                # 跨目录升级（本机散装部署 E:\Apps\HopOn vs Inno 记忆的影子安装
-                # C:\...\Programs\HopOn）走「先卸旧版」语义，卸完即退出零文件安装
-                # ——需继续实验（AppId 策略/卸载后二段安装/安装器 UI 形态）。
-                # 端点保留防降级校验与日志，静默安装路径 v2.6.6+ 完善后重开。
-                self._json({"ok": False,
-                            "error": "静默自动安装暂未开放——请点「打开文件夹手动安装」，双击 Setup.exe 完成（数据不受影响）"}, 400)
-                return
+                # 静默安装已恢复（2026-11-16，δ1 结论）：目标目录固定为标准安装
+                # 位置 {LOCALAPPDATA}\Programs\HopOn（与 installer/HopOn.iss 的
+                # ProgramDir 一致），**不再**用 engine 上级目录——本机 engine 上级
+                # 是 git 工作树 E:\Apps\HopOn，装进去会覆盖源码并污染版本控制。
                 import subprocess
 
                 # /LOG 落安装日志（VERYSILENT 失败无 UI，日志是唯一诊断线索）
@@ -4050,15 +4046,48 @@ class Handler(BaseHTTPRequestHandler):
                 # 停 daemon + 启动独立桥接进程后退出；桥接进程等锁全清
                 # （引擎退出后 2s）才启动安装器，装完自己拉壳拉全家。
                 bridge = Path(os.environ.get("TEMP", str(Path.cwd()))) / "hopon_install_bridge.py"
+                # 桥接日志与 install.log 同目录（装到一半失败时两者对照看）
+                bridge_log = log_path.parent / "install_bridge.log"
                 bridge.write_text(
-                    "import subprocess, sys, time\n"
-                    "setup, shell_dir, logf, dstdir = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]\n"
-                    "time.sleep(2.0)\n"                       # 等引擎退出、文件锁全清
-                    "p = subprocess.Popen([setup, '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',"
-                    " '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS', '/DIR=' + dstdir, '/LOG=' + logf])\n"
-                    "p.wait()\n"
+                    "import subprocess, sys, time, os\n"
+                    "setup, shell_dir, logf, dstdir, blog = sys.argv[1:6]\n"
+                    "\n"
+                    "def _blog(msg):\n"
+                    "    try:\n"
+                    "        with open(blog, 'a', encoding='utf-8') as fh:\n"
+                    "            fh.write(time.strftime('%Y-%m-%d %H:%M:%S') + '  ' + msg + '\\n')\n"
+                    "    except OSError:\n"
+                    "        pass\n"
+                    "\n"
+                    "time.sleep(2.0)   # 等引擎退出、文件锁全清\n"
+                    "_blog('桥接启动：setup=%s dstdir=%s' % (setup, dstdir))\n"
+                    "if not os.path.isfile(setup):\n"
+                    "    _blog('FATAL 安装包不存在：' + setup)\n"
+                    "    sys.exit(2)\n"
+                    "cmd = [setup, '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',\n"
+                    "       '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS',\n"
+                    "       '/DIR=' + dstdir, '/LOG=' + logf]\n"
+                    "_blog('执行：' + ' '.join(cmd))\n"
+                    "try:\n"
+                    "    p = subprocess.Popen(cmd)\n"
+                    "    rc = p.wait()\n"
+                    "except Exception as exc:\n"
+                    "    _blog('FATAL 安装器启动异常：' + repr(exc))\n"
+                    "    rc = -1\n"
+                    "_blog('安装器退出码 = %d' % rc)\n"
+                    "if rc != 0:\n"
+                    "    _blog('FATAL 安装器非零退出（rc=%d）——详见 install.log' % rc)\n"
+                    "    sys.exit(1)\n"
                     "time.sleep(1.0)\n"
-                    "subprocess.Popen([shell_dir + r'\\HopOn.exe'], cwd=shell_dir)\n",   # 直接执行 exe——不能过 sys.executable（那是 python，会把 exe 当脚本）
+                    "# 落盘校验：防「Installation process succeeded 但文件全没装」\n"
+                    "# （2026-11-15 实弹：先卸后装语义导致卸载完就退出、零文件安装）\n"
+                    "exe = os.path.join(dstdir, 'HopOn.exe')\n"
+                    "if not os.path.isfile(exe):\n"
+                    "    _blog('FATAL 安装器报成功但目标目录内没有 HopOn.exe：' + exe)\n"
+                    "    sys.exit(3)\n"
+                    "_blog('落盘校验通过：' + exe)\n"
+                    "_blog('拉起壳：' + shell_dir)\n"
+                    "subprocess.Popen([os.path.join(shell_dir, 'HopOn.exe')], cwd=shell_dir)\n",
                     encoding="utf-8")
                 logger.info("已发起静默安装：%s——引擎将清锁退出，桥接进程接管安装并重启壳", pkg)
                 self._json({"ok": True,
@@ -4076,11 +4105,18 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:  # noqa: BLE001
                         pass
                     try:
+                        # δ1 结论：目标目录固定为标准安装位置，与 iss 的
+                        # DefaultDirName={localappdata}\Programs\HopOn 一致。
+                        # 绝不传 engine 上级——本机那是 git 工作树 E:\Apps\HopOn。
+                        _install_dir = (
+                            Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
+                            / "Programs" / "HopOn")
                         subprocess.Popen(
                             [str(Path(sys.executable)), str(bridge), pkg,
-                             str(Path(__file__).resolve().parent.parent),
+                             str(_install_dir),                    # 装完从这里拉壳
                              str(log_path),
-                             str(Path(__file__).resolve().parent.parent)],   # /DIR= 显式指定安装目录——UsePreviousAppDir 会读错上次目录（2026-11-15 实弹：装到影子安装 C:\...\Programs\HopOn），engine 上级=真实安装根
+                             str(_install_dir),                    # /DIR= 显式指定——UsePreviousAppDir 会读错上次目录（2026-11-15 实弹：装到影子目录）
+                             str(bridge_log)],
                             creationflags=0x00000008)  # DETACHED_PROCESS
                     except Exception:  # noqa: BLE001
                         logger.exception("桥接进程启动失败")
