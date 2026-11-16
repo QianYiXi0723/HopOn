@@ -1455,13 +1455,24 @@
   /* 站内下载区：按钮→进度→完成三态切换 */
   .upd-dl{margin-top:10px;border-top:1px solid var(--bg-sub);padding-top:10px}
   .upd-dl-btn{width:100%}
+  /* [hidden] 兜底（2026-11-16 实测抓到）：.btn{display:inline-flex} 会压过
+     UA 的 [hidden]{display:none}，导致 done 态的「下载并安装更新」按钮
+     本该隐藏却一直显示、挤在完成态上方 */
+  .upd-dl-btn[hidden]{display:none}
   .upd-dl-prog{padding:2px 0}
+  .upd-dl-prog[hidden]{display:none}
   .upd-dl-bar{height:8px;border-radius:4px;background:var(--bg-sub);overflow:hidden}
   .upd-dl-bar i{display:block;height:100%;width:0;border-radius:4px;
                 background:var(--accent-blue);transition:width .3s}
   .upd-dl-txt{font-size:11px;color:var(--subtle);margin-top:4px;text-align:center}
-  .upd-dl-done{display:flex;align-items:center;justify-content:center;gap:10px}
+  /* 完成态（2026-11-16 二改）：主按钮「立即安装」+ 一行小字说明。
+     小字必须换行到按钮下方——.upd-dl-done 原为横排 flex，
+     三项挤一行会把提示挤成窄条（改用 wrap + 小字占满整行） */
+  .upd-dl-done{display:flex;align-items:center;justify-content:center;
+    gap:8px 10px;flex-wrap:wrap}
   .upd-dl-done[hidden]{display:none}
+  .upd-dl-done .upd-dl-tip{flex:0 0 100%;font-size:11px;color:var(--muted);
+    text-align:center;margin-top:2px}
     .upd-dl-ok{font-size:12px;font-weight:600;color:#3fb972}
   .month-toolbar{display:flex;align-items:center;gap:10px;margin:-6px 0 12px}
   .month-nav{display:flex;gap:4px}
