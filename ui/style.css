@@ -141,11 +141,14 @@
         box-shadow:var(--card-shadow);
         transition:box-shadow .2s ease, background-color .2s ease, padding 400ms ease-out}
   /* ---------- 交互规范（三态统一，box-shadow 描边零布局抖动） ----------
-     Hover 悬浮 / Active 点击保持 / Focus-within 输入聚焦 → 同一蓝色描边 */
+     Hover 悬浮 / Active 点击保持 → 同一蓝色描边。
+     2026-11-16 移除 :focus-within：点过卡内按钮后按钮持焦，蓝框永久驻留
+     （切页/移开鼠标都不消失，且与 hover 卡同时出双框）。键盘焦点环仍由
+     UA 默认样式在按钮自身绘制，无障碍不受影响。 */
   /* 描边用 outline 而非 inset box-shadow：卡片标题条(.card-head)有不透明底色，
      inset 阴影画在子元素之下会被标题条整段盖掉（顶部+两侧上半截「蓝框不完整」）。
      outline 绘制在子元素之上、不参与布局；offset:-1px 内收，避免被祖先 overflow 裁切。 */
-  .card:hover, .card.active, .card:focus-within{
+  .card:hover, .card.active{
     outline:1px solid var(--accent-blue);outline-offset:-1px;
     position:relative;z-index:60}
   /* 控件（图标/按钮/行头）：Hover 不描边，只做背景微变 */
