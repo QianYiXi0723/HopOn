@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>HopOnUpdater</AssemblyName>
+    <RootNamespace>HopOnUpdater</RootNamespace>
+    <LangVersion>7.3</LangVersion>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <Deterministic>true</Deterministic>
+    <!-- 单文件小工具：不引 WebView2、不打 PE32+ 以外的依赖 -->
+    <DebugType>none</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
+  <!-- SDK 式项目默认把同目录所有 .cs 都吃进来；Updater 是独立程序，
+       必须排除壳的 MainForm.cs / Program.cs（它们依赖 WebView2/Windows.Forms） -->
+  <ItemGroup>
+    <Compile Remove="MainForm.cs" />
+    <Compile Remove="Program.cs" />
+    <Compile Remove="publish\**" />
+    <Compile Remove="publish-updater\**" />
+    <Compile Remove="obj\**" />
+    <Compile Remove="bin\**" />
+  </ItemGroup>
+
+</Project>

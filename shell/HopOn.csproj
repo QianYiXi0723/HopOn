@@ -24,4 +24,13 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
   </ItemGroup>
 
+  <!-- 2026-11-16：shell\ 下新增了独立更新器 HopOnUpdater（自己的 csproj 与 .cs），
+       SDK 式项目会把同目录所有 .cs 吃进来 → 两个 Main → CS0017 多入口点。
+       必须显式排除，否则壳编译直接崩 -->
+  <ItemGroup>
+    <Compile Remove="HopOnUpdater.cs" />
+    <Compile Remove="publish-updater\**" />
+    <Compile Remove="publish\**" />
+  </ItemGroup>
+
 </Project>
