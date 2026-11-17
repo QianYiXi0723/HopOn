@@ -937,6 +937,13 @@
   details.dev-fallback{margin-top:10px;font-size:12px;color:var(--muted)}
   details.dev-fallback summary{cursor:pointer;user-select:none}
   details.dev-fallback summary:hover{color:var(--fg)}
+  /* 折叠段里的链接：灰底上蓝链接对比不足（用户实测看不清）——
+     加下划线+加重字重，颜色保持品牌蓝（双主题各自成立） */
+  details.dev-fallback a{color:var(--brand);text-decoration:underline;
+    text-underline-offset:2px;font-weight:600}
+  /* 换设备警示：原藏在按钮 title 悬浮里（没人悬停），改可见常驻 */
+  .dev-right .warn-line{margin-top:8px;font-size:12px;color:var(--warn);
+    line-height:1.5}
   /* 代码粘贴框：等宽字体 + 内阴影质感 */
   .dev-text{width:100%;min-height:132px;padding:10px 16px;border-radius:8px;
     border:none;background:var(--bg-input);color:var(--fg);
