@@ -911,13 +911,10 @@ function renderDevice(d){
   if (apk.available && apk.qr) {
     qrBox.innerHTML = '<img alt="APK 下载二维码">';
     qrBox.querySelector('img').src = 'data:image/png;base64,' + apk.qr;
-    let shown = apk.url;
-    try { shown = decodeURIComponent(apk.url); } catch (e) {}
     meta.innerHTML =
       '<div class="apk-file"><b>' + escHtml(apk.name) + '</b>' +
       (apk.size_text ? '<span class="dim">' + escHtml(apk.size_text) + '</span>' : '') + '</div>' +
-      '<div class="apk-hint">扫码打开 Gitee 下载页，选最新版本下载</div>' +
-      '<div class="apk-url mono">' + escHtml(shown) + '</div>';
+      '<div class="apk-hint">扫码打开下载页，选最新版</div>';
   } else {
     qrBox.innerHTML =
       '<div style="padding:10px 8px;text-align:center">' +
@@ -941,13 +938,10 @@ async function restartApkService(){
     if (apk.available && apk.qr) {
       box.innerHTML = '<img alt="APK 下载二维码">';
       box.querySelector('img').src = 'data:image/png;base64,' + apk.qr;
-      let shown = apk.url;
-      try { shown = decodeURIComponent(apk.url); } catch (e) {}
       meta.innerHTML =
         '<div class="apk-file"><b>' + escHtml(apk.name) + '</b>' +
         (apk.size_text ? '<span class="dim">' + escHtml(apk.size_text) + '</span>' : '') + '</div>' +
-        '<div class="apk-hint">扫码打开 Gitee 下载页，选最新版本下载</div>' +
-        '<div class="apk-url mono">' + escHtml(shown) + '</div>';
+        '<div class="apk-hint">扫码打开下载页，选最新版</div>';
       toast('二维码已更新');
     } else {
       if (btn) { btn.disabled = false; btn.textContent = '生成下载二维码'; }

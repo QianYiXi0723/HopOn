@@ -916,9 +916,9 @@
   .modal--dev .modal-head{margin-bottom:4px}
   @media (max-width:760px){ .dev-grid{grid-template-columns:1fr} }
   /* 步骤 1-2-3：dashed 竖线做连线，数字圆珠压在线上 */
-  .dsteps{position:relative;margin:0 0 16px 10px;padding-left:20px;
+  .dsteps{position:relative;margin:0 0 12px 10px;padding-left:20px;
     border-left:2px dashed var(--border-strong);
-    display:flex;flex-direction:column;gap:8px}
+    display:flex;flex-direction:column;gap:6px}
   .dstep{position:relative;display:flex;gap:8px;align-items:flex-start;
     font-size:12px;color:var(--muted);line-height:1.5}
   .dstep b{position:absolute;left:-30px;top:0;width:18px;height:18px;border-radius:50%;
@@ -927,14 +927,16 @@
   .apk{text-align:center}
   .apk-qr{display:inline-block;padding:6px;background:#fff;
           border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
-  .apk-qr img{width:126px;height:126px;display:block}
+  .apk-qr img{width:108px;height:108px;display:block}
   .apk-meta{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6;
-    word-break:break-all;display:flex;flex-direction:column;gap:4px;align-items:center}
+    display:flex;flex-direction:column;gap:4px;align-items:center}
   .apk-file{display:flex;align-items:baseline;gap:8px}
   .apk-file b{font-size:13px;color:var(--fg)}
   .apk-hint{color:var(--fg)}
-  .apk-url{font-family:ui-monospace,Consolas,monospace;font-size:11px;
-    color:var(--muted);opacity:.75}
+  /* 兜底下载指引：默认折叠成一行，点开才展开（低密度纪律） */
+  details.dev-fallback{margin-top:10px;font-size:12px;color:var(--muted)}
+  details.dev-fallback summary{cursor:pointer;user-select:none}
+  details.dev-fallback summary:hover{color:var(--fg)}
   /* 代码粘贴框：等宽字体 + 内阴影质感 */
   .dev-text{width:100%;min-height:132px;padding:10px 16px;border-radius:8px;
     border:none;background:var(--bg-input);color:var(--fg);

@@ -318,25 +318,27 @@
             <div class="dev-grid">
               <div class="dev-left">
                 <div class="dsteps">
-                  <div class="dstep"><b>1</b><span>手机扫码下载并安装「设备信息」App</span></div>
-                  <div class="dstep"><b>2</b><span>打开 App，点击「复制设备信息」</span></div>
-                  <div class="dstep"><b>3</b><span>将复制的内容粘贴至右侧输入框，再点击保存</span></div>
+                  <div class="dstep"><b>1</b><span>扫码安装「设备信息」App</span></div>
+                  <div class="dstep"><b>2</b><span>App 内点「复制设备信息」</span></div>
+                  <div class="dstep"><b>3</b><span>粘贴到右侧，点「保存并清空指纹缓存」</span></div>
                 </div>
                 <div class="apk" id="apk-box">
                   <div class="apk-qr" id="apk-qr"><span class="ph" style="font-size:12px">二维码生成中…</span></div>
                   <div class="apk-meta" id="apk-meta"></div>
                 </div>
-                <div class="hint" style="margin-top:10px">
-                  手机扫不出？（校园网隔离 / 手机在流量）：直接在手机浏览器打开
-                  <a href="https://gitee.com/qianyixi/HopOn/releases" target="_blank" rel="noopener">gitee.com/qianyixi/HopOn/releases</a>
-                  下载「设备信息.apk」（免梯，任意版本的都通用）；或电脑端
-                  <a href="#" onclick="openApkFolder(); return false">打开 apk 所在文件夹</a> 传给手机。
-                </div>
+                <details class="dev-fallback">
+                  <summary>手机扫不出来？</summary>
+                  <div class="hint" style="margin-top:6px">
+                    手机浏览器直接打开
+                    <a href="https://gitee.com/qianyixi/HopOn/releases" target="_blank" rel="noopener">gitee.com/qianyixi/HopOn/releases</a>
+                    下载「设备信息.apk」（免梯，任意版本通用）；或电脑端
+                    <a href="#" onclick="openApkFolder(); return false">打开 apk 所在文件夹</a> 传给手机。
+                  </div>
+                </details>
               </div>
               <div class="dev-right">
                 <textarea id="dev-text" class="dev-text" spellcheck="false"
-                  placeholder='可选：把「设备信息」App 复制出来的内容粘贴到这里，形如：
-{"deviceModel":"23127PN0CC","androidVersion":"14","deviceFingerprint":"...","oaid":"..."}'></textarea>
+                  placeholder='把手机 App 复制出的设备信息粘贴到这里（JSON）'></textarea>
                 <div class="toolbar">
                   <button id="btn-dev-save" class="btn primary"
                           title="保存后需重新扫码，否则登录设备与查询设备不一致">保存并清空指纹缓存</button>
@@ -345,7 +347,7 @@
                   <button id="btn-dev-reset" class="btn sm" title="删掉手动粘贴的档案，回到随机机型">清除自定义</button>
                 </div>
                 <div class="hint" id="dev-current">正在读取当前设备档案…</div>
-                <div class="hint" style="margin-top:14px"><b>查询代理（选填）</b> —— 米游社查询将经此出口，留空 = 直连；保存后下一轮检查生效。</div>
+                <div class="hint" style="margin-top:10px"><b>查询代理</b>（选填，留空 = 直连；保存后下一轮检查生效）</div>
                 <div class="toolbar" style="gap:8px;margin-top:6px;align-items:center">
                   <input type="text" id="query-proxy" class="field" style="flex:1;min-width:0;height:38px"
                          autocomplete="off" spellcheck="false"
