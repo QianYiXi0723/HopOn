@@ -44,9 +44,32 @@ check("G3 core/analyzer.py 持有推送文案（组装单源，前缀=日常）"
       "日常：" in analyzer_src)
 
 # ---------- 夹具：重定向 DATA_DIR，读写两端一起进临时盘 ----------
+import sys as _sys
+_sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 tmpdir = Path(tempfile.mkdtemp(prefix="rl-pushpreview-"))
 history.DATA_DIR = tmpdir          # 写端（save_report_snapshot）与读端（push_preview_payload）
 snap_path = tmpdir / history.REPORT_SNAPSHOT_NAME
+# CONFIG_PATH 一并进沙箱（2026-11-18 起 push_preview_payload 会读 config 的
+# push.channels 算徽章通道）——不重定向就会读到真实用户配置
+_cfgdir = Path(tempfile.mkdtemp(prefix="rl-pushpreview-cfg-"))
+_cfgpath = _cfgdir / "config.json"
+_cfg_backup = login_ui.CONFIG_PATH
+login_ui.CONFIG_PATH = _cfgpath
+_cfgpath.write_text(json.dumps({
+    "query": {"provider": "mock"},
+    "app": {"custom_dailies": []},
+    "push": {"channels": [], "serverchan": {}, "qmsg": {}},
+}, ensure_ascii=False), encoding="utf-8")
+
+
+def _write_cfg(channels, sckey, qmkey):
+    _cfgpath.write_text(json.dumps({
+        "query": {"provider": "mock"},
+        "app": {"custom_dailies": []},
+        "push": {"channels": channels,
+                 "serverchan": {"sendkey": sckey, "enabled": True},
+                 "qmsg": {"key": qmkey, "enabled": True}},
+    }, ensure_ascii=False), encoding="utf-8")
 
 
 def write_snap(payload):
@@ -199,6 +222,33 @@ p = preview()
 check("T-M4 手动全完 → 同一分数（3/3 全部完成）",
       p["title"] == "日常：3/3 全部完成", p.get("title"))
 _CD_STUB["parts"] = ([], [])
+
+# ---------- C 组：徽章通道单源（2026-11-18 用户实证） ----------
+# 旧读法：前端读勾选框 DOM 状态 → 保存后不刷新/开页时序竞争，已停用的
+# Server酱 仍被列上。现 /api/push_preview 自带 channels（实发语义 =
+# channels 成员且 key 在位），前端只渲染。C 组守卫后端这段。
+try:
+    _write_cfg(["serverchan", "qmsg"], "SCTtest", "qmtest")
+    check("C1 双通道都有 key → 两个 label",
+          login_ui.push_preview_payload().get("channels") == ["Server酱", "Qmsg 酱"])
+
+    _write_cfg(["serverchan", "qmsg"], "SCTtest", "")
+    check("C2 qmsg 无 key → 不进徽章（实发也发不出去）",
+          login_ui.push_preview_payload().get("channels") == ["Server酱"])
+
+    # 用户实证场景：Server酱 已停用（不在 channels），qmsg 正常
+    _write_cfg(["qmsg"], "SCTtest", "qmtest")
+    check("C3 已停用 Server酱 → 徽章只剩 Qmsg",
+          login_ui.push_preview_payload().get("channels") == ["Qmsg 酱"])
+
+    _write_cfg([], "SCTtest", "qmtest")
+    check("C4 空 channels → 空列表（页面显示未启用推送渠道）",
+          login_ui.push_preview_payload().get("channels") == [])
+
+    check("C5 ui/app.js 不再读勾选框拼徽章",
+          "serverchan-enabled" not in (ROOT / "ui" / "app.js").read_text(encoding="utf-8"))
+finally:
+    login_ui.CONFIG_PATH = _cfg_backup
 
 passed = sum(1 for _, ok in results if ok)
 print("\n[结论] %d/%d 通过%s" % (passed, len(results),

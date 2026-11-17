@@ -1081,7 +1081,26 @@ def push_preview_payload() -> Dict[str, Any]:
             _items, CONFIG_PATH.parent)
     except Exception as exc:  # noqa: BLE001 - 手动项读不到不影响预览主面
         logger.warning("推送预览并入手动项失败：%s", exc)
-    return {"ok": True, **push_preview_from_snapshot(
+    # 徽章单源（2026-11-18 用户实证：勾选框 DOM 状态≠实发通道，已停用的
+    # Server酱 仍被列上）。实发语义 = channels 成员且 key 在位，名字用
+    # PUSH_CHANNELS 注册表（与通知绑定卡同源）。读失败降级空表——页面显示
+    # 「未启用推送渠道」，绝不拖垮预览主体。
+    ready_labels: List[str] = []
+    try:
+        push = _push_node(load_raw_config())
+        for _name in (push.get("channels") or []):
+            _key = str(_name).strip().lower()
+            meta = PUSH_CHANNELS.get(_key)
+            if not meta:
+                continue
+            node = push.get(_key)
+            node = node if isinstance(node, dict) else {}
+            if str(node.get(meta["field"]) or "").strip():
+                ready_labels.append(meta["label"])
+    except Exception as exc:  # noqa: BLE001 - 通道读不到不影响预览主面
+        logger.warning("推送预览读取通道列表失败：%s", exc)
+        ready_labels = []
+    return {"ok": True, "channels": ready_labels, **push_preview_from_snapshot(
         snap, manual_undone=manual_undone, manual_finished=manual_finished)}
 
 

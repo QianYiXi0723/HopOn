@@ -1275,6 +1275,7 @@ async function savePush(){
     const d = await postJSON('/api/push', collectPush());
     if (!d.ok) { toast(d.message || '保存失败', true); return; }
     renderPush(d);
+    loadPushPreview();   // 徽章随保存刷新（2026-11-18：旧读法保存后停留在旧通道列表）
     document.getElementById('test-result').hidden = true;
     toast(d.message || '保存成功');
   } catch (e) {
@@ -4895,11 +4896,11 @@ function renderPushPreview(j){
   const chEl = document.getElementById('pv-channel');
   if (!titleEl || !bodyEl) return;
 
-  const channels = [];
-  const sc = document.getElementById('serverchan-enabled');
-  const qm = document.getElementById('qmsg-enabled');
-  if (sc && sc.checked) channels.push('Server酱');
-  if (qm && qm.checked) channels.push('Qmsg 酱');
+  /* 徽章=服务端单源（2026-11-18 用户实证）：旧读法取勾选框 DOM 状态——
+     保存后不刷新、开页与 renderPush 时序竞争，把已停用的 Server酱 也列上。
+     现与实发同源：后端按 channels 成员且 key 在位给出列表，前端只渲染。 */
+  const ids = (j && j.channels) || [];
+  const channels = ids.map(function(n){ return PUSH_LABELS[n] || n; });
   if (chEl) chEl.textContent = channels.length
     ? ('推送到 ' + channels.join(' + ')) : '未启用推送渠道';
 
