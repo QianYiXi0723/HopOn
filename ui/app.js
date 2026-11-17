@@ -5124,74 +5124,15 @@ function setUrgency(id, level){
   if (card) card.dataset.urgency = level;
 }
 
-/* KPI 智能吸顶：滚动容器是 .main（不是 window） */
+/* KPI 收起/展开（2026-11-18 二改·用户裁决）：纯手动、纯文档流——条与按钮
+   跟内容一起滚走（与本周汇总/日常概览同滚动逻辑），不再吸顶、不再停留、
+   不再随滚动自动收放。原「智能吸顶」机制（sticky+滚动阈值+轮询+fixed
+   按钮）整套移除。 */
 const kpiBarEl = document.getElementById('kpi-bar');
-const kpiMainEl = document.querySelector('.main');
-
-/* KPI 吸顶收缩：进入 >进档线、退出 <40px —— 两个阈值必须分开（滞回），不能共用一个。
-   为什么共用会出事：compact 会把 KPI 条压矮，浏览器为保持视觉位置不动（滚动锚定）
-   会同步把 scrollTop 下调同样的落差。若退出阈值也是进档线，则
-     scrollTop 刚过线 → 压缩 → 被锚定推回线下 → 还原 → 又推回线上 → 再压缩 → ……
-   形成无限振荡，每次都对 min-height 跑一遍 250ms 过渡，画面就是「滚动时图标反复
-   重叠 / 抖重影」「一向下滚就被弹回顶部」。所有 tab 都中招，因为它挂在全局唯一的
-   #kpi-bar 上。
-   落差不是常数：宽幅 ~24px（80→56），≤1000px 双列两行卡实测 133px（914×600：
-   213→80）——固定 40px 间隙在窄幅照样振荡（压缩后 scrollTop 被锚定推到 40 以下）。
-   进档线因此按两档实测高度差自适应：max(80, 40+落差+8)，保证压缩后 scrollTop
-   仍 ≥48，永远跌不破退档线 40。落差随窗口/主题漂移在每次滚动事件里重测自愈。
-   2026-11-16 四卡减两卡后：常态 ~81px / compact 44px，落差 ~36px，公式照常自适应。 */
-const KPI_COMPACT_ENTER = 80;   /* 进档线；宽幅下即最终进档线，窄幅被自适应抬高 */
-const KPI_COMPACT_EXIT  = 40;   /* 退档线；压缩后 scrollTop ≥ 48，留 8px 余量 */
 let kpiCompact = false;
-const kpiBarH = { normal: 0, compact: 0 };   /* 两档实高缓存，落差 = normal - compact */
-/* 手动收起/展开的压制窗（2026-11-16）：点击 kpi-toggle 后 3 分钟内
-   滚动阈值不得覆盖手动状态，防「刚点展开又被自动收起」的拉锯 */
-let kpiManual = { until: 0 };
 
-function updateKpiCompact(){
-  if (!kpiBarEl || !kpiMainEl) return;
-  if (Date.now() < kpiManual.until) return;
-  const on = kpiBarEl.classList.contains('compact');
-  kpiBarH[on ? 'compact' : 'normal'] = kpiBarEl.offsetHeight;
-  const delta = (kpiBarH.normal > 0 && kpiBarH.compact > 0)
-    ? kpiBarH.normal - kpiBarH.compact : 24;
-  const enter = Math.max(KPI_COMPACT_ENTER, KPI_COMPACT_EXIT + delta + 8);
-  const top = kpiMainEl.scrollTop;
-  if (!kpiCompact && top > enter) kpiCompact = true;
-  else if (kpiCompact && top < KPI_COMPACT_EXIT) kpiCompact = false;
-  kpiBarEl.classList.toggle('compact', kpiCompact);
-}
-if (kpiMainEl) kpiMainEl.addEventListener('scroll', updateKpiCompact, {passive:true});
-/* 兜底轮询（2026-11-18 用户实证）：拖滚动条不触发收起——scroll 事件在
-   部分拖动路径上不可靠，改 150ms 巡查 scrollTop，滚轮/滚动条/键盘/任何
-   来源统一覆盖。updateKpiCompact 幂等，空转开销一次 scrollTop 读。 */
-setInterval(function() {
-  if (document.hidden) return;
-  if (Date.now() < kpiManual.until) return;
-  updateKpiCompact();
-}, 150);
-/* 收起态的展开键是 position:fixed（脱离 KPI 条），需要按 .main 的
-   视口位置摆放；窗口尺寸变化时重摆。展开态按钮回条内，无需摆放。 */
-function placeKpiToggle(){
-  const t = document.getElementById('kpi-toggle');
-  if (!t || !kpiMainEl || !kpiCompact) { if (t) t.style.top = t.style.right = ''; return; }
-  const m = kpiMainEl.getBoundingClientRect();
-  t.style.top = Math.round(m.top + 6) + 'px';
-  t.style.right = Math.max(10, Math.round(window.innerWidth - m.right + 10)) + 'px';
-}
-window.addEventListener('resize', placeKpiToggle);
-if (kpiBarEl) {
-  /* 预热两档实高：否则首次进档只能用 24px 兜底落差，窄幅第一滚仍会闪一轮 */
-  const wasCompact = kpiBarEl.classList.contains('compact');
-  kpiBarEl.classList.add('compact');
-  kpiBarH.compact = kpiBarEl.offsetHeight;
-  if (!wasCompact) kpiBarEl.classList.remove('compact');
-  kpiBarH.normal = kpiBarEl.offsetHeight;
-}
-updateKpiCompact();
-
-/* 手动收起/展开（2026-11-16）：点击即切态 + 同步 aria-expanded/文案，
-   并压制滚动阈值 3 分钟 */
+/* 手动收起/展开（唯一入口，2026-11-18 二改）：点击即切态 + 同步
+   aria-expanded/文案。无任何滚动联动。 */
 const kpiToggle = document.getElementById('kpi-toggle');
 if (kpiToggle && kpiBarEl) {
   kpiToggle.addEventListener('click', function(){
@@ -5199,8 +5140,6 @@ if (kpiToggle && kpiBarEl) {
     kpiBarEl.classList.toggle('compact', kpiCompact);
     kpiToggle.setAttribute('aria-expanded', String(!kpiCompact));
     kpiToggle.textContent = kpiCompact ? '展开' : '收起';
-    kpiManual.until = Date.now() + 180000;
-    placeKpiToggle();   // fixed 按钮按 .main 视口位置重摆
   });
 }
 

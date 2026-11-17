@@ -694,20 +694,13 @@
   /* ---------- KPI 摘要条（吸顶锚点：80px 常态 / 44px compact 收缩；
      2026-11-16 四卡减两卡：下次巡查搬定时页 #d-next、凭证健康搬账号页抽屉） ---------- */
   .kpi-bar{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;
-           flex:none;margin-bottom:16px;
-           position:sticky;top:0;z-index:50;min-height:80px;background:var(--bg-base);
-           transition:min-height 250ms ease-out, padding 250ms ease-out}
-  /* 收起态（2026-11-18 用户裁决·二改）：展开键脱离 KPI 条的一切特性——
-     条本体留在原位占 24px（visibility 隐藏防滚动锚定跳字），按钮
-     position:fixed 钉在内容区右上角，不随滚动、无过渡动画，就是个
-     每 tab 置顶的普通按钮。z-index 70 压过 .card:hover 的 60（旧版
-     条 z-50 被悬停卡盖住=「展开键凭空消失」的根因之一）。 */
-  .kpi-bar.compact{position:static;height:24px;min-height:24px;
-    background:transparent;margin-bottom:8px;
-    visibility:hidden;pointer-events:none;transition:none;z-index:70}
+           flex:none;margin-bottom:16px;position:relative;
+           min-height:80px;background:var(--bg-base)}
+  /* 收起态（2026-11-18 二改·用户裁决）：纯文档流——不吸顶不停留，条与
+     按钮随内容一起滚走；收/展只走手动点击。按钮仍 absolute 右缘悬于
+     24px 占位条上（.kpi-bar 已改 position:relative 作包含块）。 */
+  .kpi-bar.compact{height:24px;min-height:24px;background:transparent;margin-bottom:8px}
   .kpi-bar.compact .kpi{display:none}
-  .kpi-bar.compact .kpi-toggle{position:fixed;visibility:visible;
-    pointer-events:auto;transform:none;top:6px;right:10px;transition:none}
   .kpi{background:var(--bg-elevated);border:none;border-radius:8px;
        padding:12px 20px;min-width:0}
   .kpi-label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}
