@@ -395,10 +395,43 @@ def _item_uid(item: Dict[str, Any]) -> str:
         item.get("remote_id") or item.get("title"))
 
 
+def _prune_ignored_stale() -> int:
+    """黑名单自清理（2026-11-18 用户裁决「过期的自动删除」）：uid 已不在
+    当前活动缓存里（活动结束下榜/换榜换 id）→ 自动从黑名单摘除，不再
+    出现在恢复列表等人手动清。
+
+    安全阀：缓存为空/读不到时**绝不 prune**——拉取失败会把所有 uid 都
+    判成「失踪」，全体摘除=被删的活动下次缓存恢复后集体复活。"""
+    cache = _read_json(CACHE_PATH, _empty_cache())
+    items = cache.get("items") or []
+    if not items:
+        return 0
+    live = set()
+    for it in items:
+        if isinstance(it, dict):
+            try:
+                live.add(_item_uid(it))
+            except Exception:  # noqa: BLE001 - 单条坏数据不进集合
+                pass
+    with _IGNORED_WRITE_LOCK:
+        data = load_ignored()
+        ids = data.get("ids") or []
+        kept = [i for i in ids if i in live]
+        if len(kept) == len(ids):
+            return 0
+        data["ids"] = kept
+        data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _atomic_write(IGNORED_PATH, data)
+        logger.info("黑名单自动清理：%d 条过期 uid 摘除（活动已下榜）",
+                    len(ids) - len(kept))
+        return len(ids) - len(kept)
+
+
 def ignored_detail() -> Dict[str, Any]:
     """已删除活动明细（2026-11-18 用户裁决「查看详情」）：黑名单 uid 与
-    活动缓存对碰——匹配上的带完整元数据（游戏/名称/起止/奖励）；缓存里
-    已经没有的（过期下榜）给 bare 行，照样可恢复（=清掉黑名单键）。"""
+    活动缓存对碰——匹配上的带完整元数据（游戏/名称/起止/奖励）。过期
+    下榜的 uid 由 _prune_ignored_stale 自动摘除，不再出现在列表里。"""
+    _prune_ignored_stale()
     ignored = load_ignored()
     cache = _read_json(CACHE_PATH, _empty_cache())
     by_uid: Dict[str, Dict[str, Any]] = {}
@@ -1754,6 +1787,7 @@ def summary(
                 and isinstance(hours, (int, float)) and 0 < hours <= window
                 and not act.get("not_started"))
     soon = [item for item in activities if item.get("ending_soon")]
+    _prune_ignored_stale()
     ignored = load_ignored()
     upcoming = [item for item in activities if item.get("group") == "upcoming"]
     return {
