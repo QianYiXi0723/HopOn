@@ -697,10 +697,17 @@
            flex:none;margin-bottom:16px;
            position:sticky;top:0;z-index:50;min-height:80px;background:var(--bg-base);
            transition:min-height 250ms ease-out, padding 250ms ease-out}
-  /* 收起态（2026-11-16 三次修订·用户实测裁决）：黑杠也不要——条缩到按钮
-     大小、背景透明，视觉上只剩一颗「展开」按钮浮在原位；信息回展开态看 */
-  .kpi-bar.compact{min-height:24px;background:transparent;margin-bottom:8px}
+  /* 收起态（2026-11-18 用户裁决·二改）：展开键脱离 KPI 条的一切特性——
+     条本体留在原位占 24px（visibility 隐藏防滚动锚定跳字），按钮
+     position:fixed 钉在内容区右上角，不随滚动、无过渡动画，就是个
+     每 tab 置顶的普通按钮。z-index 70 压过 .card:hover 的 60（旧版
+     条 z-50 被悬停卡盖住=「展开键凭空消失」的根因之一）。 */
+  .kpi-bar.compact{position:static;height:24px;min-height:24px;
+    background:transparent;margin-bottom:8px;
+    visibility:hidden;pointer-events:none;transition:none;z-index:70}
   .kpi-bar.compact .kpi{display:none}
+  .kpi-bar.compact .kpi-toggle{position:fixed;visibility:visible;
+    pointer-events:auto;transform:none;top:6px;right:10px;transition:none}
   .kpi{background:var(--bg-elevated);border:none;border-radius:8px;
        padding:12px 20px;min-width:0}
   .kpi-label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}

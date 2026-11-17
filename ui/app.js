@@ -5161,6 +5161,24 @@ function updateKpiCompact(){
   kpiBarEl.classList.toggle('compact', kpiCompact);
 }
 if (kpiMainEl) kpiMainEl.addEventListener('scroll', updateKpiCompact, {passive:true});
+/* 兜底轮询（2026-11-18 用户实证）：拖滚动条不触发收起——scroll 事件在
+   部分拖动路径上不可靠，改 150ms 巡查 scrollTop，滚轮/滚动条/键盘/任何
+   来源统一覆盖。updateKpiCompact 幂等，空转开销一次 scrollTop 读。 */
+setInterval(function() {
+  if (document.hidden) return;
+  if (Date.now() < kpiManual.until) return;
+  updateKpiCompact();
+}, 150);
+/* 收起态的展开键是 position:fixed（脱离 KPI 条），需要按 .main 的
+   视口位置摆放；窗口尺寸变化时重摆。展开态按钮回条内，无需摆放。 */
+function placeKpiToggle(){
+  const t = document.getElementById('kpi-toggle');
+  if (!t || !kpiMainEl || !kpiCompact) { if (t) t.style.top = t.style.right = ''; return; }
+  const m = kpiMainEl.getBoundingClientRect();
+  t.style.top = Math.round(m.top + 6) + 'px';
+  t.style.right = Math.max(10, Math.round(window.innerWidth - m.right + 10)) + 'px';
+}
+window.addEventListener('resize', placeKpiToggle);
 if (kpiBarEl) {
   /* 预热两档实高：否则首次进档只能用 24px 兜底落差，窄幅第一滚仍会闪一轮 */
   const wasCompact = kpiBarEl.classList.contains('compact');
@@ -5181,6 +5199,7 @@ if (kpiToggle && kpiBarEl) {
     kpiToggle.setAttribute('aria-expanded', String(!kpiCompact));
     kpiToggle.textContent = kpiCompact ? '展开' : '收起';
     kpiManual.until = Date.now() + 180000;
+    placeKpiToggle();   // fixed 按钮按 .main 视口位置重摆
   });
 }
 
