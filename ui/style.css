@@ -1505,6 +1505,24 @@
   .mc-l6{background:color-mix(in srgb, var(--ok) 74%, var(--bg-elevated))}
   .mc-l7{background:color-mix(in srgb, var(--ok) 87%, var(--bg-elevated))}
   .mc-l8{background:var(--ok);color:#fff}
+  .mc-day.mc-open{cursor:pointer}
+  .mc-day.mc-open:active{transform:scale(.9)}
+
+  /* 月报总表长按 → 当天逐游戏明细弹窗（2026-11-18）：点一行=补录/撤销 */
+  /* DOM 里它在 month-modal 之前，同级 z-index 会被月报弹窗盖住——抬一层 */
+  #monthday-modal{z-index:1001}
+  .monthday-list{display:flex;flex-direction:column;gap:6px;
+    max-height:52vh;overflow:auto;padding:2px}
+  .monthday-row{display:flex;align-items:center;gap:9px;padding:9px 12px;
+    border-radius:6px;background:rgba(255,255,255,.05);cursor:pointer;
+    font-size:13px;user-select:none}
+  .monthday-row:hover{background:rgba(255,255,255,.09)}
+  .monthday-row:active{transform:scale(.985)}
+  .monthday-row .mono{margin-left:auto;font-weight:700}
+  .monthday-row .st-ok{color:var(--ok)}
+  .monthday-row .st-miss{color:var(--err)}
+  .monthday-row .st-na{color:var(--muted)}
+  .monthday-hint{font-size:12px;color:var(--muted);margin-top:12px;text-align:center}
 
   /* 分游戏视图（2026-11-06 用户裁决）：单游戏整月历 + 游戏 chips */
   .month-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}

@@ -3855,6 +3855,119 @@ document.getElementById('dlfix-ok').addEventListener('click', function() {
   }).catch(function() { dlfixClose(); });
 });
 
+/* ---------- 月报总表：长按某天 → 当天逐游戏明细（2026-11-18 用户裁决
+   「每月报表也实装补录」。单游戏视图此前已接 dlfix（mc-day editable）；
+   总表是全天聚合格，长按弹出逐游戏清单，点一行切一条。动作语义与
+   七日报表 dlfix 完全一致：✓→撤销（人工补录用 clear），非 ✓→补录。 ---------- */
+let mcdayPending = null, mcdayT0 = 0, monthdayDate = null;
+
+document.addEventListener('pointerdown', function(e) {
+  const el = e.target.closest ? e.target.closest('.mc-open') : null;
+  if (!el) return;
+  mcdayPending = { date: el.getAttribute('data-mc-date') };
+  mcdayT0 = Date.now();
+});
+document.addEventListener('pointerup', function() {
+  if (mcdayPending && Date.now() - mcdayT0 >= 300) {
+    const d = mcdayPending.date;
+    mcdayPending = null;
+    openMonthDay(d);                     // 与 dlfix 同拍：松手才弹窗
+  } else {
+    mcdayPending = null;
+  }
+}, { passive: true });
+document.addEventListener('pointercancel', function() { mcdayPending = null; }, { passive: true });
+document.addEventListener('contextmenu', function(e) {
+  if (e.target.closest && e.target.closest('.mc-open')) e.preventDefault();
+});
+
+function monthDayRows(date) {
+  const d = window.__lastMonth || {};
+  const row = (d.days || []).filter(function(r) { return r.date === date; })[0];
+  if (!row) return null;
+  return (d.games || []).map(function(g) {
+    const c = (row.games || {})[g.game] || {};
+    return { game: g.game, name: g.game_name,
+             manual: g.game.indexOf('cd:') === 0,
+             manualOverride: !!c.manual,
+             finished: !!c.finished, known: !!c.known,
+             mark: monthGameMark(c, row) };
+  });
+}
+
+function monthDayRowHtml(r, i) {
+  const stCls = r.mark === '✓' ? 'st-ok' : r.mark === '✗' ? 'st-miss' : 'st-na';
+  return '<div class="monthday-row" data-i="' + i + '" data-game="' + escHtml(r.game) + '"' +
+    (r.manual ? ' data-manual="1"' : '') + '>' +
+    gameIconHtml(r.game, 'gcard-ico') +
+    '<span>' + escHtml(r.name) + '</span>' +
+    '<span class="mono ' + stCls + '">' + r.mark + '</span></div>';
+}
+
+function openMonthDay(date) {
+  const rows = monthDayRows(date);
+  if (!rows || !rows.length) { toast('当月数据还没加载好', true); return; }
+  monthdayDate = date;
+  const dLabel = date.slice(5).replace('-', '月') + '日';
+  document.getElementById('monthday-title').textContent = dLabel + ' · 当天明细';
+  document.getElementById('monthday-list').innerHTML =
+    rows.map(monthDayRowHtml).join('');
+  document.getElementById('monthday-modal').hidden = false;
+  document.querySelectorAll('#monthday-list .monthday-row').forEach(function(el) {
+    el.addEventListener('click', function() { monthDayToggle(el); });
+  });
+}
+
+function monthDayClose() {
+  document.getElementById('monthday-modal').hidden = true;
+  monthdayDate = null;
+}
+document.getElementById('monthday-x').addEventListener('click', monthDayClose);
+document.getElementById('monthday-modal').addEventListener('click', function(e) {
+  if (e.target === this) monthDayClose();
+});
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && !document.getElementById('monthday-modal').hidden) monthDayClose();
+});
+
+function monthDayToggle(el) {
+  if (!monthdayDate) return;
+  const game = el.getAttribute('data-game');
+  const isManualItem = el.getAttribute('data-manual') === '1';
+  const cur = el.querySelector('.mono').textContent;
+  const isOk = cur === '✓';
+  const undo = isOk;
+  let req;
+  if (isManualItem) {
+    req = { url: '/api/custom_dailies',
+            body: { action: 'toggle_done', id: game.slice(3), undo: undo,
+                    date: monthdayDate } };
+  } else {
+    /* 与 dlfix 游戏行同语义：撤销人工补录 = clear（回巡检事实），
+       撤销巡检记录 = undone；补录 = done */
+    const rows = monthDayRows(monthdayDate) || [];
+    const hit = rows.filter(function(r) { return r.game === game; })[0] || {};
+    req = { url: '/api/history_override',
+            body: { date: monthdayDate, game: game,
+                    action: isOk ? (hit.manualOverride ? 'clear' : 'undone') : 'done' } };
+  }
+  if (el.dataset.busy) return;
+  el.dataset.busy = '1';
+  fetch(req.url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req.body)
+  }).then(function(r) { return r.json(); }).then(function(res) {
+    if (res.message) toast(res.message);
+    /* 行内翻面：done→✓ / undone→✗ / clear→⋯（准确态由静默重载接管） */
+    const mono = el.querySelector('.mono');
+    const after = (!isOk) ? '✓' : (isManualItem ? '✗' : (req.body.action === 'clear' ? '⋯' : '✗'));
+    mono.textContent = after;
+    mono.className = 'mono ' + (after === '✓' ? 'st-ok' : after === '✗' ? 'st-miss' : 'st-na');
+    loadMonthGrid(monthView, true);      // 底下月历静默跟上（指纹变了才重绘）
+  }).catch(function() { toast('操作失败，请稍后重试', true); })
+    .finally(function() { delete el.dataset.busy; });
+}
+
 /* =========================== 每日报表 =========================== */
 function renderHistoryEmpty(message, detail){
   // 空状态：统计表清空，表格位置放一句人话（绝不弹红色错误条）
@@ -4767,8 +4880,9 @@ function renderMonthModal(d){
       /* 档位 = 完成数本身（段数 = 监控数量，上限 8 档色梯）：
          2026-11-09 用户裁决——图例要能直接看到 8 段 */
       const lv = Math.min(done, levels);
-      const tip = '完成 ' + done + '/' + total + '｜' + parts.join(' · ');
-      html += '<div class="mc-day mc-l' + lv + (row.is_today ? ' today' : '') +
+      const tip = '完成 ' + done + '/' + total + '｜' + parts.join(' · ') + '｜长按补录';
+      html += '<div class="mc-day mc-open mc-l' + lv + (row.is_today ? ' today' : '') +
+        '" data-mc-date="' + escHtml(row.date) +
         '" data-tip="' + escHtml(row.label + '｜' + tip) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
     });
     for (let i = lead + d.days.length; i % 7 !== 0; i++) html += '<div class="mc-day blank"></div>';
