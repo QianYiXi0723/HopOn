@@ -1145,13 +1145,7 @@
   .gcard-stam .dim{white-space:nowrap;flex:none}
   .eta{font-size:12px;color:var(--muted);white-space:nowrap;flex:none}
   .eta.eta-soon{color:var(--urgency-warn);font-weight:600}
-  .week-chips{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;color:var(--text-secondary)}
-  .week-chip b{color:var(--fg);font-weight:600}
-  .week-chip .miss{color:var(--urgency-warn)}
-  .week-chip .mono{font-variant-numeric:tabular-nums}
-  /* 汇总 chip 内的官方图标：比表格行(22px)再小一档配 12px 字号；
-     基类的 object-fit/flex:none 继承，小窗紧凑模式的隐藏规则自动同治 */
-  .week-chip .gcard-ico{width:18px;height:18px;border-radius:4px;margin-right:6px;vertical-align:-4px}
+  /* week-chips 逐游戏行已随瘦身移除（2026-11-18 用户裁决 A：与热力图重复） */
   /* 周对比徽章趋势箭头：升绿降琥珀（降不用红——对比是信息不是告警） */
   .wk-up{color:var(--ok)}
   .wk-dn{color:var(--warn)}
@@ -1308,7 +1302,6 @@
     .gcard-ico{width:24px;height:24px;border-radius:6px}
     #manual-group .gcard-ico.ph{font-size:14px}
     .live-card-head .gcard-ico.gcard-ico{width:22px;height:22px}
-    .week-chip .gcard-ico{display:none}
     /* 小窗实时体力两列（与概览同口径）：minmax 420→300；
        双 id 特异性压过 L1217 的后序基准规则 */
     #live-grid#live-grid{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}

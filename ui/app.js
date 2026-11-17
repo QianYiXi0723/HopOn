@@ -4030,31 +4030,16 @@ function weeklyStatsOf(d){
 }
 
 function renderWeeklyCard(d){
-  const box = document.getElementById('week-body');
+  /* 瘦身（2026-11-18 用户裁决 A）：逐游戏 chips 行与七日报表热力图重复，
+     只留卡头「本周 vs 上周」徽章——明细由热力图承担。此函数退化为
+     徽章的 done/total 初值（随后 loadWeekTrend 的百分比覆盖）。 */
   const badge = document.getElementById('week-badge');
-  if (!box) return;
+  if (!badge) return;
   const stats = weeklyStatsOf(d);
-  if (!stats.length || !stats[0].days) {
-    box.innerHTML = '<div class="emptybox">暂无数据，等本周巡检跑起来。</div>';
-    if (badge) badge.textContent = '-';
-    return;
-  }
-  const totalDays = stats[0].days;
+  if (!stats.length || !stats[0].days) { badge.textContent = '-'; return; }
   let totalDone = 0;
-  const chips = stats.map(function(s){
-    totalDone += s.done;
-    const missed = s.known - s.done;             // 查过但没做完（与周报同口径）
-    // 身份一致性：同一页里概览卡/最近 7 天都亮官方图标，汇总 chip 不该是
-    // 唯一无脸的——复用 gcard-ico 类，小窗紧凑模式（≤1099 隐藏图标）自动同治
-    let html = '<span class="week-chip">' + gameIconHtml(s.gid, 'gcard-ico') +
-      '<b>' + escHtml(s.name) + '</b> <span class="mono">' +
-      s.done + '/' + totalDays + '</span>';
-    if (s.done >= totalDays) html += '<span class="dim"> 全勤</span>';
-    else if (missed > 0) html += '<span class="miss"> 漏 ' + missed + '</span>';
-    return html + '</span>';
-  }).join('');
-  box.innerHTML = '<div class="week-chips">' + chips + '</div>';
-  if (badge) badge.textContent = totalDone + '/' + (stats.length * totalDays);
+  stats.forEach(function(s) { totalDone += s.done; });
+  badge.textContent = totalDone + '/' + (stats.length * stats[0].days);
 }
 
 /* ---------- 周完成率徽章（本周 vs 上周） ----------
@@ -4143,7 +4128,7 @@ function hmCellState(c, row, lv){
 function renderHistory(d){
   d = d || {};
   lastHistory = d;
-  renderWeeklyCard(d);   // 顶部本周汇总横条（空数据时自己画空态）
+  renderWeeklyCard(d);   // 顶部本周汇总徽章初值（百分比随后由 loadWeekTrend 覆盖）
   const monthBadge = document.getElementById('h-month');
   if (monthBadge) monthBadge.textContent = d.month ? (d.month + ' 本月') : '-';
 
