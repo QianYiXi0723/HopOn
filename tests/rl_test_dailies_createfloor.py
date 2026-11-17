@@ -22,7 +22,12 @@ import core.dailies as dl
 fails = []
 
 
+_total = 0
+
+
 def chk(cond, label, detail=""):
+    global _total
+    _total += 1
     print(("PASS " if cond else "FAIL ") + label + (("  | " + str(detail)) if detail else ""))
     if not cond:
         fails.append(label)
@@ -116,5 +121,5 @@ chk(s8d[today_key]["state"] == "na" and s8d[today_key]["tip"] == "等待打卡",
     "M2 今天格=等待打卡（当前周期未打）", s8d[today_key])
 dl._save_state(user_dir, {"v": 2, "done": {}, "fired": {}})
 
-print("\n结论：" + ("全部通过" if not fails else "有失败 %d 项" % len(fails)))
+print("\n[结论] %d/%d 通过" % (_total - len(fails), _total))
 sys.exit(1 if fails else 0)

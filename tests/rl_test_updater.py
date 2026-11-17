@@ -227,7 +227,7 @@ def main() -> int:
 
     print()
     print("=" * 62)
-    print(f"结果：{PASS} 通过 / {FAIL} 失败")
+    print(f"[结论] {PASS}/{PASS + FAIL} 通过")
     if FAILED:
         print("失败项：")
         for n in FAILED:
