@@ -1282,11 +1282,14 @@
   .pv-item.open .pv-meta{white-space:normal;overflow:visible;text-overflow:clip}
   .pv-toggle{position:absolute;right:5px;top:6px;width:20px;height:20px;padding:0;
     border:none;background:transparent;color:var(--muted);cursor:pointer;
-    border-radius:8px;font-size:12px;line-height:20px;display:none}
-  .pv-item.has-more .pv-toggle{display:block}
+    border-radius:8px;display:none;align-items:center;justify-content:center}
+  .pv-item.has-more .pv-toggle{display:flex}
   .pv-toggle:hover{background:var(--hover);color:var(--fg)}
-  .pv-toggle::before{content:"▾"}
-  .pv-item.open .pv-toggle::before{content:"▴"}
+  /* 展开三角统一为 8px 描边 chevron（2026-11-18 用户裁决）：收起=朝右、
+     展开=朝下，与 dev-arrow/drawer-arrow 的「右=收起」约定同向 */
+  .pv-toggle .pv-chev{width:10px;height:10px;stroke-width:2.4;
+    transform:rotate(-90deg);transition:transform .15s ease}
+  .pv-item.open .pv-toggle .pv-chev{transform:rotate(0)}
 
   /* ---------- 空状态 / Toast ---------- */
   .emptybox{padding:20px 12px;text-align:center;color:var(--muted);font-size:12px;line-height:1.8}
@@ -1558,11 +1561,9 @@
     background:var(--subtle);border:none;color:var(--fg);cursor:pointer;font-size:12px;
     font-family:inherit}
   .drawer-btn:hover{color:var(--fg);background:var(--hover)}
-  .drawer-arrow{display:inline-block;transition:transform .15s ease}
-  .drawer-arrow::after{content:"";display:inline-block;width:0;height:0;
-    border-left:4px solid transparent;border-right:4px solid transparent;
-    border-bottom:5px solid currentColor;transform:rotate(90deg)}
-  .drawer-arrow.open::after{transform:rotate(0)}
+  .drawer-arrow{width:10px;height:10px;stroke-width:2.4;flex:none;
+    transform:rotate(-90deg);transition:transform .15s ease}
+  .drawer-arrow.open{transform:rotate(0)}
   .drawer-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:30;
     background:var(--bg-card);border-radius:8px;padding:6px;display:grid;gap:2px;
     min-width:180px;box-shadow:0 10px 30px rgba(0,0,0,.4);

@@ -1224,7 +1224,8 @@ function loadPushRecent(){
             escHtml(String(it.ts || '').replace(/^\d{4}-/, '')) + ' · ' +
             escHtml(ch) + ' · ' + escHtml(text) + '</div>' +
           (bodyLine ? '<div class="pv-body">' + escHtml(bodyLine) + '</div>' : '') +
-          '<button type="button" class="pv-toggle" aria-expanded="false" title="展开全文"></button>' +
+          '<button type="button" class="pv-toggle" aria-expanded="false" title="展开全文">' +
+            '<svg class="ico pv-chev"><use href="#i-chev"/></svg></button>' +
           '</div>';
       }).join('');
       // 折叠高度固定，只有真被裁掉的条目才给展开箭头（最多 8 条，量一次即可）
