@@ -26,7 +26,7 @@ function switchTab(name){
   if (name === 'schedule') { loadSchedule(); startSchedPoll(); loadThresholds(); loadAutostart(); loadAlwaysNotify(); loadQuiet(); loadRunLog(); } else { stopSchedPoll(); }
   /* 账号与通知已合并为一页：通知的三路加载并入 account 分支 */
   if (name === 'account') { loadDevice(); loadAccounts(); refreshNotice(); loadPush(); loadPushPreview(); loadPushRecent(); }
-  if (name === 'history') { loadHistory(); loadLive(false); startHistoryPoll(); }
+  if (name === 'history') { loadHistory(); loadLive(false); startHistoryPoll(); loadActivities(); }
   else { stopHistoryPoll(); }
 }
 
@@ -3182,9 +3182,9 @@ function renderActHint(d){
     parts.push('已删除 ' + d.ignored_count + ' 个');
   }
   hint.innerHTML = escHtml(parts.join(' · ')) +
-    (d.ignored_count > 0 ? ' <a class="act-restore" id="act-restore">恢复全部</a>' : '');
+    (d.ignored_count > 0 ? ' <a class="act-restore" id="act-restore">查看详情</a>' : '');
   const restore = document.getElementById('act-restore');
-  if (restore) restore.addEventListener('click', restoreActivities);
+  if (restore) restore.addEventListener('click', openActDel);
 }
 
 /* 游戏头像：按 game_id 硬绑定官方图标。
@@ -3687,16 +3687,114 @@ async function deleteActivity(btn){
   }
 }
 
-async function restoreActivities(){
-  try {
-    const d = await postJSON('/api/activities/restore', {});
-    if (!d || d.ok === false) { toast('恢复失败', true); return; }
-    renderActivities(d);
-    toast('已恢复全部被删除的活动');
-  } catch (e) {
-    toast('恢复失败：' + e, true);
+/* ---------- 已删除活动管理（2026-11-18 用户裁决，Gmail 式勾选批量）----------
+   「恢复全部」升级为「查看详情」弹窗：列表（勾选框+行内恢复）+
+   全部恢复 + 恢复所选。恢复走 /api/activities/restore：uids 列表=
+   精确恢复（单个/勾选批量），空=全部。每次动作后 renderActivities
+   （卡片与脚注立即跟上）+ 重拉弹窗列表。 */
+let actdelDate = null;
+
+function openActDel(){
+  document.getElementById('actdel-modal').hidden = false;
+  loadActDel();
+}
+function closeActDel(){
+  document.getElementById('actdel-modal').hidden = true;
+}
+document.getElementById('actdel-x').addEventListener('click', closeActDel);
+document.getElementById('actdel-modal').addEventListener('click', function(e){
+  if (e.target === this) closeActDel();
+});
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape' && !document.getElementById('actdel-modal').hidden) closeActDel();
+});
+
+function actdelRowHtml(r){
+  const meta = r.found
+    ? escHtml(String(r.start || '').slice(5, 10).replace('-', '/') + ' ~ ' +
+              String(r.end || '').slice(5, 10).replace('-', '/')) +
+      (r.reward_text ? ' · ' + escHtml(r.reward_text) : '')
+    : '<span class="dim">已过期下榜——恢复即清掉这条记录</span>';
+  const ico = r.found && r.game
+    ? gameIconHtml(r.game, 'gcard-ico')
+    : '<span class="gcard-ico ph">?</span>';
+  return '<div class="actdel-row">' +
+    '<input type="checkbox" class="actdel-check" data-uid="' + escHtml(r.uid) + '">' +
+    ico +
+    '<div class="actdel-meta"><b>' + escHtml(r.title || r.uid) + '</b>' +
+    '<small>' + (r.found ? escHtml(r.game_name || '') + ' · ' : '') + meta + '</small></div>' +
+    '<button type="button" class="btn sm actdel-one" data-uid="' + escHtml(r.uid) + '">恢复</button>' +
+    '</div>';
+}
+
+function actdelSyncButtons(){
+  const checks = [...document.querySelectorAll('#actdel-list .actdel-check')];
+  const sel = checks.filter(function(c){ return c.checked; });
+  const selBtn = document.getElementById('actdel-restore-sel');
+  if (selBtn) selBtn.disabled = sel.length === 0;
+  if (selBtn) selBtn.textContent = sel.length ? ('恢复所选 ' + sel.length + ' 项') : '恢复所选';
+  const all = document.getElementById('actdel-all');
+  if (all) {
+    all.checked = checks.length > 0 && sel.length === checks.length;
+    all.indeterminate = sel.length > 0 && sel.length < checks.length;
   }
 }
+
+function loadActDel(){
+  const list = document.getElementById('actdel-list');
+  if (!list) return;
+  fetch('/api/activities/ignored', { cache: 'no-store' }).then(function(r){ return r.json(); })
+    .then(function(d){
+      const rows = (d && d.rows) || [];
+      if (!rows.length) {
+        list.innerHTML = '<div class="emptybox">回收站是空的。</div>';
+      } else {
+        list.innerHTML = rows.map(actdelRowHtml).join('');
+        list.querySelectorAll('.actdel-check').forEach(function(cb){
+          cb.addEventListener('change', actdelSyncButtons);
+        });
+        list.querySelectorAll('.actdel-one').forEach(function(btn){
+          btn.addEventListener('click', function(){
+            actdelRestore([btn.getAttribute('data-uid')], btn);
+          });
+        });
+      }
+      actdelSyncButtons();
+    })
+    .catch(function(){
+      list.innerHTML = '<div class="emptybox">读取已删除列表失败，请稍后重试。</div>';
+    });
+}
+
+async function actdelRestore(uids, btn){
+  if (btn) btn.disabled = true;
+  try {
+    const d = await postJSON('/api/activities/restore', uids ? { uids: uids } : {});
+    if (!d || d.ok === false) { toast('恢复失败', true); if (btn) btn.disabled = false; return; }
+    renderActivities(d);
+    toast(uids ? ('已恢复 ' + uids.length + ' 项') : '已全部恢复');
+    loadActDel();   // 弹窗列表刷新：恢复掉的不在列表里了
+  } catch (e) {
+    toast('恢复失败：' + e, true);
+    if (btn) btn.disabled = false;
+  }
+}
+
+document.getElementById('actdel-restore-all').addEventListener('click', function(){
+  actdelRestore(null, this);
+});
+document.getElementById('actdel-restore-sel').addEventListener('click', function(){
+  const uids = [...document.querySelectorAll('#actdel-list .actdel-check:checked')]
+    .map(function(c){ return c.getAttribute('data-uid'); });
+  if (uids.length) actdelRestore(uids, this);
+});
+document.getElementById('actdel-all').addEventListener('change', function(){
+  const on = this.checked;
+  document.querySelectorAll('#actdel-list .actdel-check').forEach(function(c){
+    c.checked = on;
+  });
+  actdelSyncButtons();
+});
 
 function loadActivities(){
   fetch('/api/activities').then(function(r){ return r.json(); })

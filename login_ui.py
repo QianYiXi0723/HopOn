@@ -3541,6 +3541,17 @@ class Handler(BaseHTTPRequestHandler):
                 })
             return
 
+        if parsed.path == "/api/activities/ignored":
+            # 已删除活动明细（2026-11-18 用户裁决「查看详情」弹窗数据源）
+            from core import activities
+
+            try:
+                self._json(activities.ignored_detail())
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("读取已删除活动失败")
+                self._json({"ok": False, "message": f"读取失败：{exc}"}, 500)
+            return
+
         if parsed.path == "/api/activities":
             from core import activities
 
@@ -3834,7 +3845,12 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._read_json_body()
             if payload is not None:
                 try:
-                    self._json(activities.restore_ignored())
+                    # uids=None=全部恢复（旧口径）；给列表=单个/勾选批量恢复
+                    # （2026-11-18 用户裁决：已删除活动支持单独恢复）
+                    uids = payload.get("uids") if isinstance(payload, dict) else None
+                    if uids is not None and not isinstance(uids, list):
+                        uids = None
+                    self._json(activities.restore_ignored(uids))
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("恢复活动失败")
                     self._json({"ok": False, "message": f"恢复失败：{exc}"}, 500)

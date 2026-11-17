@@ -1527,6 +1527,21 @@
   .monthday-row .st-na{color:var(--muted)}
   .monthday-hint{font-size:12px;color:var(--muted);margin-top:12px;text-align:center}
 
+  /* 已删除活动管理弹窗（2026-11-18 用户裁决「查看详情」）：Gmail 式
+     勾选批量 + 行内单个恢复 + 全部恢复，工具栏随选择驱动 */
+  .modal--actdel{max-width:min(560px,94vw);text-align:left}
+  .actdel-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .actdel-list{display:flex;flex-direction:column;gap:6px;
+    max-height:52vh;overflow:auto;padding:2px}
+  .actdel-row{display:flex;align-items:center;gap:10px;padding:8px 10px;
+    border-radius:6px;background:rgba(255,255,255,.05)}
+  .actdel-row .gcard-ico{width:26px;height:26px}
+  .actdel-meta{display:flex;flex-direction:column;min-width:0;flex:1;
+    font-size:13px;line-height:1.4}
+  .actdel-meta small{color:var(--muted);font-size:12px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .actdel-hint{font-size:12px;color:var(--muted);margin-top:12px;text-align:center}
+
   /* 分游戏视图（2026-11-06 用户裁决）：单游戏整月历 + 游戏 chips */
   .month-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
   .mchip{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;

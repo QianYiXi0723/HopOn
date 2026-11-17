@@ -369,14 +369,59 @@ def ignore_activity(uid: str) -> Dict[str, Any]:
     return summary()
 
 
-def restore_ignored() -> Dict[str, Any]:
-    """清空黑名单（界面上的「全部恢复」用）。"""
+def restore_ignored(uids: Optional[List[str]] = None) -> Dict[str, Any]:
+    """恢复黑名单里的活动（2026-11-18 扩展）：uids=None 清空全部（旧「恢复
+    全部」）；给 uid 列表则只摘除这些键（单个恢复/勾选批量恢复），
+    不在黑名单的 uid 忽略。"""
     with _IGNORED_WRITE_LOCK:
-        _atomic_write(
-            IGNORED_PATH,
-            {"version": 1, "ids": [], "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
-        )
+        data = load_ignored()
+        ids = data.get("ids") or []
+        if uids is None:
+            ids = []
+        else:
+            drop = {str(u) for u in uids if str(u)}
+            ids = [i for i in ids if i not in drop]
+        data["ids"] = ids
+        data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _atomic_write(IGNORED_PATH, data)
     return summary()
+
+
+def _item_uid(item: Dict[str, Any]) -> str:
+    """缓存条目 → 黑名单 uid。构造必须与 summary 的过滤（同文件
+    「{game}:{kind}:{remote_id or title}」）逐字一致，否则对不上碰。"""
+    return "{}:{}:{}".format(
+        item.get("game"), item.get("kind", "act"),
+        item.get("remote_id") or item.get("title"))
+
+
+def ignored_detail() -> Dict[str, Any]:
+    """已删除活动明细（2026-11-18 用户裁决「查看详情」）：黑名单 uid 与
+    活动缓存对碰——匹配上的带完整元数据（游戏/名称/起止/奖励）；缓存里
+    已经没有的（过期下榜）给 bare 行，照样可恢复（=清掉黑名单键）。"""
+    ignored = load_ignored()
+    cache = _read_json(CACHE_PATH, _empty_cache())
+    by_uid: Dict[str, Dict[str, Any]] = {}
+    for it in (cache.get("items") or []):
+        if isinstance(it, dict):
+            try:
+                by_uid[_item_uid(it)] = it
+            except Exception:  # noqa: BLE001 - 单条坏数据不拖垮整表
+                pass
+    rows: List[Dict[str, Any]] = []
+    for uid in (ignored.get("ids") or []):
+        it = by_uid.get(str(uid))
+        if it:
+            rows.append({
+                "uid": uid, "found": True,
+                "game": it.get("game"), "game_name": it.get("game_name"),
+                "title": it.get("title"),
+                "start": it.get("start"), "end": it.get("end"),
+                "reward_text": it.get("reward") or "",
+            })
+        else:
+            rows.append({"uid": uid, "found": False, "title": uid})
+    return {"ok": True, "rows": rows, "count": len(rows)}
 
 
 # --------------------------------------------------------------------------- #

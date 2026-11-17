@@ -905,6 +905,23 @@
         <div class="monthday-hint">点一行 = 补录 / 撤销该游戏当天的记录</div>
       </div>
     </div>
+    <div class="modal-mask" id="actdel-modal" hidden>
+      <div class="modal modal--actdel">
+        <div class="modal-head">
+          <b>已删除的活动</b>
+          <span class="spacer"></span>
+          <button type="button" class="modal-x" id="actdel-x" title="关闭">✕</button>
+        </div>
+        <div class="actdel-toolbar">
+          <label class="opt"><input type="checkbox" id="actdel-all"> 全选</label>
+          <span class="spacer"></span>
+          <button type="button" class="btn sm" id="actdel-restore-sel" disabled>恢复所选</button>
+          <button type="button" class="btn sm" id="actdel-restore-all">全部恢复</button>
+        </div>
+        <div class="actdel-list" id="actdel-list"></div>
+        <div class="actdel-hint">勾选后「恢复所选」批量恢复；单条用行内的「恢复」</div>
+      </div>
+    </div>
     <div class="modal-mask" id="bgrisk-modal" hidden>
       <div class="modal modal--bgrisk">
         <div class="modal-head">
