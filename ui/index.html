@@ -67,7 +67,7 @@
       <!-- 版本号由 /api/env 的 version 字段填入（唯一来源 core/__init__.py），
            这里只放一个不含数字的占位，别再写死 -->
       <button type="button" class="foot-row" id="ver-line"
-              data-tip="点击检查更新（联网比对最新版本）">
+              data-tip="看看有没有新版本可以升（需要联网）">
         <span class="foot-ico"><svg class="ico"><use href="#i-laptop"/></svg></span><span class="foot-txt">本地运行</span>
       </button>
       <button type="button" class="foot-row" id="btn-official-group"
@@ -90,13 +90,13 @@
   <div class="kpi-bar" id="kpi-bar">
     <div class="kpi card primary">
       <div class="kpi-label">今日完成
-        <span class="q" data-tip="游戏巡检 + 手动打卡的今日完成；周计划项只在其计划日计入；查询失败与待上线更新都不计为未完成"></span></div>
+        <span class="q" data-tip="今天游戏巡检和手动打卡的完成情况；周计划只在计划当天才算数；查询失败、还没上线的更新都不算你漏做"></span></div>
       <div class="kpi-value value" id="k-today">–</div>
       <div class="kpi-sub" id="k-today-sub">等待巡检数据</div>
     </div>
     <div class="kpi card">
       <div class="kpi-label">体力临满
-        <span class="q" data-tip="体力达到预警阈值的游戏数；阈值在「定时与状态」页的「体力溢出提醒」里调整，查询后在「信息查询」更新"></span></div>
+        <span class="q" data-tip="体力快满、碰到提醒线的游戏数；提醒线在「定时与状态」页的「体力溢出提醒」里调，查完会在「信息查询」页刷新"></span></div>
       <div class="kpi-value value" id="k-resin">–</div>
       <div class="kpi-sub" id="k-resin-sub">查询后显示</div>
     </div>
@@ -109,10 +109,10 @@
     <section class="card s12" id="week-card">
       <div class="card-head">
         <h2><svg class="ico"><use href="#i-calendar"/></svg> 本周汇总</h2>
-        <span class="q" data-tip="过去 7 天各游戏的完成天数，与每周日晚 21:00 推送的周报同口径"></span>
+        <span class="q" data-tip="过去 7 天每个游戏的完成天数，和每周日晚 9 点发给你的周报是一套算法"></span>
         <span class="spacer"></span>
         <span class="badge" id="week-badge">-</span>
-        <button type="button" class="btn sm" id="btn-run-now" style="height:24px" data-tip="让守护进程立刻跑一轮巡检并写报表（不必等到下一个时间点）">立即巡检</button>
+        <button type="button" class="btn sm" id="btn-run-now" style="height:24px" data-tip="立刻检查一遍所有游戏、更新报表，不用等下一个自动时间">立即巡检</button>
         <button type="button" class="btn sm" id="btn-hist-refresh" style="height:24px" data-tip="重新查询一遍所有启用账号，并立即更新本页数据">刷新</button>
       </div>
       <div id="week-body"><div class="emptybox">读取中…</div></div>
@@ -125,7 +125,7 @@
           <span class="q" data-tip="每款游戏/手动打卡项一张卡：今日完成状态、当前体力与连续打卡天数"></span>
         </h2>
         <span class="spacer"></span>
-        <button type="button" class="btn sm" id="btn-stats-refresh" style="height:24px" data-tip="重新查询全部游戏并渲染概览（同时更新报表；受风控冷却保护，约需 5~15 秒）">刷新</button>
+        <button type="button" class="btn sm" id="btn-stats-refresh" style="height:24px" data-tip="重新查一遍所有游戏并刷新本页（官方限制不能连着查，大约要等 5~15 秒）">刷新</button>
       </div>
       <div id="h-stats"></div>
       <div id="manual-group" hidden></div>
@@ -302,7 +302,7 @@
         <div class="card-head">
           <h2><svg class="ico"><use href="#i-shield"/></svg> 设备伪装
             <span class="badge">高级 · 可选</span>
-            <span class="q" data-tip="每台电脑首次启动会随机分配一台常见机型，之后固定不变。风控多数是出口网络被标记，换设备只在新装或长期异常时才有用；频繁更换会被当成陌生设备，反而更容易触发风控。配套的设备信息 App 不随包分发"></span>
+            <span class="q" data-tip="第一次用会随机挑一台常见手机型号，之后固定不变。被游戏官方拦住多半是网络被盯上，换机型救不了急；频繁换反而更像可疑设备，更容易被拦。配套的「设备信息」App 需要另外单独下载"></span>
           </h2>
           <span class="spacer"></span>
           <svg class="dev-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -369,7 +369,7 @@
     <section class="card s7">
       <div class="card-head">
         <h2 id="ed-title"><svg class="ico"><use href="#i-send"/></svg> 通知绑定
-          <span class="q" data-tip="出于安全，已保存的 Key 以掩码显示：不修改输入框即保持原值，清空后保存则删除该 Key"></span>
+          <span class="q" data-tip="已保存的 Key 只显示开头和结尾几位（防止被偷看）。不动输入框就是保持原样；清空后点保存=删除这个 Key"></span>
         </h2>
       </div>
       <div class="card-body">
@@ -437,7 +437,7 @@
     <section class="card s12">
       <div class="card-head">
         <h2><svg class="ico"><use href="#i-history"/></svg> 最近推送
-          <span class="q" data-tip="来自 data/push_history.json 的真实发送记录（含测试与定时推送），最多显示 8 条；每条固定高度，内容过长会折叠，点右上角箭头展开；成功与失败都会记录"></span>
+          <span class="q" data-tip="真实发到手机上的通知记录（测试和定时推送都算，成功失败都有），最多显示 8 条；太长的会折叠，点右上角箭头展开"></span>
         </h2>
         <span class="spacer"></span>
         <button type="button" class="btn sm" id="btn-push-refresh">刷新</button>
@@ -589,7 +589,7 @@
             <div class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-laptop"/></svg></i>
                 <span class="set-txt"><b>开机自启动
-                  <span class="q" data-tip="登录后自动在后台运行并挂载托盘（写注册表 HKCU Run 键，卸载不影响已存数据）。路径变更后这里会提示「路径已失效」，重开一次开关即可"></span></b>
+                  <span class="q" data-tip="打开后开机就会自动在后台运行，屏幕右下角托盘能看到小图标；你的账号、记录等数据不受开关和卸载影响。软件搬家后这里会提示「路径已失效」，关掉再开一次就好"></span></b>
                 </span>
               </span>
               <span class="set-sum" id="autostart-state">读取中</span>
@@ -604,7 +604,7 @@
             <div class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-upload"/></svg></i>
                 <span class="set-txt"><b>完成也推送
-                  <span class="q" data-tip="默认仅在存在未完成项时推送；开启后全部完成也发一条平安通知，免得以为守护进程坏了"></span></b>
+                  <span class="q" data-tip="平时只在有事情没做完时才推送；打开后哪怕全做完了也发一条「都完成了」，免得你以为软件没在干活"></span></b>
                 </span>
               </span>
               <span class="set-sum" id="sum-alwaysnotify">读取中…</span>

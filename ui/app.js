@@ -1179,7 +1179,7 @@ function selectChannel(name){
   // 高亮显示，标题跟随渠道改名属于重复信息，也让卡片标题位置不断跳动。
   document.getElementById('ed-title').innerHTML =
     '通知绑定' +
-    ' <span class="q" data-tip="出于安全，已保存的 Key 以掩码显示：不修改输入框即保持原值，清空后保存则删除该 Key"></span>';
+    ' <span class="q" data-tip="已保存的 Key 只显示开头和结尾几位（防止被偷看）。不动输入框就是保持原样；清空后点保存=删除这个 Key"></span>';
 }
 
 document.querySelectorAll('.ch-item').forEach(function(el){
