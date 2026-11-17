@@ -4254,10 +4254,11 @@ function renderHeatmap(d){
   /* 自定义日常行（2026-11-14 用户裁决）：state 由后端单源算好——
      ok ✓ / miss ✗ / na ⋯（非计划日、开始记录前、今日等待打卡） */
   manualRows.forEach(function(m){
+    /* 行标签只留名字（2026-11-18 用户裁决）：长按补录是全行能力，不缀在
+       手动行标题后误导成手动项专属——发现性交给悬浮 title + 首次 toast */
     html += '<div class="hm-row"><div class="hm-label">' +
       '<span class="gdot" style="background:var(--brand)"></span>' +
-      escHtml(m.name) +
-      '<span class="dim" style="font-weight:400">·长按格子可补录</span></div>';
+      escHtml(m.name) + '</div>';
     (m.days || []).forEach(function(cell, i){
       /* 非计划日整格不渲染（2026-11-14 用户裁决：还没到星期四就不显示，
          与概览卡同口径）——visibility:hidden 保列对齐但不画任何东西 */
@@ -4297,7 +4298,7 @@ function renderHeatmap(d){
           return c.state === 'ok' || c.state === 'miss'; });
       }) && !localStorage.getItem('rl-dlfix-hint')) {
     localStorage.setItem('rl-dlfix-hint', '1');
-    toast('提示：长按报表里手动项的格子，可补录/撤销打卡记录');
+    toast('提示：长按报表里的格子，可补录/撤销打卡记录');
   }
   flashCard(document.getElementById('act-list') ? document.getElementById('act-list').closest('.card') : null);
 }
