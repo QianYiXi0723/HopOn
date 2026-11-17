@@ -308,6 +308,7 @@
   #tip{position:fixed;left:0;top:0;background:#24272c;color:#fff;
        padding:8px 12px;border-radius:4px;
        font-size:12px;line-height:1.6;font-weight:400;text-align:left;
+       white-space:pre-line;   /* data-tip 里的 \n 渲染成真换行（多行提示） */
        max-width:300px;width:max-content;box-shadow:0 4px 14px rgba(0,0,0,.28);
        opacity:0;visibility:hidden;pointer-events:none;z-index:999;
        transition:opacity .2s ease,visibility .2s ease}
@@ -693,12 +694,12 @@
   /* ---------- KPI 摘要条（吸顶锚点：80px 常态 / 44px compact 收缩；
      2026-11-16 四卡减两卡：下次巡查搬定时页 #d-next、凭证健康搬账号页抽屉） ---------- */
   .kpi-bar{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;
-           flex:none;margin-bottom:16px;
-           position:sticky;top:0;z-index:50;min-height:80px;background:var(--bg-base);
-           transition:min-height 250ms ease-out, padding 250ms ease-out}
-  /* 收起态（2026-11-16 三次修订·用户实测裁决）：黑杠也不要——条缩到按钮
-     大小、背景透明，视觉上只剩一颗「展开」按钮浮在原位；信息回展开态看 */
-  .kpi-bar.compact{min-height:24px;background:transparent;margin-bottom:8px}
+           flex:none;margin-bottom:16px;position:relative;
+           min-height:80px;background:var(--bg-base)}
+  /* 收起态（2026-11-18 二改·用户裁决）：纯文档流——不吸顶不停留，条与
+     按钮随内容一起滚走；收/展只走手动点击。按钮仍 absolute 右缘悬于
+     24px 占位条上（.kpi-bar 已改 position:relative 作包含块）。 */
+  .kpi-bar.compact{height:24px;min-height:24px;background:transparent;margin-bottom:8px}
   .kpi-bar.compact .kpi{display:none}
   .kpi{background:var(--bg-elevated);border:none;border-radius:8px;
        padding:12px 20px;min-width:0}
@@ -719,10 +720,12 @@
   /* 手动收起/展开小钮（2026-11-16）：右缘悬浮于 kpi-bar（sticky 即包含块），
      配色复用 .btn 族变量，不新造颜色；z-index 必须压过 .card:hover 的 60，
      否则鼠标悬停卡片时按钮被盖住（批次 2 实测：展开键凭空消失无法点击） */
-  .kpi-toggle{position:absolute;right:10px;top:50%;transform:translateY(-50%);
+  .kpi-toggle{position:absolute;right:10px;bottom:8px;
     height:24px;padding:0 10px;font-size:12px;line-height:1;border:none;border-radius:6px;
     background:var(--btn-bg);color:var(--muted);cursor:pointer;z-index:61}
   .kpi-toggle:hover{background:var(--btn-hover);color:var(--fg)}
+  /* 收起态 24px 窄条：按钮贴条内顶端（bottom:8 会溢出条外） */
+  .kpi-bar.compact .kpi-toggle{bottom:auto;top:0}
   @media (max-width:520px){ .kpi-bar{grid-template-columns:1fr} }
 
   /* ============ 账号与通知页布局（2026-11-16 用户实测重排）============
@@ -915,9 +918,9 @@
   .modal--dev .modal-head{margin-bottom:4px}
   @media (max-width:760px){ .dev-grid{grid-template-columns:1fr} }
   /* 步骤 1-2-3：dashed 竖线做连线，数字圆珠压在线上 */
-  .dsteps{position:relative;margin:0 0 16px 10px;padding-left:20px;
+  .dsteps{position:relative;margin:0 0 12px 10px;padding-left:20px;
     border-left:2px dashed var(--border-strong);
-    display:flex;flex-direction:column;gap:8px}
+    display:flex;flex-direction:column;gap:6px}
   .dstep{position:relative;display:flex;gap:8px;align-items:flex-start;
     font-size:12px;color:var(--muted);line-height:1.5}
   .dstep b{position:absolute;left:-30px;top:0;width:18px;height:18px;border-radius:50%;
@@ -926,14 +929,23 @@
   .apk{text-align:center}
   .apk-qr{display:inline-block;padding:6px;background:#fff;
           border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
-  .apk-qr img{width:126px;height:126px;display:block}
+  .apk-qr img{width:108px;height:108px;display:block}
   .apk-meta{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6;
-    word-break:break-all;display:flex;flex-direction:column;gap:4px;align-items:center}
+    display:flex;flex-direction:column;gap:4px;align-items:center}
   .apk-file{display:flex;align-items:baseline;gap:8px}
   .apk-file b{font-size:13px;color:var(--fg)}
   .apk-hint{color:var(--fg)}
-  .apk-url{font-family:ui-monospace,Consolas,monospace;font-size:11px;
-    color:var(--muted);opacity:.75}
+  /* 兜底下载指引：默认折叠成一行，点开才展开（低密度纪律） */
+  details.dev-fallback{margin-top:10px;font-size:12px;color:var(--muted)}
+  details.dev-fallback summary{cursor:pointer;user-select:none}
+  details.dev-fallback summary:hover{color:var(--fg)}
+  /* 折叠段里的链接：灰底上蓝链接对比不足（用户实测看不清）——
+     加下划线+加重字重，颜色保持品牌蓝（双主题各自成立） */
+  details.dev-fallback a{color:var(--brand);text-decoration:underline;
+    text-underline-offset:2px;font-weight:600}
+  /* 换设备警示：原藏在按钮 title 悬浮里（没人悬停），改可见常驻 */
+  .dev-right .warn-line{margin-top:8px;font-size:12px;color:var(--warn);
+    line-height:1.5}
   /* 代码粘贴框：等宽字体 + 内阴影质感 */
   .dev-text{width:100%;min-height:132px;padding:10px 16px;border-radius:8px;
     border:none;background:var(--bg-input);color:var(--fg);
@@ -1144,13 +1156,7 @@
   .gcard-stam .dim{white-space:nowrap;flex:none}
   .eta{font-size:12px;color:var(--muted);white-space:nowrap;flex:none}
   .eta.eta-soon{color:var(--urgency-warn);font-weight:600}
-  .week-chips{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;color:var(--text-secondary)}
-  .week-chip b{color:var(--fg);font-weight:600}
-  .week-chip .miss{color:var(--urgency-warn)}
-  .week-chip .mono{font-variant-numeric:tabular-nums}
-  /* 汇总 chip 内的官方图标：比表格行(22px)再小一档配 12px 字号；
-     基类的 object-fit/flex:none 继承，小窗紧凑模式的隐藏规则自动同治 */
-  .week-chip .gcard-ico{width:18px;height:18px;border-radius:4px;margin-right:6px;vertical-align:-4px}
+  /* week-chips 逐游戏行已随瘦身移除（2026-11-18 用户裁决 A：与热力图重复） */
   /* 周对比徽章趋势箭头：升绿降琥珀（降不用红——对比是信息不是告警） */
   .wk-up{color:var(--ok)}
   .wk-dn{color:var(--warn)}
@@ -1189,13 +1195,13 @@
   /* 可长按补录的手动格：果冻 hover（Discord 图标三件套——缩放+圆角 morph
      + overshoot 贝塞尔回弹），按住时压得更深；title 兜底触屏。
      位置纪律：必须在全局区——曾误入 1099 媒体块导致最大化窗口整个无效 */
-  .hm-cell.editable,.mc-day.editable{cursor:pointer;
+  .hm-cell.editable,.mc-day.editable,.mc-day.mc-open{cursor:pointer;
     transition:transform .28s cubic-bezier(.175,.885,.32,1.275),
                border-radius .28s cubic-bezier(.175,.885,.32,1.275),
                filter .18s ease}
-  .hm-cell.editable:hover,.mc-day.editable:hover{
+  .hm-cell.editable:hover,.mc-day.editable:hover,.mc-day.mc-open:hover{
     transform:scale(.92);border-radius:12px;filter:brightness(1.08)}
-  .hm-cell.editable:active,.mc-day.editable:active{transform:scale(.88)}
+  .hm-cell.editable:active,.mc-day.editable:active,.mc-day.mc-open:active{transform:scale(.88)}
   .hm-cell.dl-pressing,.mc-day.dl-pressing{
     transform:scale(.85)!important;filter:brightness(1.2)}
   .hm-cell.blank{visibility:hidden}   /* 非计划日：占位保对齐，整格隐形 */
@@ -1271,11 +1277,14 @@
   .pv-item.open .pv-meta{white-space:normal;overflow:visible;text-overflow:clip}
   .pv-toggle{position:absolute;right:5px;top:6px;width:20px;height:20px;padding:0;
     border:none;background:transparent;color:var(--muted);cursor:pointer;
-    border-radius:8px;font-size:12px;line-height:20px;display:none}
-  .pv-item.has-more .pv-toggle{display:block}
+    border-radius:8px;display:none;align-items:center;justify-content:center}
+  .pv-item.has-more .pv-toggle{display:flex}
   .pv-toggle:hover{background:var(--hover);color:var(--fg)}
-  .pv-toggle::before{content:"▾"}
-  .pv-item.open .pv-toggle::before{content:"▴"}
+  /* 展开三角统一为 8px 描边 chevron（2026-11-18 用户裁决）：收起=朝右、
+     展开=朝下，与 dev-arrow/drawer-arrow 的「右=收起」约定同向 */
+  .pv-toggle .pv-chev{width:10px;height:10px;stroke-width:2.4;
+    transform:rotate(-90deg);transition:transform .15s ease}
+  .pv-item.open .pv-toggle .pv-chev{transform:rotate(0)}
 
   /* ---------- 空状态 / Toast ---------- */
   .emptybox{padding:20px 12px;text-align:center;color:var(--muted);font-size:12px;line-height:1.8}
@@ -1307,7 +1316,6 @@
     .gcard-ico{width:24px;height:24px;border-radius:6px}
     #manual-group .gcard-ico.ph{font-size:14px}
     .live-card-head .gcard-ico.gcard-ico{width:22px;height:22px}
-    .week-chip .gcard-ico{display:none}
     /* 小窗实时体力两列（与概览同口径）：minmax 420→300；
        双 id 特异性压过 L1217 的后序基准规则 */
     #live-grid#live-grid{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
@@ -1504,6 +1512,37 @@
   .mc-l6{background:color-mix(in srgb, var(--ok) 74%, var(--bg-elevated))}
   .mc-l7{background:color-mix(in srgb, var(--ok) 87%, var(--bg-elevated))}
   .mc-l8{background:var(--ok);color:#fff}
+  .mc-day.mc-open{cursor:pointer}
+  /* 月报总表长按 → 当天逐游戏明细弹窗（2026-11-18）：点一行=补录/撤销 */
+  /* DOM 里它在 month-modal 之前，同级 z-index 会被月报弹窗盖住——抬一层 */
+  #monthday-modal{z-index:1001}
+  .monthday-list{display:flex;flex-direction:column;gap:6px;
+    max-height:52vh;overflow:auto;padding:2px}
+  .monthday-row{display:flex;align-items:center;gap:9px;padding:9px 12px;
+    border-radius:6px;background:rgba(255,255,255,.05);cursor:pointer;
+    font-size:13px;user-select:none}
+  .monthday-row:hover{background:rgba(255,255,255,.09)}
+  .monthday-row:active{transform:scale(.985)}
+  .monthday-row .mono{margin-left:auto;font-weight:700}
+  .monthday-row .st-ok{color:var(--ok)}
+  .monthday-row .st-miss{color:var(--err)}
+  .monthday-row .st-na{color:var(--muted)}
+  .monthday-hint{font-size:12px;color:var(--muted);margin-top:12px;text-align:center}
+
+  /* 已删除活动管理弹窗（2026-11-18 用户裁决「查看详情」）：Gmail 式
+     勾选批量 + 行内单个恢复 + 全部恢复，工具栏随选择驱动 */
+  .modal--actdel{max-width:min(560px,94vw);text-align:left}
+  .actdel-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .actdel-list{display:flex;flex-direction:column;gap:6px;
+    max-height:52vh;overflow:auto;padding:2px}
+  .actdel-row{display:flex;align-items:center;gap:10px;padding:8px 10px;
+    border-radius:6px;background:rgba(255,255,255,.05)}
+  .actdel-row .gcard-ico{width:26px;height:26px}
+  .actdel-meta{display:flex;flex-direction:column;min-width:0;flex:1;
+    font-size:13px;line-height:1.4}
+  .actdel-meta small{color:var(--muted);font-size:12px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .actdel-hint{font-size:12px;color:var(--muted);margin-top:12px;text-align:center}
 
   /* 分游戏视图（2026-11-06 用户裁决）：单游戏整月历 + 游戏 chips */
   .month-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
@@ -1532,11 +1571,9 @@
     background:var(--subtle);border:none;color:var(--fg);cursor:pointer;font-size:12px;
     font-family:inherit}
   .drawer-btn:hover{color:var(--fg);background:var(--hover)}
-  .drawer-arrow{display:inline-block;transition:transform .15s ease}
-  .drawer-arrow::after{content:"";display:inline-block;width:0;height:0;
-    border-left:4px solid transparent;border-right:4px solid transparent;
-    border-bottom:5px solid currentColor;transform:rotate(90deg)}
-  .drawer-arrow.open::after{transform:rotate(0)}
+  .drawer-arrow{width:10px;height:10px;stroke-width:2.4;flex:none;
+    transform:rotate(-90deg);transition:transform .15s ease}
+  .drawer-arrow.open{transform:rotate(0)}
   .drawer-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:30;
     background:var(--bg-card);border-radius:8px;padding:6px;display:grid;gap:2px;
     min-width:180px;box-shadow:0 10px 30px rgba(0,0,0,.4);

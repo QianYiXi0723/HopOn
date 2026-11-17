@@ -1081,7 +1081,26 @@ def push_preview_payload() -> Dict[str, Any]:
             _items, CONFIG_PATH.parent)
     except Exception as exc:  # noqa: BLE001 - 手动项读不到不影响预览主面
         logger.warning("推送预览并入手动项失败：%s", exc)
-    return {"ok": True, **push_preview_from_snapshot(
+    # 徽章单源（2026-11-18 用户实证：勾选框 DOM 状态≠实发通道，已停用的
+    # Server酱 仍被列上）。实发语义 = channels 成员且 key 在位，名字用
+    # PUSH_CHANNELS 注册表（与通知绑定卡同源）。读失败降级空表——页面显示
+    # 「未启用推送渠道」，绝不拖垮预览主体。
+    ready_labels: List[str] = []
+    try:
+        push = _push_node(load_raw_config())
+        for _name in (push.get("channels") or []):
+            _key = str(_name).strip().lower()
+            meta = PUSH_CHANNELS.get(_key)
+            if not meta:
+                continue
+            node = push.get(_key)
+            node = node if isinstance(node, dict) else {}
+            if str(node.get(meta["field"]) or "").strip():
+                ready_labels.append(meta["label"])
+    except Exception as exc:  # noqa: BLE001 - 通道读不到不影响预览主面
+        logger.warning("推送预览读取通道列表失败：%s", exc)
+        ready_labels = []
+    return {"ok": True, "channels": ready_labels, **push_preview_from_snapshot(
         snap, manual_undone=manual_undone, manual_finished=manual_finished)}
 
 
@@ -1666,9 +1685,14 @@ def custom_dailies_update(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("至少勾选一个重复日")
 
     if action == "add":
+        from datetime import datetime as _dt2
+
         items.append({"id": f"cd-{_uuid.uuid4().hex[:8]}", "name": name,
                       "mode": mode, "time": time_s, "reset": reset_s,
-                      "template": template, "enabled": enabled, "days": days})
+                      "template": template, "enabled": enabled, "days": days,
+                      # 创建时间（2026-11-18）：报表「开始记录前」地板的锚点——
+                      # 新建项的过去画 ⋯ 而不是 ✗ 漏打
+                      "created_at": _dt2.now().strftime("%Y-%m-%d %H:%M:%S")})
     elif action == "update":
         item_id = str(payload.get("id") or "")
         hit = next((it for it in items if str(it.get("id")) == item_id), None)
@@ -3517,6 +3541,17 @@ class Handler(BaseHTTPRequestHandler):
                 })
             return
 
+        if parsed.path == "/api/activities/ignored":
+            # 已删除活动明细（2026-11-18 用户裁决「查看详情」弹窗数据源）
+            from core import activities
+
+            try:
+                self._json(activities.ignored_detail())
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("读取已删除活动失败")
+                self._json({"ok": False, "message": f"读取失败：{exc}"}, 500)
+            return
+
         if parsed.path == "/api/activities":
             from core import activities
 
@@ -3810,7 +3845,12 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._read_json_body()
             if payload is not None:
                 try:
-                    self._json(activities.restore_ignored())
+                    # uids=None=全部恢复（旧口径）；给列表=单个/勾选批量恢复
+                    # （2026-11-18 用户裁决：已删除活动支持单独恢复）
+                    uids = payload.get("uids") if isinstance(payload, dict) else None
+                    if uids is not None and not isinstance(uids, list):
+                        uids = None
+                    self._json(activities.restore_ignored(uids))
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("恢复活动失败")
                     self._json({"ok": False, "message": f"恢复失败：{exc}"}, 500)

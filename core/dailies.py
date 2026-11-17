@@ -200,10 +200,13 @@ def report_rows(items: List[Dict[str, Any]], user_dir: Path, date_keys: List[str
     miss(✗ 已过计划日漏打) / na(⋯ 非计划日、开始记录前、今日未打=等待中)。
 
     两个口径要点：
-    - 账本周期键 = reset 平移后的日期；打卡落在 reset 之前的凌晨（如 01:00
-      打 04:00 reset 的项）周期键是昨天——按时间戳映射回**日历日**再对格。
-    - 过去计划日未打卡一律 ✗ 可长按补录（不设账本地板：地板=最早周期会把
-      首打较晚的项的整个过去锁成 ⋯，用户实证 2026-11-14）。
+    - 账本周期键 = reset 平移后的**游戏日键**（mark_done 落 _period_key，
+      补录落格子日期），与 date_keys 的游戏日列**同口径直接对格**，无需
+      再按时间戳映射（2026-11-18 凌晨实证：原「ts<reset 归属次日」是
+      双重平移——00:52 打的卡账本键 11-17 被推到 11-18，今日格反而漏标）。
+    - 创建日之后过去计划日未打卡一律 ✗ 可长按补录（不设账本地板：地板=
+      最早周期会把首打较晚的项的整个过去锁成 ⋯，用户实证 2026-11-14）；
+      创建日之前 = ⋯ 开始记录前（用户实证 2026-11-18，新建项不画红叉）。
     """
     now = now or datetime.now()
     state = _load_state(user_dir)
@@ -218,24 +221,18 @@ def report_rows(items: List[Dict[str, Any]], user_dir: Path, date_keys: List[str
             str(p): str(ts) for p, ts in (raw_periods or {}).items()
             if _parse_period(str(p)) is not None
         }
-        # 不设「开始记录」地板（2026-11-14 用户实证：地板=账本最早周期，第一次
-        # 打卡晚的话整个过去全锁死，长按补录形同虚设）——过去计划日一律 ✗
-        # 可补录，用长按自己修正历史
+        # 地板口径（2026-11-18 修订）：地板=**创建时间**（item.created_at），
+        # 不是账本最早周期——11-14 用户实证的是「账本地板会把第一次打卡晚的
+        # 项的过去锁死，长按补录形同虚设」，那是对历史漏打的可补录自由，对
+        # 创建日之后的日子原样保留（照旧 ✗ 可补录）；但项**不存在**的日子
+        # 谈不上漏打（2026-11-18 用户实证：新建项前六天全画红叉），画 ⋯。
+        # 存量项无 created_at → 无地板，维持旧行为。
         days7 = it.get("days") if (
             isinstance(it.get("days"), list) and len(it.get("days")) == 7
             and all(isinstance(x, bool) for x in it.get("days"))) else [True] * 7
-        reset_min = _reset_minutes(it)
-        # 周期键 → 日历日集合（凌晨打卡归属次日）
-        done_dates = set()
-        for p, ts in periods.items():
-            pd = _parse_period(p)
-            try:
-                tt = datetime.strptime(ts, "%H:%M:%S").time()
-            except ValueError:
-                tt = None
-            cal = pd + timedelta(days=1) if (tt is not None and
-                    tt.hour * 60 + tt.minute < reset_min) else pd
-            done_dates.add(cal.strftime("%Y-%m-%d"))
+        # 账本周期键 → 游戏日列直接对格（键与列同口径，见 docstring 口径要点）。
+        # 原「ts<reset 归属次日」映射已删（2026-11-18 凌晨实证是双重平移）。
+        done_dates = set(periods.keys())
         rows = []
         for dk in date_keys:
             d = _parse_period(dk)
@@ -252,6 +249,17 @@ def report_rows(items: List[Dict[str, Any]], user_dir: Path, date_keys: List[str
             if dk >= _period_key(it, now):
                 rows.append({"date": dk, "state": "na", "tip": "等待打卡"})
                 continue
+            # 创建日之前的日历日 = ⋯ 开始记录前（地板在等待打卡判定之后，
+            # 保证凌晨创建当天的当前周期列不被误吞）
+            created_raw = str(it.get("created_at") or "").strip()
+            if created_raw:
+                try:
+                    created_day = datetime.strptime(created_raw[:10], "%Y-%m-%d").date()
+                except ValueError:
+                    created_day = None
+                if created_day is not None and d.date() < created_day:
+                    rows.append({"date": dk, "state": "na", "tip": "开始记录前"})
+                    continue
             rows.append({"date": dk, "state": "miss", "tip": "漏打"})
         out.append({"id": iid, "name": str(it.get("name") or ""), "days": rows})
     return out

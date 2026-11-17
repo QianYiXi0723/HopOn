@@ -30,8 +30,11 @@ ENGINE = ROOT / "engine"
 PY = ENGINE / "python" / "python.exe"
 PYW = ENGINE / "python" / "pythonw.exe"
 APP = ENGINE / "app.py"
-# 2026-11-05 锚点修复后：engine 副本的 BASE_DIR=安装根，engine.log 也落在根 logs/
-LOG = ROOT / "logs" / "engine.log"
+# 2026-11-05 锚点修复 + 数据外置（δ1）：引擎日志落用户数据岛
+# %LOCALAPPDATA%\HopOn\logs\engine.log；树根 logs/ 仅作旧布局回退
+LOG = Path(os.environ.get("LOCALAPPDATA", "")) / "HopOn" / "logs" / "engine.log"
+if not LOG.exists():
+    LOG = ROOT / "logs" / "engine.log"
 PORT = 8899
 BASE_URL = f"http://127.0.0.1:{PORT}"
 DETACHED = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP

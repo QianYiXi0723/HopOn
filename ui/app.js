@@ -26,7 +26,7 @@ function switchTab(name){
   if (name === 'schedule') { loadSchedule(); startSchedPoll(); loadThresholds(); loadAutostart(); loadAlwaysNotify(); loadQuiet(); loadRunLog(); } else { stopSchedPoll(); }
   /* 账号与通知已合并为一页：通知的三路加载并入 account 分支 */
   if (name === 'account') { loadDevice(); loadAccounts(); refreshNotice(); loadPush(); loadPushPreview(); loadPushRecent(); }
-  if (name === 'history') { loadHistory(); loadLive(false); startHistoryPoll(); }
+  if (name === 'history') { loadHistory(); loadLive(false); startHistoryPoll(); loadActivities(); }
   else { stopHistoryPoll(); }
 }
 
@@ -911,13 +911,10 @@ function renderDevice(d){
   if (apk.available && apk.qr) {
     qrBox.innerHTML = '<img alt="APK 下载二维码">';
     qrBox.querySelector('img').src = 'data:image/png;base64,' + apk.qr;
-    let shown = apk.url;
-    try { shown = decodeURIComponent(apk.url); } catch (e) {}
     meta.innerHTML =
       '<div class="apk-file"><b>' + escHtml(apk.name) + '</b>' +
       (apk.size_text ? '<span class="dim">' + escHtml(apk.size_text) + '</span>' : '') + '</div>' +
-      '<div class="apk-hint">扫码打开 Gitee 下载页，选最新版本下载</div>' +
-      '<div class="apk-url mono">' + escHtml(shown) + '</div>';
+      '<div class="apk-hint">扫码打开下载页，选最新版</div>';
   } else {
     qrBox.innerHTML =
       '<div style="padding:10px 8px;text-align:center">' +
@@ -941,13 +938,10 @@ async function restartApkService(){
     if (apk.available && apk.qr) {
       box.innerHTML = '<img alt="APK 下载二维码">';
       box.querySelector('img').src = 'data:image/png;base64,' + apk.qr;
-      let shown = apk.url;
-      try { shown = decodeURIComponent(apk.url); } catch (e) {}
       meta.innerHTML =
         '<div class="apk-file"><b>' + escHtml(apk.name) + '</b>' +
         (apk.size_text ? '<span class="dim">' + escHtml(apk.size_text) + '</span>' : '') + '</div>' +
-        '<div class="apk-hint">扫码打开 Gitee 下载页，选最新版本下载</div>' +
-        '<div class="apk-url mono">' + escHtml(shown) + '</div>';
+        '<div class="apk-hint">扫码打开下载页，选最新版</div>';
       toast('二维码已更新');
     } else {
       if (btn) { btn.disabled = false; btn.textContent = '生成下载二维码'; }
@@ -1179,7 +1173,7 @@ function selectChannel(name){
   // 高亮显示，标题跟随渠道改名属于重复信息，也让卡片标题位置不断跳动。
   document.getElementById('ed-title').innerHTML =
     '通知绑定' +
-    ' <span class="q" data-tip="出于安全，已保存的 Key 以掩码显示：不修改输入框即保持原值，清空后保存则删除该 Key"></span>';
+    ' <span class="q" data-tip="已保存的 Key 只显示开头和结尾几位（防止被偷看）。不动输入框就是保持原样；清空后点保存=删除这个 Key"></span>';
 }
 
 document.querySelectorAll('.ch-item').forEach(function(el){
@@ -1230,7 +1224,8 @@ function loadPushRecent(){
             escHtml(String(it.ts || '').replace(/^\d{4}-/, '')) + ' · ' +
             escHtml(ch) + ' · ' + escHtml(text) + '</div>' +
           (bodyLine ? '<div class="pv-body">' + escHtml(bodyLine) + '</div>' : '') +
-          '<button type="button" class="pv-toggle" aria-expanded="false" title="展开全文"></button>' +
+          '<button type="button" class="pv-toggle" aria-expanded="false" title="展开全文">' +
+            '<svg class="ico pv-chev"><use href="#i-chev"/></svg></button>' +
           '</div>';
       }).join('');
       // 折叠高度固定，只有真被裁掉的条目才给展开箭头（最多 8 条，量一次即可）
@@ -1275,6 +1270,7 @@ async function savePush(){
     const d = await postJSON('/api/push', collectPush());
     if (!d.ok) { toast(d.message || '保存失败', true); return; }
     renderPush(d);
+    loadPushPreview();   // 徽章随保存刷新（2026-11-18：旧读法保存后停留在旧通道列表）
     document.getElementById('test-result').hidden = true;
     toast(d.message || '保存成功');
   } catch (e) {
@@ -2107,7 +2103,10 @@ function renderManualGroup(){
     const modeTxt = it.mode === 'standalone'
       ? (freqTxt(it.days) + ' · 独立 ' + (it.time || '--:--'))
       : (freqTxt(it.days) + ' · 随巡检推送');
-    const tip = '点击勾掉/恢复今日 ｜ 推送效果：' + (it.push_text || '');
+    const tip = '点击勾掉/恢复今日 ｜ 推送效果：' + (it.push_text || '') +
+      /* 第二行（2026-11-18 用户要求）：广告托盘已有的勾卡能力——
+         措辞按通行文案惯例带位置锚定（俗称+右下角），小白不用懂「托盘」黑话 */
+      '\n也可在屏幕右下角的托盘图标右键勾掉';
     return '<div class="card gcard dl-gcard' + (done ? ' is-done' : '') +
         '" style="--gc:var(--brand)" data-id="' + escHtml(it.id) +
         '" data-tip="' + escHtml(tip) + '" title="点击勾掉/恢复今日打卡">' +
@@ -2155,6 +2154,9 @@ async function toggleDailiesDone(id, done, box){
                              { action: 'toggle_done', id: id, undo: !done });
     if (!d.ok) toast(d.message || '操作失败', true);
     await loadDailies();   // 回显以服务端为准（三面同账本）
+    loadHistory();         // 卡在报表页上方：热力图今日格必须立即跟上
+                           //（2026-11-18 用户实证：只刷 30s 轮询等不来——
+                           // 指纹里手动项只有计数，格子翻面后仍可能判「无变化」）
   } catch (e) {
     toast('操作失败：' + e, true);
     if (box) box.disabled = false;
@@ -3180,9 +3182,9 @@ function renderActHint(d){
     parts.push('已删除 ' + d.ignored_count + ' 个');
   }
   hint.innerHTML = escHtml(parts.join(' · ')) +
-    (d.ignored_count > 0 ? ' <a class="act-restore" id="act-restore">恢复全部</a>' : '');
+    (d.ignored_count > 0 ? ' <a class="act-restore" id="act-restore">查看详情</a>' : '');
   const restore = document.getElementById('act-restore');
-  if (restore) restore.addEventListener('click', restoreActivities);
+  if (restore) restore.addEventListener('click', openActDel);
 }
 
 /* 游戏头像：按 game_id 硬绑定官方图标。
@@ -3685,16 +3687,114 @@ async function deleteActivity(btn){
   }
 }
 
-async function restoreActivities(){
-  try {
-    const d = await postJSON('/api/activities/restore', {});
-    if (!d || d.ok === false) { toast('恢复失败', true); return; }
-    renderActivities(d);
-    toast('已恢复全部被删除的活动');
-  } catch (e) {
-    toast('恢复失败：' + e, true);
+/* ---------- 已删除活动管理（2026-11-18 用户裁决，Gmail 式勾选批量）----------
+   「恢复全部」升级为「查看详情」弹窗：列表（勾选框+行内恢复）+
+   全部恢复 + 恢复所选。恢复走 /api/activities/restore：uids 列表=
+   精确恢复（单个/勾选批量），空=全部。每次动作后 renderActivities
+   （卡片与脚注立即跟上）+ 重拉弹窗列表。 */
+let actdelDate = null;
+
+function openActDel(){
+  document.getElementById('actdel-modal').hidden = false;
+  loadActDel();
+}
+function closeActDel(){
+  document.getElementById('actdel-modal').hidden = true;
+}
+document.getElementById('actdel-x').addEventListener('click', closeActDel);
+document.getElementById('actdel-modal').addEventListener('click', function(e){
+  if (e.target === this) closeActDel();
+});
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape' && !document.getElementById('actdel-modal').hidden) closeActDel();
+});
+
+function actdelRowHtml(r){
+  const meta = r.found
+    ? escHtml(String(r.start || '').slice(5, 10).replace('-', '/') + ' ~ ' +
+              String(r.end || '').slice(5, 10).replace('-', '/')) +
+      (r.reward_text ? ' · ' + escHtml(r.reward_text) : '')
+    : '<span class="dim">已过期下榜——恢复即清掉这条记录</span>';
+  const ico = r.found && r.game
+    ? gameIconHtml(r.game, 'gcard-ico')
+    : '<span class="gcard-ico ph">?</span>';
+  return '<div class="actdel-row">' +
+    '<input type="checkbox" class="actdel-check" data-uid="' + escHtml(r.uid) + '">' +
+    ico +
+    '<div class="actdel-meta"><b>' + escHtml(r.title || r.uid) + '</b>' +
+    '<small>' + (r.found ? escHtml(r.game_name || '') + ' · ' : '') + meta + '</small></div>' +
+    '<button type="button" class="btn sm actdel-one" data-uid="' + escHtml(r.uid) + '">恢复</button>' +
+    '</div>';
+}
+
+function actdelSyncButtons(){
+  const checks = [...document.querySelectorAll('#actdel-list .actdel-check')];
+  const sel = checks.filter(function(c){ return c.checked; });
+  const selBtn = document.getElementById('actdel-restore-sel');
+  if (selBtn) selBtn.disabled = sel.length === 0;
+  if (selBtn) selBtn.textContent = sel.length ? ('恢复所选 ' + sel.length + ' 项') : '恢复所选';
+  const all = document.getElementById('actdel-all');
+  if (all) {
+    all.checked = checks.length > 0 && sel.length === checks.length;
+    all.indeterminate = sel.length > 0 && sel.length < checks.length;
   }
 }
+
+function loadActDel(){
+  const list = document.getElementById('actdel-list');
+  if (!list) return;
+  fetch('/api/activities/ignored', { cache: 'no-store' }).then(function(r){ return r.json(); })
+    .then(function(d){
+      const rows = (d && d.rows) || [];
+      if (!rows.length) {
+        list.innerHTML = '<div class="emptybox">回收站是空的。</div>';
+      } else {
+        list.innerHTML = rows.map(actdelRowHtml).join('');
+        list.querySelectorAll('.actdel-check').forEach(function(cb){
+          cb.addEventListener('change', actdelSyncButtons);
+        });
+        list.querySelectorAll('.actdel-one').forEach(function(btn){
+          btn.addEventListener('click', function(){
+            actdelRestore([btn.getAttribute('data-uid')], btn);
+          });
+        });
+      }
+      actdelSyncButtons();
+    })
+    .catch(function(){
+      list.innerHTML = '<div class="emptybox">读取已删除列表失败，请稍后重试。</div>';
+    });
+}
+
+async function actdelRestore(uids, btn){
+  if (btn) btn.disabled = true;
+  try {
+    const d = await postJSON('/api/activities/restore', uids ? { uids: uids } : {});
+    if (!d || d.ok === false) { toast('恢复失败', true); if (btn) btn.disabled = false; return; }
+    renderActivities(d);
+    toast(uids ? ('已恢复 ' + uids.length + ' 项') : '已全部恢复');
+    loadActDel();   // 弹窗列表刷新：恢复掉的不在列表里了
+  } catch (e) {
+    toast('恢复失败：' + e, true);
+    if (btn) btn.disabled = false;
+  }
+}
+
+document.getElementById('actdel-restore-all').addEventListener('click', function(){
+  actdelRestore(null, this);
+});
+document.getElementById('actdel-restore-sel').addEventListener('click', function(){
+  const uids = [...document.querySelectorAll('#actdel-list .actdel-check:checked')]
+    .map(function(c){ return c.getAttribute('data-uid'); });
+  if (uids.length) actdelRestore(uids, this);
+});
+document.getElementById('actdel-all').addEventListener('change', function(){
+  const on = this.checked;
+  document.querySelectorAll('#actdel-list .actdel-check').forEach(function(c){
+    c.checked = on;
+  });
+  actdelSyncButtons();
+});
 
 function loadActivities(){
   fetch('/api/activities').then(function(r){ return r.json(); })
@@ -3722,10 +3822,10 @@ async function refreshActivities(){
   }
 }
 
-/* ---------- 报表长按补录（2026-11-14 用户裁决）----------
-   长按 500ms（HabitKit 同款手势，防误触）→ 确认弹窗 → /api/custom_dailies
-   toggle_done 带 date。范围：手动项格（ok/miss/今日 na）；游戏格是巡检
-   事实记录不可改。 */
+/* ---------- 报表长按补录（2026-11-14 用户裁决，2026-11-18 口径更新）----------
+   长按 500ms（HabitKit 同款手势，防误触）→ 确认弹窗。范围：手动项格
+   （toggle_done 带 date）+ 游戏格（/api/history_override 覆盖账本，
+   不动 history.json 原文——「全行可长按修正」裁决）。 */
 let dlfixTimer = null, dlfixPending = null, dlfixPressing = false;
 /* dlfixTimer = { cell, t0 } 按住会话（非计时器 id）：松手按 held≥300ms 判定 */
 
@@ -3851,6 +3951,125 @@ document.getElementById('dlfix-ok').addEventListener('click', function() {
   }).catch(function() { dlfixClose(); });
 });
 
+/* ---------- 月报总表：长按某天 → 当天逐游戏明细（2026-11-18 用户裁决
+   「每月报表也实装补录」。单游戏视图此前已接 dlfix（mc-day editable）；
+   总表是全天聚合格，长按弹出逐游戏清单，点一行切一条。动作语义与
+   七日报表 dlfix 完全一致：✓→撤销（人工补录用 clear），非 ✓→补录。 ---------- */
+let mcdayPending = null, mcdayT0 = 0, monthdayDate = null;
+
+document.addEventListener('pointerdown', function(e) {
+  const el = e.target.closest ? e.target.closest('.mc-open') : null;
+  if (!el) return;
+  mcdayPending = { date: el.getAttribute('data-mc-date') };
+  mcdayT0 = Date.now();
+});
+document.addEventListener('pointerup', function() {
+  if (mcdayPending && Date.now() - mcdayT0 >= 300) {
+    const d = mcdayPending.date;
+    mcdayPending = null;
+    openMonthDay(d);                     // 与 dlfix 同拍：松手才弹窗
+  } else {
+    mcdayPending = null;
+  }
+}, { passive: true });
+document.addEventListener('pointercancel', function() { mcdayPending = null; }, { passive: true });
+document.addEventListener('contextmenu', function(e) {
+  if (e.target.closest && e.target.closest('.mc-open')) e.preventDefault();
+});
+
+function monthDayRows(date) {
+  const d = window.__lastMonth || {};
+  const row = (d.days || []).filter(function(r) { return r.date === date; })[0];
+  if (!row) return null;
+  return (d.games || []).map(function(g) {
+    const c = (row.games || {})[g.game] || {};
+    return { game: g.game, name: g.game_name,
+             manual: g.game.indexOf('cd:') === 0,
+             manualOverride: !!c.manual,
+             finished: !!c.finished, known: !!c.known,
+             mark: monthGameMark(c, row) };
+  });
+}
+
+function monthDayRowHtml(r, i) {
+  const stCls = r.mark === '✓' ? 'st-ok' : r.mark === '✗' ? 'st-miss' : 'st-na';
+  /* 手动项（cd:）没有官方图标——gameIconHtml 的兜底取 gid 首字符，
+     「cd:cd-xxx」就会亮出「C」（2026-11-18 用户实测）；与概览手动卡
+     同构：取名字首字。真游戏照旧走官方图标。 */
+  const ico = r.manual
+    ? '<span class="gcard-ico ph">' + escHtml((r.name || '?').trim().charAt(0).toUpperCase()) + '</span>'
+    : gameIconHtml(r.game, 'gcard-ico');
+  return '<div class="monthday-row" data-i="' + i + '" data-game="' + escHtml(r.game) + '"' +
+    (r.manual ? ' data-manual="1"' : '') + '>' +
+    ico +
+    '<span>' + escHtml(r.name) + '</span>' +
+    '<span class="mono ' + stCls + '">' + r.mark + '</span></div>';
+}
+
+function openMonthDay(date) {
+  const rows = monthDayRows(date);
+  if (!rows || !rows.length) { toast('当月数据还没加载好', true); return; }
+  monthdayDate = date;
+  const dLabel = date.slice(5).replace('-', '月') + '日';
+  document.getElementById('monthday-title').textContent = dLabel + ' · 当天明细';
+  document.getElementById('monthday-list').innerHTML =
+    rows.map(monthDayRowHtml).join('');
+  document.getElementById('monthday-modal').hidden = false;
+  document.querySelectorAll('#monthday-list .monthday-row').forEach(function(el) {
+    el.addEventListener('click', function() { monthDayToggle(el); });
+  });
+}
+
+function monthDayClose() {
+  document.getElementById('monthday-modal').hidden = true;
+  monthdayDate = null;
+}
+document.getElementById('monthday-x').addEventListener('click', monthDayClose);
+document.getElementById('monthday-modal').addEventListener('click', function(e) {
+  if (e.target === this) monthDayClose();
+});
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && !document.getElementById('monthday-modal').hidden) monthDayClose();
+});
+
+function monthDayToggle(el) {
+  if (!monthdayDate) return;
+  const game = el.getAttribute('data-game');
+  const isManualItem = el.getAttribute('data-manual') === '1';
+  const cur = el.querySelector('.mono').textContent;
+  const isOk = cur === '✓';
+  const undo = isOk;
+  let req;
+  if (isManualItem) {
+    req = { url: '/api/custom_dailies',
+            body: { action: 'toggle_done', id: game.slice(3), undo: undo,
+                    date: monthdayDate } };
+  } else {
+    /* 与 dlfix 游戏行同语义：撤销人工补录 = clear（回巡检事实），
+       撤销巡检记录 = undone；补录 = done */
+    const rows = monthDayRows(monthdayDate) || [];
+    const hit = rows.filter(function(r) { return r.game === game; })[0] || {};
+    req = { url: '/api/history_override',
+            body: { date: monthdayDate, game: game,
+                    action: isOk ? (hit.manualOverride ? 'clear' : 'undone') : 'done' } };
+  }
+  if (el.dataset.busy) return;
+  el.dataset.busy = '1';
+  fetch(req.url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req.body)
+  }).then(function(r) { return r.json(); }).then(function(res) {
+    if (res.message) toast(res.message);
+    /* 行内翻面：done→✓ / undone→✗ / clear→⋯（准确态由静默重载接管） */
+    const mono = el.querySelector('.mono');
+    const after = (!isOk) ? '✓' : (isManualItem ? '✗' : (req.body.action === 'clear' ? '⋯' : '✗'));
+    mono.textContent = after;
+    mono.className = 'mono ' + (after === '✓' ? 'st-ok' : after === '✗' ? 'st-miss' : 'st-na');
+    loadMonthGrid(monthView, true);      // 底下月历静默跟上（指纹变了才重绘）
+  }).catch(function() { toast('操作失败，请稍后重试', true); })
+    .finally(function() { delete el.dataset.busy; });
+}
+
 /* =========================== 每日报表 =========================== */
 function renderHistoryEmpty(message, detail){
   // 空状态：统计表清空，表格位置放一句人话（绝不弹红色错误条）
@@ -3913,31 +4132,16 @@ function weeklyStatsOf(d){
 }
 
 function renderWeeklyCard(d){
-  const box = document.getElementById('week-body');
+  /* 瘦身（2026-11-18 用户裁决 A）：逐游戏 chips 行与七日报表热力图重复，
+     只留卡头「本周 vs 上周」徽章——明细由热力图承担。此函数退化为
+     徽章的 done/total 初值（随后 loadWeekTrend 的百分比覆盖）。 */
   const badge = document.getElementById('week-badge');
-  if (!box) return;
+  if (!badge) return;
   const stats = weeklyStatsOf(d);
-  if (!stats.length || !stats[0].days) {
-    box.innerHTML = '<div class="emptybox">暂无数据，等本周巡检跑起来。</div>';
-    if (badge) badge.textContent = '-';
-    return;
-  }
-  const totalDays = stats[0].days;
+  if (!stats.length || !stats[0].days) { badge.textContent = '-'; return; }
   let totalDone = 0;
-  const chips = stats.map(function(s){
-    totalDone += s.done;
-    const missed = s.known - s.done;             // 查过但没做完（与周报同口径）
-    // 身份一致性：同一页里概览卡/最近 7 天都亮官方图标，汇总 chip 不该是
-    // 唯一无脸的——复用 gcard-ico 类，小窗紧凑模式（≤1099 隐藏图标）自动同治
-    let html = '<span class="week-chip">' + gameIconHtml(s.gid, 'gcard-ico') +
-      '<b>' + escHtml(s.name) + '</b> <span class="mono">' +
-      s.done + '/' + totalDays + '</span>';
-    if (s.done >= totalDays) html += '<span class="dim"> 全勤</span>';
-    else if (missed > 0) html += '<span class="miss"> 漏 ' + missed + '</span>';
-    return html + '</span>';
-  }).join('');
-  box.innerHTML = '<div class="week-chips">' + chips + '</div>';
-  if (badge) badge.textContent = totalDone + '/' + (stats.length * totalDays);
+  stats.forEach(function(s) { totalDone += s.done; });
+  badge.textContent = totalDone + '/' + (stats.length * stats[0].days);
 }
 
 /* ---------- 周完成率徽章（本周 vs 上周） ----------
@@ -4026,7 +4230,7 @@ function hmCellState(c, row, lv){
 function renderHistory(d){
   d = d || {};
   lastHistory = d;
-  renderWeeklyCard(d);   // 顶部本周汇总横条（空数据时自己画空态）
+  renderWeeklyCard(d);   // 顶部本周汇总徽章初值（百分比随后由 loadWeekTrend 覆盖）
   const monthBadge = document.getElementById('h-month');
   if (monthBadge) monthBadge.textContent = d.month ? (d.month + ' 本月') : '-';
 
@@ -4254,10 +4458,11 @@ function renderHeatmap(d){
   /* 自定义日常行（2026-11-14 用户裁决）：state 由后端单源算好——
      ok ✓ / miss ✗ / na ⋯（非计划日、开始记录前、今日等待打卡） */
   manualRows.forEach(function(m){
+    /* 行标签只留名字（2026-11-18 用户裁决）：长按补录是全行能力，不缀在
+       手动行标题后误导成手动项专属——发现性交给悬浮 title + 首次 toast */
     html += '<div class="hm-row"><div class="hm-label">' +
       '<span class="gdot" style="background:var(--brand)"></span>' +
-      escHtml(m.name) +
-      '<span class="dim" style="font-weight:400">·长按格子可补录</span></div>';
+      escHtml(m.name) + '</div>';
     (m.days || []).forEach(function(cell, i){
       /* 非计划日整格不渲染（2026-11-14 用户裁决：还没到星期四就不显示，
          与概览卡同口径）——visibility:hidden 保列对齐但不画任何东西 */
@@ -4297,7 +4502,7 @@ function renderHeatmap(d){
           return c.state === 'ok' || c.state === 'miss'; });
       }) && !localStorage.getItem('rl-dlfix-hint')) {
     localStorage.setItem('rl-dlfix-hint', '1');
-    toast('提示：长按报表里手动项的格子，可补录/撤销打卡记录');
+    toast('提示：长按报表里的格子，可补录/撤销打卡记录');
   }
   flashCard(document.getElementById('act-list') ? document.getElementById('act-list').closest('.card') : null);
 }
@@ -4762,8 +4967,9 @@ function renderMonthModal(d){
       /* 档位 = 完成数本身（段数 = 监控数量，上限 8 档色梯）：
          2026-11-09 用户裁决——图例要能直接看到 8 段 */
       const lv = Math.min(done, levels);
-      const tip = '完成 ' + done + '/' + total + '｜' + parts.join(' · ');
-      html += '<div class="mc-day mc-l' + lv + (row.is_today ? ' today' : '') +
+      const tip = '完成 ' + done + '/' + total + '｜' + parts.join(' · ') + '｜长按补录';
+      html += '<div class="mc-day mc-open mc-l' + lv + (row.is_today ? ' today' : '') +
+        '" data-mc-date="' + escHtml(row.date) +
         '" data-tip="' + escHtml(row.label + '｜' + tip) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
     });
     for (let i = lead + d.days.length; i % 7 !== 0; i++) html += '<div class="mc-day blank"></div>';
@@ -4891,11 +5097,11 @@ function renderPushPreview(j){
   const chEl = document.getElementById('pv-channel');
   if (!titleEl || !bodyEl) return;
 
-  const channels = [];
-  const sc = document.getElementById('serverchan-enabled');
-  const qm = document.getElementById('qmsg-enabled');
-  if (sc && sc.checked) channels.push('Server酱');
-  if (qm && qm.checked) channels.push('Qmsg 酱');
+  /* 徽章=服务端单源（2026-11-18 用户实证）：旧读法取勾选框 DOM 状态——
+     保存后不刷新、开页与 renderPush 时序竞争，把已停用的 Server酱 也列上。
+     现与实发同源：后端按 channels 成员且 key 在位给出列表，前端只渲染。 */
+  const ids = (j && j.channels) || [];
+  const channels = ids.map(function(n){ return PUSH_LABELS[n] || n; });
   if (chEl) chEl.textContent = channels.length
     ? ('推送到 ' + channels.join(' + ')) : '未启用推送渠道';
 
@@ -5016,56 +5222,15 @@ function setUrgency(id, level){
   if (card) card.dataset.urgency = level;
 }
 
-/* KPI 智能吸顶：滚动容器是 .main（不是 window） */
+/* KPI 收起/展开（2026-11-18 二改·用户裁决）：纯手动、纯文档流——条与按钮
+   跟内容一起滚走（与本周汇总/日常概览同滚动逻辑），不再吸顶、不再停留、
+   不再随滚动自动收放。原「智能吸顶」机制（sticky+滚动阈值+轮询+fixed
+   按钮）整套移除。 */
 const kpiBarEl = document.getElementById('kpi-bar');
-const kpiMainEl = document.querySelector('.main');
-
-/* KPI 吸顶收缩：进入 >进档线、退出 <40px —— 两个阈值必须分开（滞回），不能共用一个。
-   为什么共用会出事：compact 会把 KPI 条压矮，浏览器为保持视觉位置不动（滚动锚定）
-   会同步把 scrollTop 下调同样的落差。若退出阈值也是进档线，则
-     scrollTop 刚过线 → 压缩 → 被锚定推回线下 → 还原 → 又推回线上 → 再压缩 → ……
-   形成无限振荡，每次都对 min-height 跑一遍 250ms 过渡，画面就是「滚动时图标反复
-   重叠 / 抖重影」「一向下滚就被弹回顶部」。所有 tab 都中招，因为它挂在全局唯一的
-   #kpi-bar 上。
-   落差不是常数：宽幅 ~24px（80→56），≤1000px 双列两行卡实测 133px（914×600：
-   213→80）——固定 40px 间隙在窄幅照样振荡（压缩后 scrollTop 被锚定推到 40 以下）。
-   进档线因此按两档实测高度差自适应：max(80, 40+落差+8)，保证压缩后 scrollTop
-   仍 ≥48，永远跌不破退档线 40。落差随窗口/主题漂移在每次滚动事件里重测自愈。
-   2026-11-16 四卡减两卡后：常态 ~81px / compact 44px，落差 ~36px，公式照常自适应。 */
-const KPI_COMPACT_ENTER = 80;   /* 进档线；宽幅下即最终进档线，窄幅被自适应抬高 */
-const KPI_COMPACT_EXIT  = 40;   /* 退档线；压缩后 scrollTop ≥ 48，留 8px 余量 */
 let kpiCompact = false;
-const kpiBarH = { normal: 0, compact: 0 };   /* 两档实高缓存，落差 = normal - compact */
-/* 手动收起/展开的压制窗（2026-11-16）：点击 kpi-toggle 后 3 分钟内
-   滚动阈值不得覆盖手动状态，防「刚点展开又被自动收起」的拉锯 */
-let kpiManual = { until: 0 };
 
-function updateKpiCompact(){
-  if (!kpiBarEl || !kpiMainEl) return;
-  if (Date.now() < kpiManual.until) return;
-  const on = kpiBarEl.classList.contains('compact');
-  kpiBarH[on ? 'compact' : 'normal'] = kpiBarEl.offsetHeight;
-  const delta = (kpiBarH.normal > 0 && kpiBarH.compact > 0)
-    ? kpiBarH.normal - kpiBarH.compact : 24;
-  const enter = Math.max(KPI_COMPACT_ENTER, KPI_COMPACT_EXIT + delta + 8);
-  const top = kpiMainEl.scrollTop;
-  if (!kpiCompact && top > enter) kpiCompact = true;
-  else if (kpiCompact && top < KPI_COMPACT_EXIT) kpiCompact = false;
-  kpiBarEl.classList.toggle('compact', kpiCompact);
-}
-if (kpiMainEl) kpiMainEl.addEventListener('scroll', updateKpiCompact, {passive:true});
-if (kpiBarEl) {
-  /* 预热两档实高：否则首次进档只能用 24px 兜底落差，窄幅第一滚仍会闪一轮 */
-  const wasCompact = kpiBarEl.classList.contains('compact');
-  kpiBarEl.classList.add('compact');
-  kpiBarH.compact = kpiBarEl.offsetHeight;
-  if (!wasCompact) kpiBarEl.classList.remove('compact');
-  kpiBarH.normal = kpiBarEl.offsetHeight;
-}
-updateKpiCompact();
-
-/* 手动收起/展开（2026-11-16）：点击即切态 + 同步 aria-expanded/文案，
-   并压制滚动阈值 3 分钟 */
+/* 手动收起/展开（唯一入口，2026-11-18 二改）：点击即切态 + 同步
+   aria-expanded/文案。无任何滚动联动。 */
 const kpiToggle = document.getElementById('kpi-toggle');
 if (kpiToggle && kpiBarEl) {
   kpiToggle.addEventListener('click', function(){
@@ -5073,7 +5238,6 @@ if (kpiToggle && kpiBarEl) {
     kpiBarEl.classList.toggle('compact', kpiCompact);
     kpiToggle.setAttribute('aria-expanded', String(!kpiCompact));
     kpiToggle.textContent = kpiCompact ? '展开' : '收起';
-    kpiManual.until = Date.now() + 180000;
   });
 }
 
