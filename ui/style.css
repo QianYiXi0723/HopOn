@@ -1184,13 +1184,13 @@
   /* 可长按补录的手动格：果冻 hover（Discord 图标三件套——缩放+圆角 morph
      + overshoot 贝塞尔回弹），按住时压得更深；title 兜底触屏。
      位置纪律：必须在全局区——曾误入 1099 媒体块导致最大化窗口整个无效 */
-  .hm-cell.editable,.mc-day.editable{cursor:pointer;
+  .hm-cell.editable,.mc-day.editable,.mc-day.mc-open{cursor:pointer;
     transition:transform .28s cubic-bezier(.175,.885,.32,1.275),
                border-radius .28s cubic-bezier(.175,.885,.32,1.275),
                filter .18s ease}
-  .hm-cell.editable:hover,.mc-day.editable:hover{
+  .hm-cell.editable:hover,.mc-day.editable:hover,.mc-day.mc-open:hover{
     transform:scale(.92);border-radius:12px;filter:brightness(1.08)}
-  .hm-cell.editable:active,.mc-day.editable:active{transform:scale(.88)}
+  .hm-cell.editable:active,.mc-day.editable:active,.mc-day.mc-open:active{transform:scale(.88)}
   .hm-cell.dl-pressing,.mc-day.dl-pressing{
     transform:scale(.85)!important;filter:brightness(1.2)}
   .hm-cell.blank{visibility:hidden}   /* 非计划日：占位保对齐，整格隐形 */
@@ -1499,8 +1499,6 @@
   .mc-l7{background:color-mix(in srgb, var(--ok) 87%, var(--bg-elevated))}
   .mc-l8{background:var(--ok);color:#fff}
   .mc-day.mc-open{cursor:pointer}
-  .mc-day.mc-open:active{transform:scale(.9)}
-
   /* 月报总表长按 → 当天逐游戏明细弹窗（2026-11-18）：点一行=补录/撤销 */
   /* DOM 里它在 month-modal 之前，同级 z-index 会被月报弹窗盖住——抬一层 */
   #monthday-modal{z-index:1001}
