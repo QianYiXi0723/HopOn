@@ -2153,6 +2153,9 @@ async function toggleDailiesDone(id, done, box){
                              { action: 'toggle_done', id: id, undo: !done });
     if (!d.ok) toast(d.message || '操作失败', true);
     await loadDailies();   // 回显以服务端为准（三面同账本）
+    loadHistory();         // 卡在报表页上方：热力图今日格必须立即跟上
+                           //（2026-11-18 用户实证：只刷 30s 轮询等不来——
+                           // 指纹里手动项只有计数，格子翻面后仍可能判「无变化」）
   } catch (e) {
     toast('操作失败：' + e, true);
     if (box) box.disabled = false;
@@ -3720,10 +3723,10 @@ async function refreshActivities(){
   }
 }
 
-/* ---------- 报表长按补录（2026-11-14 用户裁决）----------
-   长按 500ms（HabitKit 同款手势，防误触）→ 确认弹窗 → /api/custom_dailies
-   toggle_done 带 date。范围：手动项格（ok/miss/今日 na）；游戏格是巡检
-   事实记录不可改。 */
+/* ---------- 报表长按补录（2026-11-14 用户裁决，2026-11-18 口径更新）----------
+   长按 500ms（HabitKit 同款手势，防误触）→ 确认弹窗。范围：手动项格
+   （toggle_done 带 date）+ 游戏格（/api/history_override 覆盖账本，
+   不动 history.json 原文——「全行可长按修正」裁决）。 */
 let dlfixTimer = null, dlfixPending = null, dlfixPressing = false;
 /* dlfixTimer = { cell, t0 } 按住会话（非计时器 id）：松手按 held≥300ms 判定 */
 

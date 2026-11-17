@@ -101,5 +101,20 @@ it_bad = {"id": "f", "name": "坏字段", "days": [True] * 7, "reset": "04:00",
 s7 = states(it_bad)
 chk(s7[0][1:] == ("miss", "漏打"), "created_at 非法=无地板（回退旧行为）", s7[0])
 
+# 8. 凌晨打卡（2026-11-18 用户实证「已打卡但今日格不亮」）：00:52 打卡 →
+#    mark_done 落游戏日键「昨天」，ts=00:52。旧版「ts<reset 归属次日」映射
+#    把键又推到今天，昨天格反而漏标。删映射后键与列直接对格。
+yday = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+dl._save_state(user_dir, {"v": 2, "done": {"m": {yday: "00:52:59"}}, "fired": {}})
+it_dawn2 = {"id": "m", "name": "凌晨打卡", "days": [True] * 7, "reset": "04:00",
+            "enabled": True, "created_at": "2020-01-01 00:00:00"}
+s8 = [c for c in dl.report_rows([it_dawn2], user_dir, keys, now=today.replace(hour=1))[0]["days"]]
+s8d = {c["date"]: c for c in s8}
+chk(s8d[yday]["state"] == "ok",
+    "M1 凌晨打卡落在昨天的游戏日格=✓（不再被映射推走）", s8d[yday])
+chk(s8d[today_key]["state"] == "na" and s8d[today_key]["tip"] == "等待打卡",
+    "M2 今天格=等待打卡（当前周期未打）", s8d[today_key])
+dl._save_state(user_dir, {"v": 2, "done": {}, "fired": {}})
+
 print("\n结论：" + ("全部通过" if not fails else "有失败 %d 项" % len(fails)))
 sys.exit(1 if fails else 0)

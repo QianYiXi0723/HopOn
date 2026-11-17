@@ -200,8 +200,10 @@ def report_rows(items: List[Dict[str, Any]], user_dir: Path, date_keys: List[str
     miss(✗ 已过计划日漏打) / na(⋯ 非计划日、开始记录前、今日未打=等待中)。
 
     两个口径要点：
-    - 账本周期键 = reset 平移后的日期；打卡落在 reset 之前的凌晨（如 01:00
-      打 04:00 reset 的项）周期键是昨天——按时间戳映射回**日历日**再对格。
+    - 账本周期键 = reset 平移后的**游戏日键**（mark_done 落 _period_key，
+      补录落格子日期），与 date_keys 的游戏日列**同口径直接对格**，无需
+      再按时间戳映射（2026-11-18 凌晨实证：原「ts<reset 归属次日」是
+      双重平移——00:52 打的卡账本键 11-17 被推到 11-18，今日格反而漏标）。
     - 创建日之后过去计划日未打卡一律 ✗ 可长按补录（不设账本地板：地板=
       最早周期会把首打较晚的项的整个过去锁成 ⋯，用户实证 2026-11-14）；
       创建日之前 = ⋯ 开始记录前（用户实证 2026-11-18，新建项不画红叉）。
@@ -228,18 +230,9 @@ def report_rows(items: List[Dict[str, Any]], user_dir: Path, date_keys: List[str
         days7 = it.get("days") if (
             isinstance(it.get("days"), list) and len(it.get("days")) == 7
             and all(isinstance(x, bool) for x in it.get("days"))) else [True] * 7
-        reset_min = _reset_minutes(it)
-        # 周期键 → 日历日集合（凌晨打卡归属次日）
-        done_dates = set()
-        for p, ts in periods.items():
-            pd = _parse_period(p)
-            try:
-                tt = datetime.strptime(ts, "%H:%M:%S").time()
-            except ValueError:
-                tt = None
-            cal = pd + timedelta(days=1) if (tt is not None and
-                    tt.hour * 60 + tt.minute < reset_min) else pd
-            done_dates.add(cal.strftime("%Y-%m-%d"))
+        # 账本周期键 → 游戏日列直接对格（键与列同口径，见 docstring 口径要点）。
+        # 原「ts<reset 归属次日」映射已删（2026-11-18 凌晨实证是双重平移）。
+        done_dates = set(periods.keys())
         rows = []
         for dk in date_keys:
             d = _parse_period(dk)
