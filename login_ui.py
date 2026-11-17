@@ -1666,9 +1666,14 @@ def custom_dailies_update(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("至少勾选一个重复日")
 
     if action == "add":
+        from datetime import datetime as _dt2
+
         items.append({"id": f"cd-{_uuid.uuid4().hex[:8]}", "name": name,
                       "mode": mode, "time": time_s, "reset": reset_s,
-                      "template": template, "enabled": enabled, "days": days})
+                      "template": template, "enabled": enabled, "days": days,
+                      # 创建时间（2026-11-18）：报表「开始记录前」地板的锚点——
+                      # 新建项的过去画 ⋯ 而不是 ✗ 漏打
+                      "created_at": _dt2.now().strftime("%Y-%m-%d %H:%M:%S")})
     elif action == "update":
         item_id = str(payload.get("id") or "")
         hit = next((it for it in items if str(it.get("id")) == item_id), None)
