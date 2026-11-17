@@ -3894,9 +3894,15 @@ function monthDayRows(date) {
 
 function monthDayRowHtml(r, i) {
   const stCls = r.mark === '✓' ? 'st-ok' : r.mark === '✗' ? 'st-miss' : 'st-na';
+  /* 手动项（cd:）没有官方图标——gameIconHtml 的兜底取 gid 首字符，
+     「cd:cd-xxx」就会亮出「C」（2026-11-18 用户实测）；与概览手动卡
+     同构：取名字首字。真游戏照旧走官方图标。 */
+  const ico = r.manual
+    ? '<span class="gcard-ico ph">' + escHtml((r.name || '?').trim().charAt(0).toUpperCase()) + '</span>'
+    : gameIconHtml(r.game, 'gcard-ico');
   return '<div class="monthday-row" data-i="' + i + '" data-game="' + escHtml(r.game) + '"' +
     (r.manual ? ' data-manual="1"' : '') + '>' +
-    gameIconHtml(r.game, 'gcard-ico') +
+    ico +
     '<span>' + escHtml(r.name) + '</span>' +
     '<span class="mono ' + stCls + '">' + r.mark + '</span></div>';
 }
