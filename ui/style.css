@@ -720,10 +720,12 @@
   /* 手动收起/展开小钮（2026-11-16）：右缘悬浮于 kpi-bar（sticky 即包含块），
      配色复用 .btn 族变量，不新造颜色；z-index 必须压过 .card:hover 的 60，
      否则鼠标悬停卡片时按钮被盖住（批次 2 实测：展开键凭空消失无法点击） */
-  .kpi-toggle{position:absolute;right:10px;top:50%;transform:translateY(-50%);
+  .kpi-toggle{position:absolute;right:10px;bottom:8px;
     height:24px;padding:0 10px;font-size:12px;line-height:1;border:none;border-radius:6px;
     background:var(--btn-bg);color:var(--muted);cursor:pointer;z-index:61}
   .kpi-toggle:hover{background:var(--btn-hover);color:var(--fg)}
+  /* 收起态 24px 窄条：按钮贴条内顶端（bottom:8 会溢出条外） */
+  .kpi-bar.compact .kpi-toggle{bottom:auto;top:0}
   @media (max-width:520px){ .kpi-bar{grid-template-columns:1fr} }
 
   /* ============ 账号与通知页布局（2026-11-16 用户实测重排）============
