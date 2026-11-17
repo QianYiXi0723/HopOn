@@ -308,6 +308,7 @@
   #tip{position:fixed;left:0;top:0;background:#24272c;color:#fff;
        padding:8px 12px;border-radius:4px;
        font-size:12px;line-height:1.6;font-weight:400;text-align:left;
+       white-space:pre-line;   /* data-tip 里的 \n 渲染成真换行（多行提示） */
        max-width:300px;width:max-content;box-shadow:0 4px 14px rgba(0,0,0,.28);
        opacity:0;visibility:hidden;pointer-events:none;z-index:999;
        transition:opacity .2s ease,visibility .2s ease}

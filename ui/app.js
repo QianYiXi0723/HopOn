@@ -2107,7 +2107,10 @@ function renderManualGroup(){
     const modeTxt = it.mode === 'standalone'
       ? (freqTxt(it.days) + ' · 独立 ' + (it.time || '--:--'))
       : (freqTxt(it.days) + ' · 随巡检推送');
-    const tip = '点击勾掉/恢复今日 ｜ 推送效果：' + (it.push_text || '');
+    const tip = '点击勾掉/恢复今日 ｜ 推送效果：' + (it.push_text || '') +
+      /* 第二行（2026-11-18 用户要求）：广告托盘已有的勾卡能力——
+         措辞按通行文案惯例带位置锚定（俗称+右下角），小白不用懂「托盘」黑话 */
+      '\n也可在屏幕右下角的托盘图标右键勾掉';
     return '<div class="card gcard dl-gcard' + (done ? ' is-done' : '') +
         '" style="--gc:var(--brand)" data-id="' + escHtml(it.id) +
         '" data-tip="' + escHtml(tip) + '" title="点击勾掉/恢复今日打卡">' +
