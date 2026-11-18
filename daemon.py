@@ -1152,7 +1152,11 @@ def _check_manual_dailies() -> None:
             results = push_all(
                 notifiers, dailies.STANDALONE_TITLE, body, dry_run=False
             ) if notifiers else []
-            if any(r.ok for r in results):
+            # toast 是页内本地镜像（恒 ok=True），不算「真的发出去」；
+            # 一个远程渠道都没配时才退回任一成功判定，否则下个 tick 空转重推
+            remote = [r for r in results if r.channel != "toast"]
+            pushed = any(r.ok for r in remote) if remote else any(r.ok for r in results)
+            if pushed:
                 dailies.mark_fired(it["id"], USER_DIR)
                 logger.info("手动打卡独立提醒已推：%s（%s）", it["name"], it["time"])
             else:
