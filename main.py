@@ -1068,7 +1068,14 @@ def run_once(config: AppConfig, dry_run: bool = False, quiet_push: bool = False)
                     logger.warning("[%s] 连续失败 5 次，已静默 6 小时", result.channel)
 
     # 3.5) 活动提醒的去重记账：只有真的发出去了才记账，没发成下轮还能再试
-    if alert and push_results and not dry_run and any(r.ok for r in push_results):
+    #      toast 是页内本地镜像（恒 ok=True）：远程渠道至少一个成功才算送达；
+    #      远程里 skipped（未配置 Key 等）的也没真正尝试过——全部 skipped =
+    #      只配页内通知的用户，退回任一成功判定；有真尝试且全挂才重试
+    attempts = [r for r in push_results
+                if r.channel != "toast" and not getattr(r, "skipped", False)]
+    pushed = (any(r.ok for r in attempts) if attempts
+              else any(r.ok for r in push_results))
+    if alert and push_results and not dry_run and pushed:
         if report.activity_alerts:
             try:
                 from core import activities

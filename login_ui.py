@@ -1986,6 +1986,64 @@ def _live_risk_record(errors: List[Tuple[str, Any]]) -> None:
         )
 
 
+def probe_bindings(games: List[str]) -> Dict[str, Any]:
+    """绑定完成当场探针（2026-11-19 #78）：对新绑定的游戏各发一次只读查询。
+
+    「绑完当场试一次，行不行马上告诉你」——验证是独立的后续一步，失败也
+    不回滚绑定。只展示不计账：不写 cred_health / history / push_history，
+    不碰 live 的 90 秒间隔账本与进程/磁盘缓存（直调 collect_statuses，
+    querier 生产入口）；风控冷却账本只**纯读**（_live_risk_read——注意
+    _live_risk_active 会顺手清理写回，不能用）用于「冷却中」展示，冷却中
+    的游戏本轮不发查询，如实标记让用户稍后手动重验。
+    """
+    from dataclasses import replace as _dc_replace
+
+    from core.config import KNOWN_GAMES, load_config
+    from main import collect_statuses
+
+    cfg = load_config(CONFIG_PATH)
+    if cfg.query.provider == "mock":
+        return {"ok": False, "error": "演示模式（出厂态），没有可验证的真实凭证"}
+    # 白名单过滤 + 去重保序（前端传什么不信任什么）
+    wanted: List[str] = []
+    for g in games or []:
+        if g in KNOWN_GAMES and g not in wanted:
+            wanted.append(g)
+    now_ts = time.time()
+    cooled = {
+        gid: rec for gid, rec in _live_risk_read().items()
+        if float(rec.get("until") or 0) > now_ts
+    }
+    picked = [a for a in cfg.accounts
+              if a.game in wanted and a.game not in cooled]
+    statuses = collect_statuses(_dc_replace(cfg, accounts=picked)) if picked else []
+    by_game = {s.game_id: s for s in statuses}
+    names = _game_display_map()
+    out: List[Dict[str, Any]] = []
+    for g in wanted:
+        entry: Dict[str, Any] = {"game": g, "game_name": names.get(g, g)}
+        if g in cooled:
+            entry.update(
+                cooled=True, cooled_until=datetime.fromtimestamp(
+                    float(cooled[g].get("until") or 0)).strftime("%H:%M"))
+            out.append(entry)
+            continue
+        s = by_game.get(g)
+        if not any(a.game == g for a in cfg.accounts):
+            entry.update(ok=False, error="config.json 里没有该游戏的账号节点")
+        elif s is None:
+            # collect_statuses 丢行（账号被禁用 / mihoyo_enabled 关）：
+            # 不算凭证失败，如实说原因，别让用户误以为凭证坏了
+            entry.update(ok=False, error="该游戏本轮未参与查询（账号被禁用或查询开关关闭）")
+        else:
+            entry.update(ok=bool(s.ok), error=s.error or "",
+                         stale=s.stale or "", no_account=s.no_account or "",
+                         nickname=s.nickname or "")
+        out.append(entry)
+    return {"ok": True, "games": out,
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+
 def _annotate_live_cool(
     payload: Dict[str, Any], book: Optional[Dict[str, Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
@@ -3946,6 +4004,20 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("库街区 token 校验失败")
                     self._json({"ok": False, "error": f"校验失败：{exc}"}, 500)
+            return
+
+        if path == "/api/probe_binding":
+            # 绑定完成当场探针（#78）：只读验证刚写入的凭证；只展示不计账，
+            # 不写 cred_health/history/push_history/live 缓存（见 probe_bindings）
+            payload = self._read_json_body()
+            if payload is not None:
+                games = payload.get("games")
+                try:
+                    self._json(probe_bindings(
+                        games if isinstance(games, list) else []))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("当场探针失败")
+                    self._json({"ok": False, "error": f"探针失败：{exc}"}, 500)
             return
 
         if path == "/api/kuro/save":
