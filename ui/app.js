@@ -438,8 +438,59 @@ function render(d){
   kv.hidden = items.length === 0;
 }
 
+/* 当场验货（2026-11-19 #78）：绑定完成后对新绑定的游戏各发一次只读查询，
+   结果只展示不计账。mode='dialog'：结果行追加进扫码弹窗（米/森，弹窗停留）；
+   mode='toast'：逐游戏 toast（库街区，弹窗即关）。冷却中的游戏给「重验」钮。 */
+function probeBinding(games, mode){
+  if (!games || !games.length) return;
+  postJSON('/api/probe_binding', { games: games }).then(function(d){
+    if (!d || !d.ok) {
+      toast('当场验货失败：' + ((d && d.error) || '未知原因'), true);
+      return;
+    }
+    const rows = (d.games || []).map(function(g){
+      if (g.cooled) return { cls: 'dim', mark: '–',
+        text: g.game_name + ' 风控冷却中，稍后自动再验', retry: true };
+      if (g.ok && g.no_account) return { cls: 'i-ok', mark: '✓',
+        text: g.game_name + ' 凭证有效（账号下暂无角色，建号后自动生效）' };
+      if (g.ok && g.stale) return { cls: 'i-ok', mark: '✓',
+        text: g.game_name + ' 凭证有效（数据待更新：' + g.stale + '）' };
+      if (g.ok) return { cls: 'i-ok', mark: '✓', text: g.game_name + ' 查询成功' };
+      return { cls: 'i-no', mark: '✗',
+        text: g.game_name + ' ' + (g.error || '查询失败') };
+    });
+    if (!rows.length) return;
+    if (mode === 'dialog') probeRenderDialog(rows);
+    else rows.forEach(function(r){
+      toast(r.mark + ' ' + r.text, r.cls === 'i-no');
+    });
+  }).catch(function(){ toast('当场验货无法连接本地服务', true); });
+}
+
+function probeRenderDialog(rows){
+  const detail = document.getElementById('detail');
+  if (!detail) return;
+  let box = document.getElementById('probe');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'probe';
+    detail.parentNode.insertBefore(box, detail.nextSibling);
+  }
+  box.innerHTML = '<div class="dim">当场验货</div>' + rows.map(function(r){
+    return '<div><span class="' + r.cls + '">' + r.mark + '</span>' + r.text +
+           (r.retry
+             ? ' <button type="button" class="btn sm" id="btn-reprobe">重验</button>'
+             : '');
+  }).join('<br>');
+  const rb = document.getElementById('btn-reprobe');
+  if (rb) rb.addEventListener('click', function(){
+    probeBinding(lastTargets, 'dialog');
+  });
+}
+
 async function start(provider, targets){
   reset();
+  lastTargets = (targets || []).slice();
   setBusy(true);
   document.getElementById('modal-title').textContent =
     provider === 'mihoyo' ? '米游社扫码登录' : '森空岛扫码登录';
@@ -598,6 +649,7 @@ function showError(msg){
    响应回来先对代数，旧代的直接作废，否则刚关掉的浮层会被旧响应弹回来、
    新旧两条轮询链还会并存（频率翻倍 + 旧会话覆盖新会话渲染）。 */
 let pollEpoch = 0;
+let lastTargets = [];   // 最近一次扫码绑定的目标游戏（#78 当场验货用）
 
 function poll(epoch){
   const my = epoch;
@@ -606,7 +658,13 @@ function poll(epoch){
     .then(function(d){
       if (my !== pollEpoch) return;   // 旧代在途响应：作废
       render(d);
-      if (d.state === 'done' || d.state === 'error') { setBusy(false); loadAccounts(); return; }
+      if (d.state === 'done' || d.state === 'error') {
+        setBusy(false);
+        loadAccounts();
+        /* 当场验货（#78）：绑定成功（非 error）就对新绑定的游戏各发一次只读查询 */
+        if (d.state === 'done') probeBinding(lastTargets, 'dialog');
+        return;
+      }
       timer = setTimeout(poll, 1000, my);
     })
     .catch(function(){ if (my === pollEpoch) timer = setTimeout(poll, 2000, my); });
@@ -620,6 +678,8 @@ function reset(){
   document.getElementById('stage').hidden = true;
   document.getElementById('qrbox').innerHTML = '<span class="ph">二维码准备中…</span>';
   document.getElementById('detail').hidden = true;
+  const pb = document.getElementById('probe');
+  if (pb) pb.remove();   // 上一轮的当场验货行不留给新会话
 }
 
 /* 「关于·检查更新」（2026-11-07，VS Code/Win11 范式：查更新放版本信息旁）：
@@ -5776,6 +5836,7 @@ function kuroLogin(){
       toast(d.message || '绑定成功');
       closeKuro();
       loadAccounts();
+      probeBinding(kuroBindTargets, 'toast');   // 当场验货（#78）
     })
     .catch(function(){ btn.disabled = false; kuroStatus('无法连接本地服务', 'err'); });
 }
@@ -5793,6 +5854,7 @@ function kuroSaveToken(){
       toast(d.message || '绑定成功');
       closeKuro();
       loadAccounts();
+      probeBinding(kuroBindTargets, 'toast');   // 当场验货（#78）
     })
     .catch(function(){ btn.disabled = false; kuroTokenStatus('无法连接本地服务', 'err'); });
 }
