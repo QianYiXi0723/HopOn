@@ -50,16 +50,20 @@ class FakeNotifier:
 
     records_history = False
 
-    def __init__(self, name, ok=True, raises=None):
+    def __init__(self, name, ok=True, raises=None, skipped=False):
         self.name = name
         self._ok = ok
         self._raises = raises
+        self._skipped = skipped
 
     def send(self, title, body, dry_run=False):
         if dry_run:
             return PushResult(self.name, False, "dry-run 未发送", skipped=True)
         if self._raises is not None:
             raise self._raises
+        if self._skipped:
+            # 镜像真实 BaseNotifier：未启用/未配置 Key 的渠道 ok=False + skipped=True
+            return PushResult(self.name, False, "配置中已禁用", skipped=True)
         return PushResult(self.name, self._ok,
                           "推送成功" if self._ok else "接口返回失败")
 
@@ -191,6 +195,17 @@ def main() -> int:
                                     FakeNotifier("bark", ok=True)])
     check(fired == ["d1"], "D4 toast 异常(ok=False) + 远程 ok → 记账")
 
+    fired, kinds = run_daemon_scenario(
+        [_toast(), FakeNotifier("bark", skipped=True)])
+    check(fired == ["d1"] and kinds == ["dict"],
+          "D5 toast ok + 远程全 skipped（只配页内：渠道在名单没配 Key）→ 退回记账")
+
+    fired, _ = run_daemon_scenario(
+        [_toast(), FakeNotifier("bark", ok=True),
+         FakeNotifier("feishu", skipped=True)])
+    check(fired == ["d1"],
+          "D6 一通一 skipped → 记账（skipped 渠道不算尝试，不拖累送达判定）")
+
     # ---- main 侧：run_once 3.5 块的三处记账 ----
     rc, marks = run_main_scenario([_toast(), FakeNotifier("bark", ok=True)])
     check(rc == 0 and marks["tier"] == 1 and marks["start"] == 1
@@ -223,6 +238,17 @@ def main() -> int:
                                    FakeNotifier("bark", ok=False)])
     check(marks["tier"] == 0 and marks["start"] == 0 and marks["resin"] == 0,
           "M6 toast 异常 + 远程也 fail（真全败）→ 不记账")
+
+    rc, marks = run_main_scenario([_toast(), FakeNotifier("bark", skipped=True)])
+    check(rc == 0 and marks["tier"] == 1 and marks["start"] == 1
+          and marks["resin"] == 1,
+          "M7 toast ok + 远程全 skipped（只配页内）→ 退回记账（2026-11-19 回退回归钉）")
+
+    rc, marks = run_main_scenario([_toast(), FakeNotifier("bark", ok=True),
+                                   FakeNotifier("feishu", skipped=True)])
+    check(rc == 0 and marks["tier"] == 1 and marks["start"] == 1
+          and marks["resin"] == 1,
+          "M8 一通一 skipped → 记账")
 
     print(f"rl_test_push_accounting: {PASS} 项断言全绿")
     return 0
