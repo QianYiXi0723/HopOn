@@ -675,6 +675,21 @@ def _has_bound_credential(config) -> bool:
     return False
 
 
+def _quiet_now(push_cfg, now: Optional[datetime] = None) -> bool:
+    """当前是否落在免打扰窗内（in_quiet_window 同口径，支持跨零点）。
+
+    与 main.py 主链路（run_once 的 quiet_now）同语义：时间串非法一律
+    False——配置坏了宁可多打扰也不静默。``now`` 为测试注入口。
+    """
+    from core.notifier import in_quiet_window
+
+    if not getattr(push_cfg, "quiet_enabled", False):
+        return False
+    lt = now or datetime.now()
+    return in_quiet_window(lt.hour * 60 + lt.minute,
+                           push_cfg.quiet_start, push_cfg.quiet_end)
+
+
 def run_weekly_report() -> bool:
     """组装并发送周报；返回是否有通道真正发成功。任何异常都吞掉写日志。"""
     try:
@@ -726,9 +741,16 @@ def _maybe_weekly_report() -> None:
     防止每 30 秒重试轰炸推送通道；失败详情在日志里，下周槽位自动再试。
     """
     try:
+        from core.config import load_config
+
         now = datetime.now()
         state = load_weekly_state()
         if not weekly_due(now, state):
+            return
+        # 免打扰窗内安静跳过（不打 INFO，防 30 秒一条刷一整晚）：不落 state，
+        # weekly_due 在窗后的 tick 仍为真 → 「错过自动补发」自然延后。跨天窗
+        # （如 23:00-08:00）成立：weekly_slot_week 只在下一个周日 21:00 翻周键。
+        if _quiet_now(load_config(CONFIG_PATH, auto_create=False).push):
             return
         week_key = weekly_slot_week(now)
         sent = run_weekly_report()
@@ -1136,6 +1158,11 @@ def _check_manual_dailies() -> None:
     from core import dailies
 
     config = load_config(CONFIG_PATH)
+    # 免打扰窗内安静跳过（不打 INFO）：不推、不写 mark_fired——
+    # standalone_due 触发窗=[目标-30s, +∞)，不记账就每 tick 重触发，
+    # 窗结束后第一个 tick 自然补推（与「只早不迟+迟到走补发」同哲学）
+    if _quiet_now(config.push):
+        return
     items = [dict(id=d.id, name=d.name, mode=d.mode, time=d.time,
                   reset=d.reset, template=d.template, enabled=d.enabled,
                   days=list(d.days))
