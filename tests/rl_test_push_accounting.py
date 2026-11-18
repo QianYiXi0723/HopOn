@@ -140,8 +140,9 @@ def run_main_scenario(notifiers, dry_run=False):
 
 
 def run_daemon_scenario(notifiers):
-    """跑一次 daemon._check_manual_dailies，返回 mark_fired 收到的 id 列表。"""
+    """跑一次 daemon._check_manual_dailies，返回 (mark_fired 收到的 id 列表, 入参类型)。"""
     fired = []
+    kinds = []
     saved = (cfgmod.load_config, dailies_mod.standalone_due,
              dailies_mod.render_message, dailies_mod.mark_fired,
              notifier_mod.build_notifiers)
@@ -155,30 +156,39 @@ def run_daemon_scenario(notifiers):
         dailies_mod.standalone_due = lambda items, user_dir: [
             {"id": "d1", "name": "测试打卡", "time": "09:00"}]
         dailies_mod.render_message = lambda it, done: "测试正文"
-        dailies_mod.mark_fired = lambda item_id, user_dir: fired.append(item_id)
+
+        def _fake_mark_fired(item, user_dir):
+            # 2026-11-19 修复后 daemon 传完整 item dict（与 core.mark_fired 合同
+            # 一致）；兼容 str 只是历史形态容错
+            fired.append(item.get("id") if isinstance(item, dict) else str(item))
+            kinds.append(type(item).__name__)
+
+        dailies_mod.mark_fired = _fake_mark_fired
         notifier_mod.build_notifiers = lambda push_cfg: list(notifiers)
         D._check_manual_dailies()
     finally:
         (cfgmod.load_config, dailies_mod.standalone_due,
          dailies_mod.render_message, dailies_mod.mark_fired,
          notifier_mod.build_notifiers) = saved
-    return fired
+    return fired, kinds
 
 
 def main() -> int:
     # ---- daemon 侧：_check_manual_dailies 的 mark_fired 记账判定 ----
-    fired = run_daemon_scenario([_toast(), FakeNotifier("bark", ok=True)])
+    fired, kinds = run_daemon_scenario([_toast(), FakeNotifier("bark", ok=True)])
     check(fired == ["d1"], "D1 toast ok + 远程 ok → 记账 mark_fired")
+    check(kinds == ["dict"],
+          "D1b mark_fired 收到完整 item dict（core 合同；a462628 的 str 传参回归钉）")
 
-    fired = run_daemon_scenario([_toast(), FakeNotifier("bark", ok=False),
-                                 FakeNotifier("serverchan", ok=False)])
+    fired, _ = run_daemon_scenario([_toast(), FakeNotifier("bark", ok=False),
+                                    FakeNotifier("serverchan", ok=False)])
     check(fired == [], "D2 toast ok + 远程全 fail → 不记账（核心回归）")
 
-    fired = run_daemon_scenario([_toast()])
+    fired, _ = run_daemon_scenario([_toast()])
     check(fired == ["d1"], "D3 只配页内（无远程渠道）→ 退回判定记账")
 
-    fired = run_daemon_scenario([FakeNotifier("toast", raises=RuntimeError("boom")),
-                                 FakeNotifier("bark", ok=True)])
+    fired, _ = run_daemon_scenario([FakeNotifier("toast", raises=RuntimeError("boom")),
+                                    FakeNotifier("bark", ok=True)])
     check(fired == ["d1"], "D4 toast 异常(ok=False) + 远程 ok → 记账")
 
     # ---- main 侧：run_once 3.5 块的三处记账 ----

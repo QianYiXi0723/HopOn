@@ -1157,7 +1157,7 @@ def _check_manual_dailies() -> None:
             remote = [r for r in results if r.channel != "toast"]
             pushed = any(r.ok for r in remote) if remote else any(r.ok for r in results)
             if pushed:
-                dailies.mark_fired(it["id"], USER_DIR)
+                dailies.mark_fired(it, USER_DIR)
                 logger.info("手动打卡独立提醒已推：%s（%s）", it["name"], it["time"])
             else:
                 logger.warning("手动打卡推送未成功（下个 tick 重试）：%s", it["name"])
