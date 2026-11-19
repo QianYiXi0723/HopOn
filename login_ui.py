@@ -4148,12 +4148,16 @@ class Handler(BaseHTTPRequestHandler):
                 # 两阶段替换 + 完整备份，失败能回滚。
                 import subprocess
 
-                # 目标目录固定为标准安装位置（与 installer/HopOn.iss 的
+                # 目标目录=标准安装位置（与 installer/HopOn.iss 的
                 # DefaultDirName={localappdata}\Programs\HopOn 一致）。
                 # **绝不**用 engine 上级目录——本机那是 git 工作树 E:\Apps\HopOn。
-                _install_dir = (
-                    Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
-                    / "Programs" / "HopOn")
+                # HOPON_INSTALL_DIR 沙箱钩子（2026-11-19）：全新电脑 E2E 把
+                # 安装根指进沙箱，否则一键安装会打到真实安装根（实测事故）。
+                # 生产环境无此变量 → 行为与历史逐字节一致。
+                _install_dir = Path(
+                    os.environ.get("HOPON_INSTALL_DIR")
+                    or (Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
+                        / "Programs" / "HopOn"))
 
                 # Updater 与主程序同级。用 core.paths.app_root() 而非
                 # Path(sys.executable).parent.parent —— 后者只在安装版成立
