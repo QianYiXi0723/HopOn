@@ -68,8 +68,10 @@ OutputBaseFilename={#AppName}_v{#AppVersion}_Setup
 SetupIconFile=..\shell\app.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName}
-; 关闭正在运行的实例，避免覆盖失败
-CloseApplications=yes
+; 关闭正在运行的实例，避免覆盖失败。
+; 2026-11-19：Job Object 内的壳 RestartManager 关不掉（会弹「无法自动关闭」），
+; 真正的清场在 [Code] PrepareToInstall 里 taskkill；这里 force 只作兜底。
+CloseApplications=force
 RestartApplications=no
 ; 2026-11-16：Job Object 内的进程 RestartManager 关不掉，
 ; 桥接已先精确清场；此处显式声明过滤清单（默认值即 *.exe,*.dll,*.chm）
@@ -168,4 +170,45 @@ begin
              'https://developer.microsoft.com/microsoft-edge/webview2/',
              mbError, MB_OK);
   end;
+end;
+
+// ---------------------------------------------------------------------------
+// 安装前清场（2026-11-19）：手动双击 Setup.exe 时 RestartManager 关不掉
+// Job Object 内的壳，会弹「无法自动关闭所有应用程序」。对标 UniGetUI /
+// MSIME-Windows 的做法，在 PrepareToInstall 里循环 taskkill 具名进程。
+// ---------------------------------------------------------------------------
+
+// 循环杀某进程：taskkill 杀到时返回 0、进程不存在时返回 128（非 0 即停）。
+// 刻意不加 /T——MSIME 事故里 /T 顺着进程树把安装程序自己也杀了。
+procedure TaskKillWait(FileName: String);
+var
+  ResultCode: Integer;
+  Attempts: Integer;
+begin
+  Attempts := 0;
+  repeat
+    if not Exec('taskkill.exe', '/f /im "' + FileName + '"', '', SW_HIDE,
+                ewWaitUntilTerminated, ResultCode) then
+      Break;
+    if ResultCode <> 0 then
+      Break;
+    Sleep(500);
+    Attempts := Attempts + 1;
+  until Attempts >= 10;
+end;
+
+procedure KillRunningApps;
+begin
+  // 只杀壳。引擎/daemon 在壳的 Job Object 里，壳死会被 KILL_ON_JOB_CLOSE
+  // 连带（6B 已实证：停壳后 8765 释放）；WebView2 是壳的子进程，跟着走。
+  TaskKillWait('{#AppExeName}');
+  Sleep(1000);  // 等 OS 释放文件句柄再复制
+end;
+
+// PrepareToInstall 在「Preparing to Install」页、文件复制之前运行，
+// 早于 Inno 的 RestartManager 检测——先清场，就不用弹框问用户了。
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  KillRunningApps;
+  Result := '';  // 空串 = 继续安装
 end;
