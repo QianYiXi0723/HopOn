@@ -113,10 +113,16 @@ def main() -> int:
 
     print("=== E. 覆盖运行中实例 ===")
 
-    check("E1 CloseApplications=yes",
-          re.search(r"^\s*CloseApplications=yes\s*$", active, re.M) is not None)
+    # 2026-11-19：force 是 yes 的强版本（强制关占用文件的进程），
+    # 两者都满足「覆盖运行中实例」的意图；新脚本改用 force 作兜底。
+    check("E1 CloseApplications=yes 或 force",
+          re.search(r"^\s*CloseApplications=(yes|force)\s*$", active, re.M) is not None)
     check("E2 卸载前杀壳进程", "taskkill" in active and "AppExeName" in active)
     check("E3 卸载前杀引擎进程", "pythonw.exe" in active)
+    # 2026-11-19 新增安装前清场：RestartManager 关不掉 Job Object 内的壳，
+    # PrepareToInstall 里先 taskkill，才不会弹「无法自动关闭」。
+    check("E4 安装前 PrepareToInstall 清场（taskkill）",
+          "function PrepareToInstall" in active and "taskkill" in active)
 
     print("=== F. 引用的产物路径 ===")
 
