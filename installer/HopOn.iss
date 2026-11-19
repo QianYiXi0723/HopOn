@@ -110,9 +110,12 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: deskto
 Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: startup
 
 [Run]
-; 装完可选立即运行
+; 装完可选立即运行。2026-11-20 去掉 skipifsilent：静默装完也拉起——此前
+; 静默装完的重启全押在 HopOnUpdater 桥接上，桥接被安全软件拦就没人拉起，
+; 用户面对满屏「无法连接本地服务」（朋友机实证）。单实例互斥保证与桥接
+; 重复拉起只活一个；runasoriginaluser 防提权安装器把应用带成管理员身份。
 Filename: "{app}\{#AppExeName}"; Description: "立即启动 {#AppName}"; \
-    Flags: nowait postinstall skipifsilent
+    Flags: nowait postinstall runasoriginaluser
 
 [UninstallRun]
 ; 卸载前先停掉引擎/守护：调用 exe 的退出参数（若壳支持），否则靠 taskkill

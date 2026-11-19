@@ -80,6 +80,14 @@ function toast(text, isErr){
   toast._t = setTimeout(function(){ el.className = ''; }, 2800);
 }
 
+/* 连接类报错的静默闸（2026-11-20）：一键安装黑屏期（rl-updating 标记在位）
+   引擎按设计下线，黑幕已表达「应用将自动重启」——后台轮询的失联 toast
+   全部静默（业界惯例：常驻横幅替代瞬时 toast 轰炸），装完标记卸除自动
+   恢复；其余报错不受影响，标记不存在时行为与 toast 相同。 */
+function toastConn(text){
+  if (!localStorage.getItem('rl-updating')) toast(text, true);
+}
+
 /* 页内通知轮询：daemon 的 toast 渠道把推送同步投到 data/toasts.json，
    这里 30s 取走未读（消费型队列，服务端取走即标已读）并逐条弹出。
    与页内操作提示共用同一个气泡位，队列 3s 一条防止互相顶掉。 */
@@ -190,7 +198,7 @@ function pushEnabled(group, games, enabled){
       toast(d.message || (enabled ? '已开启提醒' : '已关闭提醒'));
       kickLiveRefresh();   // 监控集变了：后台踢一次全量实时查询，缓存/托盘/概览跟进
     })
-    .catch(function(){ toast('无法连接本地服务', true); });
+    .catch(function(){ toastConn('无法连接本地服务'); });
 }
 
 /* 监控开关变化后的缓存跟进（fire-and-forget 不阻塞 UI）：force 全量查询
@@ -464,7 +472,7 @@ function probeBinding(games, mode){
     else rows.forEach(function(r){
       toast(r.mark + ' ' + r.text, r.cls === 'i-no');
     });
-  }).catch(function(){ toast('当场验货无法连接本地服务', true); });
+  }).catch(function(){ toastConn('当场验货无法连接本地服务'); });
 }
 
 function probeRenderDialog(rows){
@@ -805,7 +813,7 @@ function closeUpdateModal(){
   if (open) open.addEventListener('click', function(){
     fetch('/api/update/open-folder').then(function(r){ return r.json(); }).then(function(d){
       if (d && !d.ok) toast(d.error || '打开失败', true);
-    }).catch(function(){ toast('无法连接本地服务', true); });
+    }).catch(function(){ toastConn('无法连接本地服务'); });
   });
 })();
 
@@ -868,13 +876,17 @@ function updDlAutoInstall(){
     let tries = 0;
     const probe = function(){
       tries++;
+      // 超时兜底必须在失败路径同样生效（2026-11-20 修复）：tries 判定放
+      // fetch 之前——引擎装完没被拉起时 fetch 永远走 catch，判定留在
+      // then 里黑幕会挂到天荒地老。约 90 秒（1.5s × 60）给手动启动指引。
+      if (tries > 60) {
+        localStorage.removeItem('rl-updating');
+        document.getElementById('installing-mask').hidden = true;
+        updDlReset();
+        toast('等待重启超时——安装已完成，请手动启动 HopOn，或到「打开文件夹」手动安装', true);
+        return;
+      }
       fetch('/api/update/download').then(function(){
-        if (tries > 60) {
-          localStorage.removeItem('rl-updating');
-          document.getElementById('installing-mask').hidden = true;
-          toast('等待重启超时——请手动启动 HopOn，或到「打开文件夹」手动安装', true);
-          return;
-        }
         setTimeout(function(){ location.reload(); }, 800);
       }).catch(function(){ setTimeout(probe, 1500); });
     };
@@ -1214,7 +1226,7 @@ function loadPush(){
   fetch('/api/push').then(function(r){ return r.json(); }).then(function(d){
     if (!d.ok) { toast(d.message || '读取配置失败', true); return; }
     renderPush(d);
-  }).catch(function(){ toast('无法连接本地服务', true); });
+  }).catch(function(){ toastConn('无法连接本地服务'); });
 }
 
 /* ---------- 三区结构：渠道列表切换 + 最近推送记录 ---------- */
@@ -3726,7 +3738,7 @@ function openApkFolder(){
       if (!d || !d.ok) toast((d && d.error) || '打开失败', true);
       else toast(d.message || '已打开文件夹');
     })
-    .catch(function(){ toast('无法连接本地服务', true); });
+    .catch(function(){ toastConn('无法连接本地服务'); });
 }
 
 /* 删除：立刻从界面消失，并写进 data/ignored_activities.json，之后永不提醒 */
