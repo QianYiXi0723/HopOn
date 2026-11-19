@@ -101,6 +101,42 @@ def _sums_for(version: str) -> Path:
     return out
 
 
+def _verify(gtok: str, tag: str, expected: dict) -> None:
+    """上传后验证（goreleaser Verify 语义）：线上资产名清单对 + 逐个下载
+    sha256 对本地，不等即 FATAL——SUMS 缺失/错位类事故（v2.6.10.1/.2、
+    v2.6.0/v2.6.1 两波实证）从此在发布器内被拦，不再靠人肉记得补。"""
+    import hashlib
+    import time as _t
+
+    rels = _api(f"https://gitee.com/api/v5/repos/{GITEE_REPO}/releases?access_token={gtok}")
+    hit = next(r for r in rels if str(r.get("tag_name")) == tag)
+    have = {a.get("name") or "": a for a in (hit.get("assets") or [])}
+    missing = [n for n in expected if n not in have]
+    if missing:
+        raise SystemExit(f"[FATAL] 线上缺资产：{missing}（上传断连或漏传，修完重跑——幂等可续）")
+    for name, local in expected.items():
+        url = (have[name].get("browser_download_url") or "")
+        if not url:
+            raise SystemExit(f"[FATAL] {name} 线上无下载地址")
+        raw: bytes | None = None
+        last: Exception | None = None
+        for i in range(3):
+            try:
+                req = urllib.request.Request(
+                    url + ("&" if "?" in url else "?") + f"access_token={gtok}",
+                    headers=_UA)
+                raw = urllib.request.urlopen(req, timeout=300).read()
+                break
+            except Exception as exc:  # noqa: BLE001 - 断连重试
+                last = exc
+                _t.sleep(2 * (i + 1))
+        if raw is None:
+            raise SystemExit(f"[FATAL] {name} 线上下载失败：{last}")
+        if hashlib.sha256(raw).hexdigest() != hashlib.sha256(local.read_bytes()).hexdigest():
+            raise SystemExit(f"[FATAL] {name} 线上内容与本地不一致（上传损坏/错位）")
+        print(f"    ✓ 验证 {name} ({len(raw)} B sha256 一致)")
+
+
 def backfill(version: str) -> bool:
     tag = version if version.startswith("v") else f"v{version}"
     v = tag.lstrip("v")
@@ -136,6 +172,19 @@ def backfill(version: str) -> bool:
             continue
         _upload_retry(gtok, rel_id, asset)
         print(f"    ✓ {asset.name}")
+    # 无版本化名第二份（2026-11-20）：更新器按固定名 SHA256SUMS.txt 拉取，
+    # Gitee 历史上只传版本化名 → Gitee 渠道 SUMS 永远 404，一直靠 GitHub 兜底活着。
+    import tempfile
+    sums_plain = Path(tempfile.mkdtemp(prefix="rl_sums_")) / "SHA256SUMS.txt"
+    sums_plain.write_bytes(_sums_for(tag).read_bytes())
+    if "SHA256SUMS.txt" not in have:
+        _upload_retry(gtok, rel_id, sums_plain)
+        print("    ✓ SHA256SUMS.txt（无版本化名第二份）")
+    # 上传后验证（goreleaser Verify 语义）：名清单 + 逐个下载 sha256 对本地，
+    # 不等即 FATAL——SUMS 缺失/错位类事故从此在发布器内被拦。
+    expected = {a.name: a for a in assets if a.exists()}
+    expected["SHA256SUMS.txt"] = sums_plain
+    _verify(gtok, tag, expected)
     return True
 
 
