@@ -292,8 +292,11 @@ DOWNLOAD_DIR_NAME = "downloads"
 IDLE_TIMEOUT = 20
 #: 磁盘剩余空间粗检阈值（MB）：低于此值直接拒绝
 MIN_FREE_MB = 300
-#: 通道顺序：实测 Gitee 快且稳
-DL_CHANNELS = ("gitee", "github")
+#: 通道顺序：GitHub 优先，开头 5 秒太慢自动退 Gitee（2026-11-19 用户裁决）
+DL_CHANNELS = ("github", "gitee")
+#: 慢速退避：下载开始 5 秒后，平均速度低于此值（B/s）就换备用通道
+SLOW_PROBE_SECONDS = 5
+SLOW_PROBE_MIN_BPS = 300 * 1024
 
 _download_lock = threading.Lock()
 _download_job: Optional[Dict[str, Any]] = None   # 当前任务（单任务锁）
@@ -305,21 +308,30 @@ def download_dir(version: str) -> Path:
     return user_root() / "data" / DOWNLOAD_DIR_NAME / ("v" + str(version).lstrip("vV"))
 
 
+def _channel_url(channel: str, tag: str, asset: str) -> str:
+    host = "github.com/QianYiXi0723/HopOn" if channel == "github" else "gitee.com/qianyixi/HopOn"
+    return f"https://{host}/releases/download/{tag}/{asset}"
+
+
 def _asset_urls(tag: str, asset: str) -> List[str]:
-    """按通道顺序给出资产直连 URL（Gitee 优先）。tag 不带 v 前缀也统一补。"""
+    """按 DL_CHANNELS 顺序给出资产直连 URL。tag 不带 v 前缀也统一补。"""
     tag = "v" + str(tag).lstrip("vV")
-    return [
-        f"https://gitee.com/qianyixi/HopOn/releases/download/{tag}/{asset}",
-        f"https://github.com/QianYiXi0723/HopOn/releases/download/{tag}/{asset}",
-    ]
+    return [_channel_url(ch, tag, asset) for ch in DL_CHANNELS]
 
 
 def _sums_urls(tag: str) -> List[str]:
     tag = "v" + str(tag).lstrip("vV")
-    return [
-        f"https://gitee.com/qianyixi/HopOn/releases/download/{tag}/SHA256SUMS.txt",
-        f"https://github.com/QianYiXi0723/HopOn/releases/download/{tag}/SHA256SUMS.txt",
-    ]
+    return [_channel_url(ch, tag, "SHA256SUMS.txt") for ch in DL_CHANNELS]
+
+
+def is_too_slow(got_bytes: int, elapsed: float) -> bool:
+    """开头探测窗口内平均速度是否过低（触发退避换通道）。
+
+    未到探测时长不判（慢启动保护）；到了以后按 ``累计字节/已用秒`` 算。
+    """
+    if elapsed < SLOW_PROBE_SECONDS:
+        return False
+    return (got_bytes / max(elapsed, 0.001)) < SLOW_PROBE_MIN_BPS
 
 
 def _free_mb(path: Path) -> int:
@@ -455,7 +467,14 @@ def _download_worker(job: Dict[str, Any], pkg: Path, version: str, asset: str) -
                         job["bytes"] = got
                         elapsed = max(0.001, time.time() - t0)
                         job["speed"] = int(got / elapsed)
-                        job["message"] = "下载中（%s）" % ("Gitee" if i == 0 else "GitHub")
+                        job["message"] = "下载中（%s）" % (DL_CHANNELS[i])
+                        # 慢速退避：首选通道开头 5 秒太慢就换备用（只判一次）
+                        if i == 0 and not job.get("_probe_done") and elapsed >= SLOW_PROBE_SECONDS:
+                            job["_probe_done"] = True
+                            if is_too_slow(got, elapsed):
+                                raise IOError("开头 %d 秒平均 %dKB/s，低于 %dKB/s，换备用通道"
+                                              % (SLOW_PROBE_SECONDS, got / elapsed / 1024,
+                                                 SLOW_PROBE_MIN_BPS // 1024))
             if got == 0 or (total and got != total):
                 raise IOError("下载不完整：预期 %s，实际 %s 字节" % (total or "?", got))
             os.replace(str(pkg) + ".part", pkg)
