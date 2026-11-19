@@ -816,7 +816,10 @@ function closeUpdateModal(){
 let _updDlTimer = null;
 function updDlReset(){
   if (_updDlTimer) { clearTimeout(_updDlTimer); _updDlTimer = null; }
-  document.getElementById('upd-dl-btn').hidden = false;
+  const btn = document.getElementById('upd-dl-btn');
+  btn.hidden = false;
+  btn.disabled = false;
+  btn.textContent = '下载并安装更新';
   document.getElementById('upd-dl-prog').hidden = true;
   document.getElementById('upd-dl-done').hidden = true;
 }
