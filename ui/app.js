@@ -80,12 +80,20 @@ function toast(text, isErr){
   toast._t = setTimeout(function(){ el.className = ''; }, 2800);
 }
 
-/* 连接类报错的静默闸（2026-11-20）：一键安装黑屏期（rl-updating 标记在位）
-   引擎按设计下线，黑幕已表达「应用将自动重启」——后台轮询的失联 toast
-   全部静默（业界惯例：常驻横幅替代瞬时 toast 轰炸），装完标记卸除自动
-   恢复；其余报错不受影响，标记不存在时行为与 toast 相同。 */
+/* 连接类报错的静默闸（2026-11-20）：两段静默——
+   ① 一键安装黑屏期（rl-updating 标记在位）引擎按设计下线，黑幕已表达
+      「应用将自动重启」，后台轮询的失联 toast 全部静默，装完标记卸除自动恢复；
+   ② 启动宽限窗：壳的 WaitEngineReady 只保证引擎应答过一次 /api/env，
+      页面加载与引擎真正可服务之间存在竞态窗口（每次装完启动都有一段），
+      页面加载后 ~15 秒内的失联属启动噪音，静默处理（业界 reconnecting
+      模式：状态由黑幕/页面「读取中」占位表达，不弹瞬时错误）。
+   超过宽限仍失联 = 真故障，照常弹。 */
+const _BOOT_AT = Date.now();
+const _BOOT_GRACE_MS = 15000;
 function toastConn(text){
-  if (!localStorage.getItem('rl-updating')) toast(text, true);
+  if (localStorage.getItem('rl-updating')) return;
+  if (Date.now() - _BOOT_AT < _BOOT_GRACE_MS) return;
+  toast(text, true);
 }
 
 /* 页内通知轮询：daemon 的 toast 渠道把推送同步投到 data/toasts.json，

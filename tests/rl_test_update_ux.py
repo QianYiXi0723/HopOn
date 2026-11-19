@@ -70,6 +70,18 @@ def main() -> int:
     check(len(re.findall(r"updDlReset\(\); toast\('无法连接本地服务'", app)) == 2,
           "F3d 操作类失败双站点保留原样（不静默）")
 
+    # ---- F4 启动宽限窗（手动安装/每次启动的竞态窗口，2026-11-20 ④）----
+    check("_BOOT_GRACE_MS = 15000" in app and "_BOOT_AT = Date.now()" in app,
+          "F4a 启动宽限窗常量在位（页面加载起 15 秒）")
+    tc = re.search(r"function toastConn\(text\)\{.*?\n\}", app, re.S)
+    tc_body = tc.group(0) if tc else ""
+    rl_pos = tc_body.find("rl-updating")
+    grace_pos = tc_body.find("_BOOT_GRACE_MS")
+    check(0 <= rl_pos < grace_pos,
+          "F4b 黑屏期判定先于宽限窗判定（两层静默有序）")
+    check("Date.now() - _BOOT_AT" in tc_body,
+          "F4c 宽限窗按页面加载时刻计时（竞态窗口内不弹）")
+
     print(f"PASS {PASS} / FAIL {FAIL}")
     return 0 if FAIL == 0 else 1
 
