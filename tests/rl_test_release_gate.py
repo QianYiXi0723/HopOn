@@ -54,6 +54,8 @@ def main() -> int:
     check("线上缺资产" in gh, "GH3 资产名清单断言（缺一即 FATAL）")
     check("application/octet-stream" in gh and "sha256 一致" in gh,
           "GH4 逐个下载实物哈希对本地")
+    check("hdr = {" in gh and "headers={**hdr" in gh,
+          "GH5 复核段下载头变量 hdr 已定义（2026-11-20 NameError 回归钉）")
 
     # ---- Gitee 渠道：双名 SUMS + 上传后验证 ----
     check("无版本化名第二份" in gt and '"SHA256SUMS.txt"' in gt,
