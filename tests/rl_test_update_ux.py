@@ -82,6 +82,18 @@ def main() -> int:
     check("Date.now() - _BOOT_AT" in tc_body,
           "F4c 宽限窗按页面加载时刻计时（竞态窗口内不弹）")
 
+    # ---- F5 连续失联判定（诊断包实锤真根因：安装期退出收尸引擎空窗）----
+    check("_CONN_FAIL_MS = 20000" in app and "_connFailSince" in app,
+          "F5a 连续失联阈值+首次记时变量在位")
+    check("if (!_connFailSince) { _connFailSince = now; return; }" in app,
+          "F5b 首次失联静默记时不弹（安装/退出/启动瞬时下线全吞）")
+    check("now - _connFailSince < _CONN_FAIL_MS" in app,
+          "F5c 持续失联未满 20 秒静默")
+    check("_CONN_COOLDOWN_MS" in app and "now - _connToastAt" in app,
+          "F5d 弹窗后 60 秒冷却（真故障限频不刷屏）")
+    check("rl-updating" in tc_body and "_CONN_FAIL_MS" not in tc_body[:rl_pos],
+          "F5e 黑屏期判定优先于连续失联判定（有序）")
+
     print(f"PASS {PASS} / FAIL {FAIL}")
     return 0 if FAIL == 0 else 1
 

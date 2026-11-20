@@ -83,17 +83,31 @@ function toast(text, isErr){
 /* 连接类报错的静默闸（2026-11-20）：两段静默——
    ① 一键安装黑屏期（rl-updating 标记在位）引擎按设计下线，黑幕已表达
       「应用将自动重启」，后台轮询的失联 toast 全部静默，装完标记卸除自动恢复；
-   ② 启动宽限窗：壳的 WaitEngineReady 只保证引擎应答过一次 /api/env，
-      页面加载与引擎真正可服务之间存在竞态窗口（每次装完启动都有一段），
-      页面加载后 ~15 秒内的失联属启动噪音，静默处理（业界 reconnecting
-      模式：状态由黑幕/页面「读取中」占位表达，不弹瞬时错误）。
-   超过宽限仍失联 = 真故障，照常弹。 */
+   ② 启动宽限窗：页面加载起 15 秒内的失联属启动噪音，静默。
+   ③ 连续失联判定（2026-11-20 诊断包实锤的真根因）：安装器从外部杀壳时，
+      壳真退出前跑「关机前落盘」（QuietRunBeforeExit，最长 25 秒）再收尸引擎，
+      窗口还开着、页面继续轮询 → 每次装包都弹一阵失联（朋友机 shell.log
+      铁证：FormClosing→关机前落盘→引擎已结束→重启，引擎空窗期页面在线）。
+      这类瞬时下线（安装/退出/启动）统一按「连续失联」判定：首次失联只记时
+      不弹，持续超过 20 秒仍失联才 toast（真故障不漏报，瞬时下线全吞掉）。
+      成功响应即清零计时。业界 reconnecting 横幅模式的等价实现。 */
 const _BOOT_AT = Date.now();
 const _BOOT_GRACE_MS = 15000;
+const _CONN_FAIL_MS = 20000;       // 连续失联超此时长才判真故障
+let _connFailSince = 0;            // 首次失联时刻；0=当前连接正常
+let _connToastAt = 0;              // 上次弹窗时刻，弹过进入冷却防刷屏
+const _CONN_COOLDOWN_MS = 60000;   // 弹窗后 60 秒内不再弹同类
 function toastConn(text){
   if (localStorage.getItem('rl-updating')) return;
   if (Date.now() - _BOOT_AT < _BOOT_GRACE_MS) return;
+  const now = Date.now();
+  if (!_connFailSince) { _connFailSince = now; return; }   // 首次失联：静默记时
+  if (now - _connFailSince < _CONN_FAIL_MS) return;        // 持续失联但未超时：静默
+  if (now - _connToastAt < _CONN_COOLDOWN_MS) return;      // 冷却期内不刷屏
+  _connToastAt = now;
   toast(text, true);
+  /* 不停 reset _connFailSince：真持续故障下每次轮询都超阈值，靠冷却限频；
+     瞬时失联（安装/退出/启动）在 20 秒内随页面刷新自然归零，无需成功回调。 */
 }
 
 /* 页内通知轮询：daemon 的 toast 渠道把推送同步投到 data/toasts.json，
