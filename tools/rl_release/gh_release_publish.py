@@ -103,11 +103,16 @@ def make_api(hdr):
 
 
 def collect_assets(version):
-    """按版本号收集 zip 与 Setup.exe；缺哪个报哪个。"""
+    """按版本号收集 zip / Setup / SHA256SUMS 三件；缺哪个报哪个。
+
+    SUMS 2026-11-20 起纳入必传三资产（v2.6.10.1/.2 缺 SUMS 断链、
+    v2.6.0/v2.6.1 错位两波实证）——make_release 5.5 步定稿的
+    dist/SHA256SUMS.txt 缺席即 FATAL，终结「传完要人肉记得补 SUMS」的坑。"""
     want = [
         (ROOT / "dist" / ("HopOn_v%s_Windows_x64.zip" % version), "application/zip"),
         (ROOT / "installer" / "Output" / ("HopOn_v%s_Setup.exe" % version),
          "application/vnd.microsoft.portable-executable"),
+        (ROOT / "dist" / "SHA256SUMS.txt", "text/plain"),
     ]
     found = []
     for path, ctype in want:
@@ -208,13 +213,27 @@ def main():
         print("  ✅ status=%s state=%s size=%s" % (status, asset.get("state"), asset.get("size")))
         print("     " + str(asset.get("browser_download_url")))
 
-    print("\n=== 3. 复核 ===")
+    print("\n=== 3. 复核 + 上传后验证（goreleaser Verify 语义） ===")
     status, rel2 = api("GET", "%s/repos/%s/%s/releases/%s" % (API, OWNER, REPO, rel_id), tries=3)
-    got = rel2.get("assets") or []
+    got = {a["name"]: a for a in (rel2.get("assets") or [])}
     print("  draft=%s prerelease=%s tag=%s assets=%d" % (
         rel2["draft"], rel2["prerelease"], rel2["tag_name"], len(got)))
-    for a in got:
+    for a in rel2.get("assets") or []:
         print("    - %s  %d bytes  %s" % (a["name"], a["size"], a["state"]))
+    # 资产名清单断言：三件缺一不可——SUMS 缺失类事故（v2.6.10.1/.2）的门禁
+    missing = [p.name for p, _ in assets if p.name not in got]
+    if missing:
+        _die("线上缺资产：%s（上传断连或漏传，修完重跑——已传资产自动跳过）" % missing)
+    # 逐个下载实物哈希对本地：传输损坏/错位（v2.6.0/v2.6.1 SUMS 错位实证）在此拦截
+    import hashlib
+    for p, _ in assets:
+        req = urllib.request.Request(
+            "%s/repos/%s/%s/releases/assets/%s" % (API, OWNER, REPO, got[p.name]["id"]),
+            headers={**hdr, "Accept": "application/octet-stream"})
+        raw = urllib.request.urlopen(req, timeout=600).read()
+        if hashlib.sha256(raw).hexdigest() != hashlib.sha256(p.read_bytes()).hexdigest():
+            _die("%s 线上内容与本地不一致（上传损坏/错位）" % p.name)
+        print("  ✓ 验证 %s  %d B  sha256 一致" % (p.name, len(raw)))
     print("\n完成：%s" % rel2.get("html_url"))
 
 

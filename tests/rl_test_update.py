@@ -117,6 +117,25 @@ for key in ("ok", "current", "latest", "has_update", "url", "notes",
     check("F 含字段 %s" % key, key in d, list(d.keys()))
 check("F 不含 error（内部字段不进 API）", "error" not in d, list(d.keys()))
 
+print("=== G. 下载渠道顺序 + 慢速退避（2026-11-19）===")
+
+# 下载包与校验清单都必须 GitHub 优先、Gitee 备用（国内 GitHub 慢时自动退）
+check("G1 资产 URL 首个是 GitHub",
+      "github.com" in U._asset_urls("v2.6.10.1", "a.exe")[0], U._asset_urls("v2.6.10.1", "a.exe"))
+check("G2 资产 URL 第二个是 Gitee",
+      "gitee.com" in U._asset_urls("v2.6.10.1", "a.exe")[1])
+check("G3 校验清单首个是 GitHub",
+      "github.com" in U._sums_urls("v2.6.10.1")[0])
+check("G4 通道常量 GitHub 在前", U.DL_CHANNELS[0] == "github", U.DL_CHANNELS)
+
+# 慢速退避：开头 5 秒平均 < 300KB/s 判定为慢；不足 5 秒不判（慢启动保护）
+KB = 1024
+check("G5 5秒0字节 → 慢", U.is_too_slow(0, 5) is True)
+check("G6 5秒100KB/s → 慢", U.is_too_slow(100 * KB, 5) is True)
+check("G7 5秒2MB(≈410KB/s) → 不慢", U.is_too_slow(2 * 1024 * KB, 5) is False)
+check("G8 不足5秒不判慢", U.is_too_slow(0, 2) is False)
+check("G9 恰好阈值(300KB/s)不判慢", U.is_too_slow(1500 * KB, 5) is False)
+
 print()
 print("=" * 50)
 print("PASS %d / FAIL %d" % (PASS, FAIL))

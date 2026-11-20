@@ -80,6 +80,36 @@ function toast(text, isErr){
   toast._t = setTimeout(function(){ el.className = ''; }, 2800);
 }
 
+/* 连接类报错的静默闸（2026-11-20）：两段静默——
+   ① 一键安装黑屏期（rl-updating 标记在位）引擎按设计下线，黑幕已表达
+      「应用将自动重启」，后台轮询的失联 toast 全部静默，装完标记卸除自动恢复；
+   ② 启动宽限窗：页面加载起 15 秒内的失联属启动噪音，静默。
+   ③ 连续失联判定（2026-11-20 诊断包实锤的真根因）：安装器从外部杀壳时，
+      壳真退出前跑「关机前落盘」（QuietRunBeforeExit，最长 25 秒）再收尸引擎，
+      窗口还开着、页面继续轮询 → 每次装包都弹一阵失联（朋友机 shell.log
+      铁证：FormClosing→关机前落盘→引擎已结束→重启，引擎空窗期页面在线）。
+      这类瞬时下线（安装/退出/启动）统一按「连续失联」判定：首次失联只记时
+      不弹，持续超过 20 秒仍失联才 toast（真故障不漏报，瞬时下线全吞掉）。
+      成功响应即清零计时。业界 reconnecting 横幅模式的等价实现。 */
+const _BOOT_AT = Date.now();
+const _BOOT_GRACE_MS = 15000;
+const _CONN_FAIL_MS = 20000;       // 连续失联超此时长才判真故障
+let _connFailSince = 0;            // 首次失联时刻；0=当前连接正常
+let _connToastAt = 0;              // 上次弹窗时刻，弹过进入冷却防刷屏
+const _CONN_COOLDOWN_MS = 60000;   // 弹窗后 60 秒内不再弹同类
+function toastConn(text){
+  if (localStorage.getItem('rl-updating')) return;
+  if (Date.now() - _BOOT_AT < _BOOT_GRACE_MS) return;
+  const now = Date.now();
+  if (!_connFailSince) { _connFailSince = now; return; }   // 首次失联：静默记时
+  if (now - _connFailSince < _CONN_FAIL_MS) return;        // 持续失联但未超时：静默
+  if (now - _connToastAt < _CONN_COOLDOWN_MS) return;      // 冷却期内不刷屏
+  _connToastAt = now;
+  toast(text, true);
+  /* 不停 reset _connFailSince：真持续故障下每次轮询都超阈值，靠冷却限频；
+     瞬时失联（安装/退出/启动）在 20 秒内随页面刷新自然归零，无需成功回调。 */
+}
+
 /* 页内通知轮询：daemon 的 toast 渠道把推送同步投到 data/toasts.json，
    这里 30s 取走未读（消费型队列，服务端取走即标已读）并逐条弹出。
    与页内操作提示共用同一个气泡位，队列 3s 一条防止互相顶掉。 */
@@ -190,7 +220,7 @@ function pushEnabled(group, games, enabled){
       toast(d.message || (enabled ? '已开启提醒' : '已关闭提醒'));
       kickLiveRefresh();   // 监控集变了：后台踢一次全量实时查询，缓存/托盘/概览跟进
     })
-    .catch(function(){ toast('无法连接本地服务', true); });
+    .catch(function(){ toastConn('无法连接本地服务'); });
 }
 
 /* 监控开关变化后的缓存跟进（fire-and-forget 不阻塞 UI）：force 全量查询
@@ -464,7 +494,7 @@ function probeBinding(games, mode){
     else rows.forEach(function(r){
       toast(r.mark + ' ' + r.text, r.cls === 'i-no');
     });
-  }).catch(function(){ toast('当场验货无法连接本地服务', true); });
+  }).catch(function(){ toastConn('当场验货无法连接本地服务'); });
 }
 
 function probeRenderDialog(rows){
@@ -805,7 +835,7 @@ function closeUpdateModal(){
   if (open) open.addEventListener('click', function(){
     fetch('/api/update/open-folder').then(function(r){ return r.json(); }).then(function(d){
       if (d && !d.ok) toast(d.error || '打开失败', true);
-    }).catch(function(){ toast('无法连接本地服务', true); });
+    }).catch(function(){ toastConn('无法连接本地服务'); });
   });
 })();
 
@@ -816,7 +846,10 @@ function closeUpdateModal(){
 let _updDlTimer = null;
 function updDlReset(){
   if (_updDlTimer) { clearTimeout(_updDlTimer); _updDlTimer = null; }
-  document.getElementById('upd-dl-btn').hidden = false;
+  const btn = document.getElementById('upd-dl-btn');
+  btn.hidden = false;
+  btn.disabled = false;
+  btn.textContent = '下载并安装更新';
   document.getElementById('upd-dl-prog').hidden = true;
   document.getElementById('upd-dl-done').hidden = true;
 }
@@ -865,13 +898,17 @@ function updDlAutoInstall(){
     let tries = 0;
     const probe = function(){
       tries++;
+      // 超时兜底必须在失败路径同样生效（2026-11-20 修复）：tries 判定放
+      // fetch 之前——引擎装完没被拉起时 fetch 永远走 catch，判定留在
+      // then 里黑幕会挂到天荒地老。约 90 秒（1.5s × 60）给手动启动指引。
+      if (tries > 60) {
+        localStorage.removeItem('rl-updating');
+        document.getElementById('installing-mask').hidden = true;
+        updDlReset();
+        toast('等待重启超时——安装已完成，请手动启动 HopOn，或到「打开文件夹」手动安装', true);
+        return;
+      }
       fetch('/api/update/download').then(function(){
-        if (tries > 60) {
-          localStorage.removeItem('rl-updating');
-          document.getElementById('installing-mask').hidden = true;
-          toast('等待重启超时——请手动启动 HopOn，或到「打开文件夹」手动安装', true);
-          return;
-        }
         setTimeout(function(){ location.reload(); }, 800);
       }).catch(function(){ setTimeout(probe, 1500); });
     };
@@ -1211,7 +1248,7 @@ function loadPush(){
   fetch('/api/push').then(function(r){ return r.json(); }).then(function(d){
     if (!d.ok) { toast(d.message || '读取配置失败', true); return; }
     renderPush(d);
-  }).catch(function(){ toast('无法连接本地服务', true); });
+  }).catch(function(){ toastConn('无法连接本地服务'); });
 }
 
 /* ---------- 三区结构：渠道列表切换 + 最近推送记录 ---------- */
@@ -3723,7 +3760,7 @@ function openApkFolder(){
       if (!d || !d.ok) toast((d && d.error) || '打开失败', true);
       else toast(d.message || '已打开文件夹');
     })
-    .catch(function(){ toast('无法连接本地服务', true); });
+    .catch(function(){ toastConn('无法连接本地服务'); });
 }
 
 /* 删除：立刻从界面消失，并写进 data/ignored_activities.json，之后永不提醒 */
