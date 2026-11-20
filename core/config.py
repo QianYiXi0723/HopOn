@@ -129,7 +129,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # 开机自启的用户意图：true = 用户要自启。注册表 Run 键被外部工具
         # （安全软件「开机加速」类）删掉时，启动链按此意图自愈重写；
         # 用户手动关闭开关时它落 false，自愈绝不违背用户意愿。
-        "autostart_desired": False,
+        # 2026-11-20 用户裁决：默认自启动（出厂即 true，已有显式 false 不迁移）。
+        "autostart_desired": True,
         "catch_up_minutes": CATCH_UP_MINUTES_DEFAULT,
         "catch_up_enabled": CATCH_UP_ENABLED_DEFAULT,
         "resource_alert_enabled": RESOURCE_ALERT_ENABLED_DEFAULT,
@@ -720,7 +721,7 @@ class AppConfig:
     catch_up_enabled: bool = CATCH_UP_ENABLED_DEFAULT
     # 开机自启的用户意图（自愈依据）：注册表 Run 键被外部工具删掉时，
     # 启动链按它重写；手动关开关时落 false。见 autostart.self_heal。
-    autostart_desired: bool = False
+    autostart_desired: bool = True
     pgr_serum_threshold: int = RESOURCE_THRESHOLD_DEFAULT["pgr"]
     bh3_stamina_threshold: int = RESOURCE_THRESHOLD_DEFAULT["bh3"]
     # 体力溢出提醒总开关：false 时完全跳过判定（各阈值原样保留）
@@ -1065,7 +1066,7 @@ def parse_config(data: Dict[str, Any], source: Optional[Path] = None) -> AppConf
         catch_up_enabled=_parse_bool(
             app_section.get("catch_up_enabled"), "catch_up_enabled", CATCH_UP_ENABLED_DEFAULT),
         autostart_desired=_parse_bool(
-            app_section.get("autostart_desired"), "autostart_desired", False),
+            app_section.get("autostart_desired"), "autostart_desired", True),
         resource_alert_enabled=_parse_bool(
             app_section.get("resource_alert_enabled"), "resource_alert_enabled",
             RESOURCE_ALERT_ENABLED_DEFAULT),

@@ -3156,7 +3156,9 @@ def diag_export() -> Dict[str, Any]:
     log_targets = [
         ("dailycheck.log", USER_DIR / "logs" / "dailycheck.log", "引擎巡检日志"),
         ("shell.log", install_root / "logs" / "shell.log", "C# 壳日志"),
-        ("engine.log", install_root / "logs" / "engine.log", "引擎启动日志"),
+        # engine.log 实际落点=数据根（shell/engine_app.py: LOGS_DIR=_user_root()/logs），
+        # 2026-11-20 修复：此前误按安装根收集，朋友机诊断包里恒 0 字节
+        ("engine.log", USER_DIR / "logs" / "engine.log", "引擎启动日志（数据根）"),
     ]
     for arc_name, path, desc in log_targets:
         text = ""

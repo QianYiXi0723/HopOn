@@ -162,12 +162,13 @@ def main():
         print("\n[dry-run] 不实际调用 API。")
         return
 
-    api = make_api({
+    hdr = {                       # 复核段下载资产实物用（Accept 需 octet-stream）
         "Authorization": "token " + get_token(),
         "Accept": "application/vnd.github+json",
         "User-Agent": UA,
         "X-GitHub-Api-Version": "2022-11-28",
-    })
+    }
+    api = make_api(hdr)
 
     print("\n=== 1. 查/建 release ===")
     try:

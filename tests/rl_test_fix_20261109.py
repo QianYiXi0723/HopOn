@@ -51,10 +51,13 @@ def run():
     from core.config import parse_config
 
     cfg = parse_config({})
-    check("C2a 默认 false", cfg.autostart_desired is False)
+    # 2026-11-20 用户裁决：默认自启动（出厂即 true）
+    check("C2a 默认 true", cfg.autostart_desired is True)
     cfg2 = parse_config({"app": {"autostart_desired": True}})
     check("C2b 解析 true", cfg2.autostart_desired is True)
     check("C2c to_dict 回传", cfg2.to_dict()["app"]["autostart_desired"] is True)
+    cfg3 = parse_config({"app": {"autostart_desired": False}})
+    check("C2d 显式 false 仍尊重", cfg3.autostart_desired is False)
 
     # ---- C3 self_heal 分支（monkeypatch 注册表三件套）----
     from core import autostart as A
