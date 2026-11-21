@@ -855,9 +855,12 @@ function updDlReset(){
 }
 function updDlPick(){
   const d = window.__updateInfo || {};
+  /* 2026-11-20 改选 zip：静默安装链（HopOnUpdater）只解 zip 包
+     （ZipFile.ExtractToDirectory），Setup.exe 是 Inno 交互向导产物，
+     Updater 消费不了——此前选 exe 导致「立即安装」链路天然不可用。 */
   const pkg = (d.assets || []).find(function(a){
-    return /\.exe$/i.test(String(a.name || ''));
-  }) || { name: 'HopOn_v' + d.latest + '_Setup.exe' };
+    return /\.zip$/i.test(String(a.name || ''));
+  }) || { name: 'HopOn_v' + d.latest + '_Windows_x64.zip' };
   return { version: d.latest, asset: pkg.name, size: pkg.size };
 }
 function updDlStart(){
@@ -932,12 +935,10 @@ function updDlPoll(){
       txt.textContent = d.message || '校验 SHA-256…';
       _updDlTimer = setTimeout(updDlPoll, 500);
     } else if (st === 'done' && d.sha_ok) {
-      // 校验通过→完成态：主按钮「立即安装」打开文件夹定位到 Setup.exe
-      // （2026-11-16 用户实测：原「打开文件夹手动安装」是排障话术，
-      //  用户以为流程卡住；VERYSILENT 全自动安装待 Inno 升级语义解决后重开）
-      document.getElementById('upd-dl-prog').hidden = true;
-      document.getElementById('upd-dl-btn').hidden = true;
-      document.getElementById('upd-dl-done').hidden = false;
+      // 校验通过→直接接静默安装（2026-11-20 ④⑤修复重启此链路）：
+      // 单按钮贯穿全流程「下载并安装更新」→黑幕→自动重启， updDlAutoInstall
+      // 此前是孤儿函数无调用者（11-16 退化为打开文件夹后遗留）。
+      updDlAutoInstall();
     } else if (st === 'error') {
       localStorage.removeItem('rl-updating');
       document.getElementById('installing-mask').hidden = true;

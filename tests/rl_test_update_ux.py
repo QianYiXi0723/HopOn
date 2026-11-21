@@ -94,6 +94,20 @@ def main() -> int:
     check("rl-updating" in tc_body and "_CONN_FAIL_MS" not in tc_body[:rl_pos],
           "F5e 黑屏期判定优先于连续失联判定（有序）")
 
+    # ---- F6 静默安装链路接回（2026-11-20 ④⑤终章，诊断包+代码考古实锤）----
+    # updDlPick 改选 zip：Updater 只解 zip（ZipFile），Setup.exe 消费不了
+    pick = re.search(r"function updDlPick\(\)\{.*?\n\}", app, re.S)
+    pick_body = pick.group(0) if pick else ""
+    check('/\\.zip$/i' in pick_body, "F6a 下载资产选 zip（Updater 只解 zip）")
+    check("updDlAutoInstall();" in app, "F6b done 态接静默安装（孤儿函数接线）")
+    lu = (ROOT / "login_ui.py").read_text(encoding="utf-8")
+    check("Velopack" in lu and "CurrentBinaryDir" in lu,
+          "F6c 安装目录语义注释在位（Velopack CurrentBinaryDir 模式，login_ui.py）")
+    check('os.environ.get("HOPON_INSTALL_DIR") or str(_app_root())' in lu,
+          "F6d 安装目标=当前安装根（app_root 运行时解析，自定义目录原地更新）")
+    check('"/Programs" / "HopOn"' not in lu,
+          "F6e 硬算标准目录已清除（自定义目录用户不再装出双份）")
+
     print(f"PASS {PASS} / FAIL {FAIL}")
     return 0 if FAIL == 0 else 1
 
