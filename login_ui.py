@@ -4150,23 +4150,25 @@ class Handler(BaseHTTPRequestHandler):
                 # 两阶段替换 + 完整备份，失败能回滚。
                 import subprocess
 
-                # 目标目录=标准安装位置（与 installer/HopOn.iss 的
-                # DefaultDirName={localappdata}\Programs\HopOn 一致）。
-                # **绝不**用 engine 上级目录——本机那是 git 工作树 E:\Apps\HopOn。
-                # HOPON_INSTALL_DIR 沙箱钩子（2026-11-19）：全新电脑 E2E 把
-                # 安装根指进沙箱，否则一键安装会打到真实安装根（实测事故）。
-                # 生产环境无此变量 → 行为与历史逐字节一致。
+                # 目标目录=**当前引擎的安装根**（2026-11-20 修正，Velopack
+                # CurrentBinaryDir 语义）：更新目标=正在运行的这份程序所在
+                # 目录，运行时解析——自定义目录安装（如 D:\临时\HopOn）原地
+                # 更新，标准用户=标准目录，全部正确。此前硬算标准位置
+                # %LOCALAPPDATA%\Programs\HopOn，对自定义目录用户会把新版
+                # 装到 C 盘、旧版还在原地（装出双份，朋友机场景）。
+                # HOPON_INSTALL_DIR 沙箱钩子（2026-11-19）保留最高优先级：
+                # 全新电脑 E2E 把安装根指进沙箱（实测事故）。
+                # 开发机天然保护：git 工作树根没有 HopOnUpdater.exe →
+                # 下方「更新器缺失」拒绝，工作树不会被覆盖。
+                from core.paths import app_root as _app_root
+
                 _install_dir = Path(
-                    os.environ.get("HOPON_INSTALL_DIR")
-                    or (Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
-                        / "Programs" / "HopOn"))
+                    os.environ.get("HOPON_INSTALL_DIR") or str(_app_root()))
 
                 # Updater 与主程序同级。用 core.paths.app_root() 而非
                 # Path(sys.executable).parent.parent —— 后者只在安装版成立
                 # （…\HopOn\engine\python\python.exe → …\HopOn），工作树下
                 # 会算成 engine\ 少了根（2026-11-16 实测 → 误报「更新器缺失」）
-                from core.paths import app_root as _app_root
-
                 _updater = _app_root() / "HopOnUpdater.exe"
                 if not _updater.is_file():
                     self._json({"ok": False,
