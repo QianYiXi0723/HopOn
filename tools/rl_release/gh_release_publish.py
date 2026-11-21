@@ -225,13 +225,26 @@ def main():
     missing = [p.name for p, _ in assets if p.name not in got]
     if missing:
         _die("线上缺资产：%s（上传断连或漏传，修完重跑——已传资产自动跳过）" % missing)
-    # 逐个下载实物哈希对本地：传输损坏/错位（v2.6.0/v2.6.1 SUMS 错位实证）在此拦截
+    # 逐个下载实物哈希对本地：传输损坏/错位（v2.6.0/v2.6.1 SUMS 错位实证）在此拦截。
+    # 下载带 3 次重试（2026-11-21 实测：api 通道 16MB 会 IncompleteRead 断流）。
     import hashlib
+    import time as _t
     for p, _ in assets:
-        req = urllib.request.Request(
-            "%s/repos/%s/%s/releases/assets/%s" % (API, OWNER, REPO, got[p.name]["id"]),
-            headers={**hdr, "Accept": "application/octet-stream"})
-        raw = urllib.request.urlopen(req, timeout=600).read()
+        raw = None
+        last = None
+        for attempt in range(1, 4):
+            try:
+                req = urllib.request.Request(
+                    "%s/repos/%s/%s/releases/assets/%s" % (API, OWNER, REPO, got[p.name]["id"]),
+                    headers={**hdr, "Accept": "application/octet-stream"})
+                raw = urllib.request.urlopen(req, timeout=600).read()
+                break
+            except Exception as exc:
+                last = exc
+                print("  下载第 %d/3 次失败：%s" % (attempt, type(exc).__name__))
+                _t.sleep(10 * attempt)
+        if raw is None:
+            _die("%s 验证下载连续 3 次失败：%s（网络恢复后重跑，已传资产自动跳过）" % (p.name, last))
         if hashlib.sha256(raw).hexdigest() != hashlib.sha256(p.read_bytes()).hexdigest():
             _die("%s 线上内容与本地不一致（上传损坏/错位）" % p.name)
         print("  ✓ 验证 %s  %d B  sha256 一致" % (p.name, len(raw)))
