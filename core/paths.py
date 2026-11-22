@@ -48,6 +48,9 @@ MIGRATION_MARKER = ".migrated.json"
 #: 覆盖程序根的准环境变量（测试沙箱用；生产不该设置）
 APP_DIR_ENV = "HOPON_APP_DIR"
 
+#: 覆盖「更新链安装根」的环境变量（沙箱 E2E 用，2026-11-19 起）
+INSTALL_DIR_ENV = "HOPON_INSTALL_DIR"
+
 #: 迁移迁移开关：设为 "0" 可完全禁用迁移（生产排障的紧急闸）
 MIGRATION_ENV = "HOPON_NO_MIGRATE"
 
@@ -64,6 +67,21 @@ def app_root() -> Path:
         return Path(override).expanduser().resolve()
     here = Path(__file__).resolve().parent.parent  # core/ 的上级
     return here.parent if here.name == "engine" else here
+
+
+def install_root() -> Path:
+    """更新链的安装根（staging 解压与安装目标必须同源）。
+
+    ``HOPON_INSTALL_DIR`` 覆盖 > :func:`app_root`。2026-11-22 staged 改造
+    教训：``app_root()`` 认的是 ``HOPON_APP_DIR``，而 /api/update/install
+    一直内联读 ``HOPON_INSTALL_DIR``——两个变量不同源。引擎解压 staging
+    若直接用 app_root()，E2E 沙箱会把 staging 解到开发机真实安装根。
+    两条路径统一走本函数，单源。
+    """
+    override = os.environ.get(INSTALL_DIR_ENV, "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return app_root()
 
 
 def user_root() -> Path:

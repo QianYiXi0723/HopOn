@@ -288,6 +288,16 @@ def peek() -> Optional[Dict[str, Any]]:
 
 #: 下载根目录（用户数据根下，用户可在文件管理器里找到）
 DOWNLOAD_DIR_NAME = "downloads"
+#: 更新工作区（安装根下）：staging 暂存 + pending.json + updater.log。
+#: 与 HopOnUpdater.exe 的 updateDir 同一处——引擎运行期解压（prepare 前移），
+#: Updater 退出后只做纯覆盖（2026-11-22 staged 改造，Firefox/VS Code 同款）
+UPDATE_DIR_NAME = ".update"
+#: staging 就绪判据（=Updater 落盘校验 Required 清单的 staging 期子集，
+#: 递进校验：引擎验 3 项、apply 期 Updater 兜底验 5 项）：
+#: 任一缺失/为空 = staging 无效
+STAGING_REQUIRED = ("HopOn.exe", r"engine\app.py", r"engine\daemon.py")
+#: pending.json：staged 就绪的唯一事实源（引擎写、壳与 Updater 读）
+PENDING_NAME = "pending.json"
 #: 空闲超时（秒）：连续这么久没收到数据才判死——慢下载可以跑很久
 IDLE_TIMEOUT = 20
 #: 磁盘剩余空间粗检阈值（MB）：低于此值直接拒绝
@@ -300,12 +310,66 @@ SLOW_PROBE_MIN_BPS = 300 * 1024
 
 _download_lock = threading.Lock()
 _download_job: Optional[Dict[str, Any]] = None   # 当前任务（单任务锁）
+#: staging 动作串行闸（2026-11-23 逐行审 P3）：reconcile_on_boot 的补解压
+#: 与用户新发起的下载解压都会调 _stage_job——两线程写同一 staging 目录会
+#: 交错出残缺文件。串行化后后者排队（clear_staging 又清一次，结果一致）。
+_STAGE_LOCK = threading.Lock()
 
 
 def download_dir(version: str) -> Path:
     from core.paths import user_root
 
     return user_root() / "data" / DOWNLOAD_DIR_NAME / ("v" + str(version).lstrip("vV"))
+
+
+def update_dir() -> Path:
+    """更新工作区（安装根\\.update）。必须走 install_root() 与 Updater 同源。"""
+    from core.paths import install_root
+
+    return install_root() / UPDATE_DIR_NAME
+
+
+def staging_dir() -> Path:
+    return update_dir() / "staging"
+
+
+def pending_path() -> Path:
+    return update_dir() / PENDING_NAME
+
+
+def _resolve_staging_root(staging: Path) -> Path:
+    """zip 顶层常带一层 HopOn_v<x.y.z>\\，下钻到真正根（与 Updater 同判据）。"""
+    try:
+        entries = list(staging.iterdir())
+    except OSError:
+        return staging
+    if len(entries) == 1 and entries[0].is_dir() and (entries[0] / "HopOn.exe").is_file():
+        return entries[0]
+    return staging
+
+
+def staging_alive() -> bool:
+    """staging 是否就绪：关键文件存在且非空（下钻后判）。"""
+    root = _resolve_staging_root(staging_dir())
+    for rel in STAGING_REQUIRED:
+        p = root / rel
+        try:
+            if not p.is_file() or p.stat().st_size == 0:
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def clear_staging() -> None:
+    """清 staging 与 pending（版本残留错配/显式复位用）。"""
+    import shutil
+
+    shutil.rmtree(staging_dir(), ignore_errors=True)
+    try:
+        pending_path().unlink()
+    except OSError:
+        pass
 
 
 def _channel_url(channel: str, tag: str, asset: str) -> str:
@@ -392,14 +456,15 @@ def start_download(version: str, asset: str) -> Dict[str, Any]:
     """
     global _download_job
     asset = str(asset or "").strip()
-    # 白名单：只允许主包形态，文件名取 basename 防路径注入
-    if not re.fullmatch(r"[\w.\-]+\.(exe|zip)", asset, re.IGNORECASE):
-        return {"ok": False, "message": "不支持的资产类型（只收 Setup.exe / zip 主包）"}
+    # 白名单：只收 zip 更新包（2026-11-22 staged 改造：HopOnUpdater 只解
+    # zip；Setup.exe 仅首装/手动装，不走应用内链），文件名取 basename 防路径注入
+    if not re.fullmatch(r"[\w.\-]+\.zip", asset, re.IGNORECASE):
+        return {"ok": False, "message": "不支持的资产类型（只收 zip 更新包）"}
     version = str(version or "").strip().lstrip("vV")
     if not version:
         return {"ok": False, "message": "缺少版本号"}
     with _download_lock:
-        if _download_job and _download_job.get("stage") in ("downloading", "verify"):
+        if _download_job and _download_job.get("stage") in ("downloading", "verify", "staging"):
             return {"ok": False, "message": "已有下载任务在进行（%s）" % _download_job.get("asset", "")}
         target_dir = download_dir(version)
         pkg = target_dir / asset
@@ -496,7 +561,13 @@ def _download_worker(job: Dict[str, Any], pkg: Path, version: str, asset: str) -
 
 
 def _finish_job(job: Dict[str, Any], pkg: Path, version: str, asset: str) -> None:
-    """下载完成后：SHA-256 校验（同渠道 SUMS）→ 终态。"""
+    """下载完成后：SHA-256 校验（同渠道 SUMS）→ 终态 → 运行期解压 staging。
+
+    2026-11-22 staged 改造（Firefox/VS Code prepare 前移同款）：done 不再
+    是流程终点——SHA 通过后立即在本线程（**锁外**，解压十几秒不能阻塞
+    download_status 轮询）把新版本解压到 .update\\staging 并写 pending.json，
+    「立即安装」时只剩纯覆盖。失败回 error（包仍有效，重试走本地快路径）。
+    """
     global _download_job
     with _download_lock:
         job["stage"] = "verify"
@@ -511,6 +582,93 @@ def _finish_job(job: Dict[str, Any], pkg: Path, version: str, asset: str) -> Non
                 pass
         job["stage"] = "done" if verdict["ok"] else "error"
         _save_download_state(job)
+    if job["stage"] != "done":
+        return
+    _stage_job(job, pkg, version, asset)
+
+
+def _stage_job(job: Dict[str, Any], pkg: Path, version: str, asset: str) -> None:
+    """运行期把校验通过的包解压到 .update\\staging（prepare 前移）。
+
+    校验链 = 整包 SHA（下载期）+ zip CRC（extractall 逐 entry 校验，损坏即抛）
+    + 关键文件存在非空（staging 期）+ Updater 落盘校验（apply 期兜底）。
+    成功写 pending.json（壳与 Updater 共认的「有更新待应用」事实源）并置
+    stage=staged 落盘；引擎此后随时可被 /api/update/install 触发 apply。
+    """
+    global _download_job
+    import zipfile
+
+    with _download_lock:
+        job["stage"] = "staging"
+        job["message"] = "解压准备更新…"
+    if not _STAGE_LOCK.acquire(timeout=180):
+        # 另一个 staging（reconcile/前一次下载）还在解压——不抢，报错让
+        # 用户稍后重试（本地包快路径随时可再触发）
+        with _download_lock:
+            job["stage"] = "error"
+            job["message"] = "另一个更新准备还在进行，请稍候重试"
+            _save_download_state(job)
+        return
+    try:
+        staging = staging_dir()
+        # 磁盘闸（2026-11-23 自审补）：此前只查下载盘，解压目标（install
+        # 盘）可能与下载盘不同——zip+解压双份 ~100MB+，install 盘也要够。
+        # 解压总量闸（2026-11-23 逐行审 P4）：按 zip 声明的解压大小合计
+        # 与剩余空间比对（Firefox/Chrome 同款防线），防磁盘写满才发现
+        if _free_mb(staging) < MIN_FREE_MB:
+            raise IOError("磁盘剩余空间不足 %dMB，拒绝解压暂存" % MIN_FREE_MB)
+        clear_staging()   # 防跨版本残留
+        staging.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(pkg) as zf:
+            total_unpacked = sum(i.file_size for i in zf.infolist())
+            if total_unpacked > (_free_mb(staging) - MIN_FREE_MB) * 1048576:
+                raise IOError("解压总量 %dMB 超过磁盘余量，拒绝解压暂存"
+                              % (total_unpacked // 1048576))
+            zf.extractall(staging)   # CRC 损坏在此抛 BadZipFile
+        sroot = _resolve_staging_root(staging)
+        for rel in STAGING_REQUIRED:
+            p = sroot / rel
+            if not p.is_file() or p.stat().st_size == 0:
+                raise IOError("staging 关键文件缺失或为空：%s" % rel)
+        n_files = sum(1 for f in sroot.rglob("*") if f.is_file())
+        pending_path().parent.mkdir(parents=True, exist_ok=True)
+        _atomic_json(pending_path(), {
+            "version": version,
+            "asset": asset,
+            "pkg": str(pkg),
+            "staged_at": _now_text(),
+            "src_pid": os.getpid(),
+            "files": n_files,
+        })
+    except Exception as exc:  # noqa: BLE001 - 解压失败回 error，不比现状差
+        clear_staging()
+        with _download_lock:
+            job["stage"] = "error"
+            job["message"] = "解压准备更新失败：%s" % str(exc)[:200]
+            _save_download_state(job)
+        logger.debug("[update] staging 解压失败：%s", exc)
+        return
+    finally:
+        _STAGE_LOCK.release()
+    with _download_lock:
+        job["stage"] = "staged"
+        job["staged_at"] = _now_text()
+        job["staging"] = str(sroot)   # 逐行审 P5：直接用已解析的 sroot
+        job["files"] = n_files
+        job["message"] = "新版本已就绪，安装将关闭应用并在几秒内自动回来"
+        _save_download_state(job)
+
+
+def _atomic_json(path: Path, payload: Dict[str, Any]) -> None:
+    """原子写 JSON（pending.json 等事实源文件用）。"""
+    # D16（逐个比对）：父目录必须自建——done 老链第一次 install 时 .update
+    # 可能从未建立过（staging 失效/清场后），open(tmp) 会 FileNotFoundError，
+    # install 端点会把老链安装拒成 500
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = str(path) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
 
 
 #: 下载终态持久化（2026-11-15 用户实测「下载后检测不到本地资源而无法更新」
@@ -526,7 +684,7 @@ def _download_state_path() -> Path:
 
 
 def _save_download_state(job: Dict[str, Any]) -> None:
-    """终态（done/error）落盘；只存可恢复的最小字段。"""
+    """终态（done/staged/error）落盘；只存可恢复的最小字段。"""
     payload = {
         "stage": job.get("stage"),
         "version": job.get("version"),
@@ -535,6 +693,9 @@ def _save_download_state(job: Dict[str, Any]) -> None:
         "sha_ok": job.get("sha_ok"),
         "total": job.get("total"),
         "message": job.get("message"),
+        "staged_at": job.get("staged_at"),
+        "staging": job.get("staging"),
+        "files": job.get("files"),
         "saved_at": _now_text(),
     }
     try:
@@ -549,19 +710,34 @@ def _save_download_state(job: Dict[str, Any]) -> None:
 
 
 def _load_download_state() -> Optional[Dict[str, Any]]:
-    """读盘上终态；file 不存在（被删/被移动）则视为无效清掉。"""
+    """读盘上终态；对应产物不存在则降级/清除。
+
+    恢复规则（2026-11-22 staged 改造）：
+    * done：zip 在场 → 恢复 done；zip 没了 → 清（旧 Updater 自己解压路径）。
+    * staged：staging 就绪 → 恢复 staged；staging 没了但 zip 在 → 降级 done
+      （Updater 从 zip 重新解压，永不比现状差）；都没了 → 清。
+    """
     try:
         p = _download_state_path()
         if not p.exists():
             return None
         raw = json.loads(p.read_text(encoding="utf-8"))
-        if raw.get("stage") != "done" or not raw.get("sha_ok"):
+        if not raw.get("sha_ok"):
             return None
-        if not raw.get("file") or not os.path.isfile(raw["file"]):
+        stage = raw.get("stage")
+        if stage == "staged":
+            stg = str(raw.get("staging") or "")
+            alive = bool(stg) and staging_alive()
+            if not alive:
+                raw["stage"] = "done"   # staging 失效，降级走 zip 解压
+                stage = "done"
+        if stage == "done" and not (raw.get("file") and os.path.isfile(raw["file"])):
             try:
                 p.unlink()
             except OSError:
                 pass
+            return None
+        if stage not in ("done", "staged"):
             return None
         raw["ok"] = True
         return raw
@@ -579,6 +755,36 @@ def download_status() -> Dict[str, Any]:
                 return saved
             return {"stage": "idle", "ok": True}
         return {k: v for k, v in _download_job.items() if not k.startswith("_")}
+
+
+def reconcile_on_boot() -> None:
+    """启动对账（2026-11-23 自审）：盘上 done 态（zip 在）但 staging 缺失
+    或损坏 → 后台补解压，让 UI 快链自动恢复。
+
+    为什么必须有：staged 改造后 UI 在 staged 才发安装；引擎重启后 staging
+    失效会被降级成 done——不补解压的话 done 永远不会自己变 staged，UI 的
+    done 分支只能靠超时兜底走旧链。补齐后用户无感回到秒级快链；补失败也
+    不影响——install 端点 done 路径走 Updater 自己解压的旧链（永不比现状差）。
+    """
+    try:
+        st = download_status()
+    except Exception:  # noqa: BLE001
+        return
+    if st.get("stage") != "done" or not st.get("sha_ok"):
+        return
+    version, file_path = str(st.get("version") or ""), str(st.get("file") or "")
+    if not version or not file_path:
+        return
+    pkg = Path(file_path)
+    if not pkg.is_file() or staging_alive():
+        return
+    if _parse(version) <= _parse(current_version()):
+        return   # 防降级闸一致：旧包不值得补
+    job = dict(st)
+    job["_cancel"] = False
+    threading.Thread(target=_stage_job, args=(job, pkg, version, str(st.get("asset") or "")),
+                     daemon=True, name="update-reconcile").start()
+    logger.debug("[update] 启动对账：done 态 staging 失效，后台补解压 %s", version)
 
 
 def cancel_download() -> Dict[str, Any]:

@@ -1793,6 +1793,12 @@ _LIVE_AUTO_REFRESH_MINUTES = 10
 #: 五游戏接口（风控面翻倍）并交错写同一磁盘缓存。持锁做二次新鲜度判定，
 #: 等锁期间别人刷完就直接吃他的结果。
 _LIVE_LOCK = threading.Lock()
+
+#: 更新安装单飞闸（2026-11-23 对照 Velopack 全局锁文件同款）：install 端点
+#: 从「收到请求」到「引擎自杀」有 1.5 秒+ 窗口，UI 连点/重试会 POST 两次——
+#: 两次 spawn 两个 Updater 并发覆盖同一安装根。锁持有到引擎自杀为止（进程
+#: 死亡锁自然消失）；错误路径显式释放。
+_INSTALL_LOCK = threading.Lock()
 #: 磁盘缓存：服务重启后也能秒回上一次的结果，页面冷启动绝不该现场打接口
 _LIVE_DISK_CACHE = USER_DIR / "data" / "live_cache.json"
 #: 同一款游戏两次真实查询的最小间隔（秒）。2026-11-16 用户实测：F5 与连续切
@@ -4167,11 +4173,41 @@ class Handler(BaseHTTPRequestHandler):
             # /RESTARTAPPLICATIONS 命令行覆盖 iss 指令：安装器自动关闭运行中的
             # HopOn（文件锁）、装完经 Restart Manager 重启壳——壳拉起全家，
             # 新版本上线。响应发出后本进程即将被关闭，写完就 return。
+            # 单飞闸两层（2026-11-23 对照 Velopack 全局锁；初版只靠进程内锁
+            # 是想当然——成功路径锁在端点返回时就释放了，拦不住自杀窗口）：
+            #   a) pending.install_started 时间戳（15 秒内拒绝）——覆盖
+            #      「响应已返回、引擎还活 1.5 秒才自杀」的危险窗口；
+            #   b) 进程内锁——防两个请求同时在端点里处理。
+            _install_reject = False
+            try:
+                from core import update as _update_probe
+
+                _pp = _update_probe.pending_path()
+                if _pp.exists():
+                    _raw = json.loads(_pp.read_text(encoding="utf-8"))
+                    if _raw.get("install_started") and time.time() - float(
+                            _raw.get("install_started_ts") or 0) < 15:
+                        _install_reject = True
+            except (OSError, ValueError, TypeError):
+                pass
+            if _install_reject:
+                self._json({"ok": False, "error": "更新已在进行中，请稍候几秒"}, 429)
+                return
+            if not _INSTALL_LOCK.acquire(blocking=False):
+                self._json({"ok": False, "error": "更新已在进行中，请稍候几秒"}, 429)
+                return
+            _install_locked = True
             try:
                 from core import update as _update
 
                 st = _update.download_status()
-                if st.get("stage") != "done" or not st.get("sha_ok"):
+                if st.get("stage") == "staging":
+                    # 运行期解压中（2026-11-22 staged 改造）：不拒绝任务本身，
+                    # 让前端稍后重试——此时 staging 半成品绝不能被 apply
+                    self._json({"ok": False,
+                                "error": "正在解压准备更新，请几秒后再点安装"}, 400)
+                    return
+                if st.get("stage") not in ("done", "staged") or not st.get("sha_ok"):
                     self._json({"ok": False, "error": "还没有校验通过的安装包，请先完成站内下载"}, 400)
                     return
                 # 防降级（官方验收：本地版本更高时不安装）：包名解析版本须新于当前
@@ -4201,12 +4237,14 @@ class Handler(BaseHTTPRequestHandler):
                 # 装到 C 盘、旧版还在原地（装出双份，朋友机场景）。
                 # HOPON_INSTALL_DIR 沙箱钩子（2026-11-19）保留最高优先级：
                 # 全新电脑 E2E 把安装根指进沙箱（实测事故）。
+                # 2026-11-22 staged 改造：解析收敛到 core.paths.install_root()
+                # 单源——staging 解压与安装目标必须同源（此前本端点内联读
+                # HOPON_INSTALL_DIR，而 app_root() 认 HOPON_APP_DIR，不同源）。
                 # 开发机天然保护：git 工作树根没有 HopOnUpdater.exe →
                 # 下方「更新器缺失」拒绝，工作树不会被覆盖。
-                from core.paths import app_root as _app_root
+                from core.paths import install_root as _app_root
 
-                _install_dir = Path(
-                    os.environ.get("HOPON_INSTALL_DIR") or str(_app_root()))
+                _install_dir = _app_root()
 
                 # Updater 与主程序同级。用 core.paths.app_root() 而非
                 # Path(sys.executable).parent.parent —— 后者只在安装版成立
@@ -4220,19 +4258,56 @@ class Handler(BaseHTTPRequestHandler):
                     return
 
                 try:
+                    # spawn 前写 pending.json（壳与 Updater 共认的「有更新待
+                    # 应用」事实源）：staged 态刷新它（staging 期已写过），
+                    # done 态补写——否则壳的 Engine_Exited 在 done 路径感知
+                    # 不到更新退出，会把旧引擎拉回来（脏竞态）。
+                    _update._atomic_json(_update.pending_path(), {
+                        "version": st.get("version"),
+                        "asset": st.get("asset"),
+                        "pkg": pkg,
+                        "staged_at": st.get("staged_at") or _update._now_text(),
+                        "src_pid": os.getpid(),
+                        "files": st.get("files"),
+                        # 自杀窗口单飞判据（见端点顶部注释 a 条）：15 秒内
+                        # 的第二次 install 一律 429
+                        "install_started": True,
+                        "install_started_ts": time.time(),
+                    })
+                except OSError as exc:
+                    # Z34（逐个比对）：pending 是壳感知与单飞判据的事实源，
+                    # 写失败还硬闯 spawn=壳复活旧引擎+双 POST 无保护并发——
+                    # 拒绝安装，磁盘/权限问题修好后再来
+                    self._json({"ok": False,
+                                "error": f"更新状态写入失败（磁盘或权限）：{exc}"}, 500)
+                    return
+                try:
                     # 关键：Updater 必须**脱离壳的 Job Object**。
                     # 壳把引擎（连带引擎派生的一切）挂进 KILL_ON_JOB_CLOSE 的 Job，
                     # 而 Updater 是引擎起的子进程 → 继承该 Job。这样 Updater 去
                     # 杀壳时会被 Job 连带杀死（2026-11-16 真机实测：日志停在
                     # 「结束占用进程」后无任何输出、backup 未清理）。
                     # CREATE_BREAKAWAY_FROM_JOB = 0x01000000 让它自成一体。
-                    subprocess.Popen(
-                        [str(_updater),
-                         "--pid", str(os.getpid()),
-                         "--root", str(_install_dir),
-                         "--pkg", pkg,
-                         "--restart"],
-                        creationflags=0x00000008 | 0x01000000)  # DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB
+                    # staged 态（2026-11-22）：staging 已由引擎运行期解压就绪，
+                    # --staged 让 Updater 跳过解压直接覆盖（黑幕只剩纯覆盖秒级）；
+                    # staging 不完整时 Updater 自动回退从 zip 解压（双保险）。
+                    _cmd = [str(_updater),
+                            "--pid", str(os.getpid()),
+                            "--root", str(_install_dir),
+                            "--pkg", pkg,
+                            "--restart"]
+                    if st.get("stage") == "staged":
+                        _cmd.append("--staged")
+                    try:
+                        subprocess.Popen(
+                            _cmd,
+                            creationflags=0x00000008 | 0x01000000)  # DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB
+                    except OSError:
+                        # Job 不许 breakaway（组策略/沙箱环境）→ 降级不带 flag：
+                        # Updater 的 DetachFromJob() 会自己从 Job 脱离（双保险
+                        # 设计，Velopack 同思路——杀壳动作绝不能因 breakaway
+                        # 被拒而整个安装失败）
+                        subprocess.Popen(_cmd, creationflags=0x00000008)  # DETACHED_PROCESS
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("更新器启动失败")
                     self._json({"ok": False, "error": f"更新器启动失败：{exc}"}, 500)
@@ -4257,9 +4332,15 @@ class Handler(BaseHTTPRequestHandler):
                     os._exit(0)
 
                 threading.Thread(target=_exit_soon, daemon=True).start()
+                # 成功路径不释放锁——交给引擎自杀（进程死亡）释放，覆盖整个
+                # 1.5 秒+ 窗口；错误路径由 finally 释放。
+                _install_locked = False
             except Exception as exc:  # noqa: BLE001
                 logger.exception("静默安装发起失败")
                 self._json({"ok": False, "error": f"安装启动失败：{exc}"}, 500)
+            finally:
+                if _install_locked:
+                    _INSTALL_LOCK.release()
             return
 
         if path == "/api/update/open-folder":
@@ -4269,7 +4350,10 @@ class Handler(BaseHTTPRequestHandler):
 
                 st = _update.download_status()
                 file_path = str(st.get("file") or "")
-                if st.get("stage") != "done" or not st.get("sha_ok") or not file_path:
+                # 2026-11-23 逐行审 D14：staged 改造后 done 会升级为 staged
+                # （staged 的 file 同在）——旧条件只认 done，staged 态点
+                # 「打开文件夹」误报 404
+                if st.get("stage") not in ("done", "staged") or not st.get("sha_ok") or not file_path:
                     self._json({"ok": False, "error": "还没有校验通过的安装包"}, 404)
                     return
                 if not os.path.isfile(file_path):
@@ -4470,6 +4554,14 @@ def serve(
     )
     thread.start()
     logger.info("控制台已监听 127.0.0.1:%d", actual)
+    # staged 改造启动对账（2026-11-23 自审）：盘上 done 态但 staging 失效
+    # 时后台补解压，UI 快链自动恢复——否则 done 永远不会变 staged。
+    try:
+        from core import update as _upd_boot
+
+        _upd_boot.reconcile_on_boot()
+    except Exception:  # noqa: BLE001 - 对账失败不挡启动
+        pass
     return {
         "server": server,
         "port": actual,

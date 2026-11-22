@@ -108,8 +108,9 @@ def main() -> int:
     lu = (ROOT / "login_ui.py").read_text(encoding="utf-8")
     check("Velopack" in lu and "CurrentBinaryDir" in lu,
           "F6c 安装目录语义注释在位（Velopack CurrentBinaryDir 模式，login_ui.py）")
-    check('os.environ.get("HOPON_INSTALL_DIR") or str(_app_root())' in lu,
-          "F6d 安装目标=当前安装根（app_root 运行时解析，自定义目录原地更新）")
+    check("from core.paths import install_root as _app_root" in lu,
+          "F6d 安装目标=当前安装根（install_root 运行时解析，自定义目录原地更新；"
+          "2026-11-22 staged 改造收敛到 core.paths.install_root 单源）")
     check('"/Programs" / "HopOn"' not in lu,
           "F6e 硬算标准目录已清除（自定义目录用户不再装出双份）")
 

@@ -131,6 +131,9 @@ namespace HopOn
                 if (_startMinimized) Hide(); else Show();
                 Log("壳启动 pid=" + Process.GetCurrentProcess().Id + (_startMinimized ? "（--tray 自启）" : ""));
 
+                // 上次更新覆盖中断 → 本壳退出、更新器续 apply、拉起新壳
+                if (TryResumeStagedUpdate()) return;
+
                 int port = PickPortWithOverride();
                 if (port < 0)
                 {
@@ -570,6 +573,97 @@ namespace HopOn
 
         private int _engineRestartFails = 0;
 
+        /// <summary>.update\pending.json 是否在场（引擎 install 时写的
+        /// 「有更新待应用」事实源）。</summary>
+        private bool UpdatePending()
+        {
+            try { return File.Exists(Path.Combine(Root, ".update", "pending.json")); }
+            catch { return false; }
+        }
+
+        /// <summary>HopOnUpdater.exe 是否正在运行（按可执行路径精确匹配，
+        /// 不按进程名——防别的目录同名 exe 误判；访问失败跳过该进程）。
+        /// pending 只说明「有更新待应用」，Updater 在跑才说明「正被接管」：
+        /// 2026-11-22 自审修正——staged 后用户未点安装时引擎意外死亡，
+        /// 若只看 pending 壳会放弃拉起而 Updater 永远不来 → 全家躺尸。</summary>
+        private static bool UpdaterRunning()
+        {
+            try
+            {
+                string self = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "HopOnUpdater.exe");
+                foreach (Process p in Process.GetProcessesByName("HopOnUpdater"))
+                {
+                    try
+                    {
+                        string path = null;
+                        try { path = p.MainModule.FileName; } catch { }
+                        if (!string.IsNullOrEmpty(path) &&
+                            string.Equals(path, self, StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
+                    finally { try { p.Dispose(); } catch { } }
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>staging 是否已含可执行新版（与 HopOnUpdater 同判据）：
+        /// staging\HopOn.exe 或 staging\<唯一子目录>\HopOn.exe。</summary>
+        private static bool StagingHasExe(string staging)
+        {
+            try
+            {
+                if (File.Exists(Path.Combine(staging, "HopOn.exe"))) return true;
+                string[] entries = Directory.GetFileSystemEntries(staging);
+                return entries.Length == 1 && Directory.Exists(entries[0])
+                    && File.Exists(Path.Combine(entries[0], "HopOn.exe"));
+            }
+            catch { return false; }
+        }
+
+        /// <summary>壳启动续 apply（2026-11-22 staged 改造；Firefox「重启时
+        /// 继续应用已暂存更新」同款）：pending 在场且 staging 完整 = 上次
+        /// 覆盖中断。清 pending → spawn HopOnUpdater（--pid=本壳，等本壳
+        /// 退出后纯覆盖）→ 本壳退出。Updater 成功后拉起新壳。staging/
+        /// 更新器不就绪则清 pending 正常启动——续跑绝不堵启动。</summary>
+        private bool TryResumeStagedUpdate()
+        {
+            try
+            {
+                string pending = Path.Combine(Root, ".update", "pending.json");
+                if (!File.Exists(pending)) return false;
+                if (UpdaterRunning())
+                    return false;   // 另一实例的更新器正在接管，本壳不抢
+                string staging = Path.Combine(Root, ".update", "staging");
+                string updater = Path.Combine(Root, "HopOnUpdater.exe");
+                if (!StagingHasExe(staging) || !File.Exists(updater))
+                {
+                    Log("发现 pending.json 但 staging/更新器不就绪 → 清 pending 正常启动");
+                    try { File.Delete(pending); } catch { }
+                    return false;
+                }
+                Log("检测到未完成的暂存更新 → 本壳退出，由更新器继续应用");
+                try { File.Delete(pending); } catch { }   // 先清：防本壳异常退出后下次重复续跑
+                Process.Start(new ProcessStartInfo(updater)
+                {
+                    Arguments = "--pid " + Process.GetCurrentProcess().Id +
+                                " --root \"" + Root.TrimEnd(Path.DirectorySeparatorChar) + "\"" +
+                                " --staged --restart",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                });
+                _reallyExit = true;
+                Close();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log("续 apply 检查异常（忽略，正常启动）：" + ex.Message);
+                return false;
+            }
+        }
+
         /// <summary>引擎意外退出（崩溃/被外部杀）→ 自动重启拉起。
         /// 主动退出（ReallyExit 的 Kill）走 _reallyExit 不触发重启；
         /// 连续 3 次重启失败停止自动拉起，防「起不来→退出→再起」死循环；
@@ -577,6 +671,32 @@ namespace HopOn
         private void Engine_Exited(object sender, EventArgs e)
         {
             if (_reallyExit) return;
+            if (UpdatePending() && UpdaterRunning())
+            {
+                // 2026-11-22 staged 改造：pending+Updater 活着 = 更新链正在
+                // 接管（引擎 install 自杀 → Updater 覆盖 → 拉起新版）。此时
+                // 拉旧引擎会与覆盖竞态，随后被 Updater 清场强杀——脏日志+白拉起。
+                // 2026-11-23 跨链推演 D8：**本壳必须退出**——rename 化后覆盖
+                // 运行中的 HopOn.exe 让位成功，不再触发 KillProcessesUnder，
+                // 旧壳若不退就会与 StartShell 拉起的新壳并存（双窗双托盘，
+                // 黑幕页面永不消失）。业界标准（Firefox/VS Code/微信）：apply
+                // 发生在应用完全退出之后——壳退出，Updater 独占 root，装完
+                // StartShell 拉新版窗口回来。Updter 失败时回滚已还原旧版，
+                // 用户手动启动即可（与旧链装失败一致）。
+                Log("引擎退出且更新待应用 + 更新器在跑 → 本壳退出让位（apply 需独占 root）");
+                _reallyExit = true;
+                try
+                {
+                    // Process.Exited 在线程池线程触发——Close 是 UI 操作，必须
+                    // 封送回 UI 线程（逐行审 D9：直接调用跨线程崩溃）
+                    BeginInvoke((Action)(() => Close()));
+                }
+                catch (ObjectDisposedException) { }   // 壳正在关（D13：句柄失效不炸事件线程）
+                catch (InvalidOperationException) { } // 句柄未创建等极端时序
+                return;
+            }
+            // pending 在场但更新器不在跑（staged 从未触发安装，或上次接管
+            // 已崩）→ 正常拉起引擎：staged 态落盘仍在，用户可继续点安装。
             var dead = sender as Process;
             string exitCode = "";
             try { exitCode = "，退出码=" + dead.ExitCode; } catch { }

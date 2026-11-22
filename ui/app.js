@@ -844,14 +844,15 @@ function openUpdateModal(d){
   const box = document.getElementById('upd-notes');
   box.textContent = body || '（本次更新暂无说明）';
   box.hidden = !body;
-  // 只显示安装包（一键安装装的就是 Setup.exe；zip 与流程无关不展示）
+  // 只显示 zip 更新包（2026-11-22 staged 改造：一键安装装的就是 zip，
+  // HopOnUpdater 只解 zip；Setup.exe 仅首装/手动装用，不在此展示）
   const pkgs = (d.assets || []).filter(function(a){
-    return /\.exe$/i.test(String(a.name || ''));
+    return /\.zip$/i.test(String(a.name || ''));
   }).map(function(a){
     return String(a.name || '') + ' ' + ((a.size || 0) / 1048576).toFixed(1) + 'MB';
   });
   document.getElementById('upd-pkg').textContent =
-    pkgs.length ? ('安装包 ' + pkgs.join('　·　')) : '';
+    pkgs.length ? ('更新包 ' + pkgs.join('　·　')) : '';
   document.getElementById('update-modal').hidden = false;
 }
 function closeUpdateModal(){
@@ -876,8 +877,10 @@ function closeUpdateModal(){
    通道顺序在后端 _asset_urls。三态 UI：按钮→进度→完成。
    不自动安装：装/换血是 #20 后续能力，v1 只保证「包到本地且校验通过」 */
 let _updDlTimer = null;
+let _updDonePolls = 0;   // done 态连续轮询计数（15s 兜底见 updDlPoll）
 function updDlReset(){
   if (_updDlTimer) { clearTimeout(_updDlTimer); _updDlTimer = null; }
+  _updDonePolls = 0;
   const btn = document.getElementById('upd-dl-btn');
   btn.hidden = false;
   btn.disabled = false;
@@ -905,12 +908,13 @@ function updDlStart(){
   document.getElementById('upd-dl-prog').hidden = false;
   postJSON('/api/update/download', pick).then(function(d){
     if (!d || !d.ok) {
+      localStorage.removeItem('rl-updating');   // D15：发起失败清标记，否则连接横幅静默闸被残留标记锁死
       updDlReset();
       toast((d && d.message) || '下载发起失败', true);
       return;
     }
     updDlPoll();
-  }).catch(function(){ updDlReset(); toast('无法连接本地服务', true); });
+  }).catch(function(){ localStorage.removeItem('rl-updating'); updDlReset(); toast('无法连接本地服务', true); });
 }
 /* done→自动接安装（单按钮贯穿全流程）；error→按钮复位+toast */
 function updDlAutoInstall(){
@@ -978,17 +982,34 @@ function updDlPoll(){
       fill.style.width = '100%';
       txt.textContent = d.message || '校验 SHA-256…';
       _updDlTimer = setTimeout(updDlPoll, 500);
-    } else if (st === 'done' && d.sha_ok) {
-      // 校验通过→直接接静默安装（2026-11-20 ④⑤修复重启此链路）：
-      // 单按钮贯穿全流程「下载并安装更新」→黑幕→自动重启， updDlAutoInstall
-      // 此前是孤儿函数无调用者（11-16 退化为打开文件夹后遗留）。
+    } else if (st === 'staging') {
+      // 运行期解压准备（2026-11-22 staged 改造）：引擎在校验通过后立即
+      // 把新版解压到暂存区（Firefox/VS Code prepare 前移同款）——这一步
+      // 做完才发安装，安装期只剩秒级纯覆盖
+      fill.style.width = '100%';
+      txt.textContent = d.message || '解压准备更新…';
+      _updDlTimer = setTimeout(updDlPoll, 500);
+    } else if (st === 'staged' && d.sha_ok) {
+      // 暂存就绪→接静默安装（2026-11-22：此前 done 一到就装，会撞上
+      // 解压中；现在解压已前移完成，安装=纯覆盖）。
+      // Z27：进安装后停掉轮询链，防任何未知重入路径二次发起 install
+      if (_updDlTimer) { clearTimeout(_updDlTimer); _updDlTimer = null; }
       updDlAutoInstall();
+    } else if (st === 'done' && d.sha_ok) {
+      // done 但还没 staged（解压在排队/刚发端）：继续轮询等 staged。
+      // 引擎重启后 staging 失效被降级的 done 不会自己变 staged——15 秒
+      // 兜底直接发安装（Updater 自己解压的旧链，永不比现状差）。
+      if (++_updDonePolls > 30) { updDlAutoInstall(); return; }
+      _updDlTimer = setTimeout(updDlPoll, 500);
     } else if (st === 'error') {
       localStorage.removeItem('rl-updating');
       document.getElementById('installing-mask').hidden = true;
       updDlReset();
       toast(d.message || '下载失败', true);
     } else {
+      // idle（任务被引擎重启清掉等）：复位按钮停轮询（2026-11-23 逐行审
+      // P6——此前无限空转轮询，用户对着永远不动的进度条）
+      if (st === 'idle') { updDlReset(); return; }
       _updDlTimer = setTimeout(updDlPoll, 800);
     }
   }).catch(function(){ _updDlTimer = setTimeout(updDlPoll, 1200); });
