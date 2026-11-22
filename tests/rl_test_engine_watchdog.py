@@ -52,6 +52,8 @@ def main() -> int:
           "W6 连续 3 次重启失败退避停止（防崩溃循环）")
     check("引擎意外退出" in body and "自动重启" in body,
           "W7 日志记录意外退出与自动重启（可观测）")
+    check("ExitCode" in body,
+          "W9 退出码入日志（0x40010004=外部终结族 / 0xC0000005=真崩溃，死因分类零成本）")
     check("WaitEngineReady(_port, 20000)" in body,
           "W8 重启后等待就绪（20 秒预算，与首启同口径）")
 

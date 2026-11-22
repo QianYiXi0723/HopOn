@@ -50,6 +50,15 @@ def main() -> int:
     check('_user_root() / "logs"' in eapp and '"engine.log"' in eapp,
           "D5 engine_app.py 引擎日志落点=数据根（与收集路径同源）")
 
+    # ---- 死因取证三层（2026-11-22 搜索业界标准后落地）----
+    check("faulthandler.enable" in eapp and '"crash.log"' in eapp,
+          "D6 第一层 Python 级：引擎 faulthandler 崩溃栈落盘 crash.log")
+    check(r"LocalDumps\pythonw.exe" in eapp and "DumpFolder" in eapp,
+          "D7 第三层 native 级：WER LocalDumps per-app 键（HKCU 幂等配置，minidump 落数据根）")
+    lu2 = (ROOT / "login_ui.py").read_text(encoding="utf-8")
+    check("wevtutil" in lu2 and "EventID=1000" in lu2,
+          "D8 第二层系统级：诊断包采集 EventID 1000/1001 崩溃事件")
+
     print(f"PASS {PASS} / FAIL {FAIL}")
     return 0 if FAIL == 0 else 1
 
