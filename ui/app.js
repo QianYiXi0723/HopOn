@@ -80,35 +80,67 @@ function toast(text, isErr){
   toast._t = setTimeout(function(){ el.className = ''; }, 2800);
 }
 
-/* 连接类报错的静默闸（2026-11-20）：两段静默——
-   ① 一键安装黑屏期（rl-updating 标记在位）引擎按设计下线，黑幕已表达
-      「应用将自动重启」，后台轮询的失联 toast 全部静默，装完标记卸除自动恢复；
-   ② 启动宽限窗：页面加载起 15 秒内的失联属启动噪音，静默。
-   ③ 连续失联判定（2026-11-20 诊断包实锤的真根因）：安装器从外部杀壳时，
-      壳真退出前跑「关机前落盘」（QuietRunBeforeExit，最长 25 秒）再收尸引擎，
-      窗口还开着、页面继续轮询 → 每次装包都弹一阵失联（朋友机 shell.log
-      铁证：FormClosing→关机前落盘→引擎已结束→重启，引擎空窗期页面在线）。
-      这类瞬时下线（安装/退出/启动）统一按「连续失联」判定：首次失联只记时
-      不弹，持续超过 20 秒仍失联才 toast（真故障不漏报，瞬时下线全吞掉）。
-      成功响应即清零计时。业界 reconnecting 横幅模式的等价实现。 */
+/* 连接健康监测（2026-11-22，业界 reconnecting banner 模式）：
+   连接类报错不再用瞬时 toast（手动安装/退出/启动的引擎空窗期会周期性
+   轰炸——朋友机 .5→.6 手动装 Setup 实测），改为页面顶部**常驻横幅**：
+   失联即显示「重连中…」，恢复自动消失。引擎空窗（安装 1-3 分钟/退出
+   收尸/启动窗口）横幅持续表达状态不刷屏；真故障（引擎死 20 秒+）文案
+   升级为红色。黑屏期（rl-updating 在位）黑幕已表达状态，横幅不显示。
+   toastConn 保留同名入口（调用站点不变），行为=驱动横幅。 */
 const _BOOT_AT = Date.now();
 const _BOOT_GRACE_MS = 15000;
-const _CONN_FAIL_MS = 20000;       // 连续失联超此时长才判真故障
+const _CONN_FAIL_MS = 20000;       // 连续失联超此时长才判真故障（文案升级）
 let _connFailSince = 0;            // 首次失联时刻；0=当前连接正常
-let _connToastAt = 0;              // 上次弹窗时刻，弹过进入冷却防刷屏
-const _CONN_COOLDOWN_MS = 60000;   // 弹窗后 60 秒内不再弹同类
+
+function _connBanner(text, isErr) {
+  let box = document.getElementById('conn-banner');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'conn-banner';
+    box.className = 'conn-banner';
+    document.body.appendChild(box);
+  }
+  if (!text) { box.remove(); return; }
+  box.textContent = text;
+  box.className = 'conn-banner' + (isErr ? ' err' : '');
+}
+
 function toastConn(text){
   if (localStorage.getItem('rl-updating')) return;
-  if (Date.now() - _BOOT_AT < _BOOT_GRACE_MS) return;
   const now = Date.now();
   if (!_connFailSince) { _connFailSince = now; return; }   // 首次失联：静默记时
-  if (now - _connFailSince < _CONN_FAIL_MS) return;        // 持续失联但未超时：静默
-  if (now - _connToastAt < _CONN_COOLDOWN_MS) return;      // 冷却期内不刷屏
-  _connToastAt = now;
-  toast(text, true);
-  /* 不停 reset _connFailSince：真持续故障下每次轮询都超阈值，靠冷却限频；
-     瞬时失联（安装/退出/启动）在 20 秒内随页面刷新自然归零，无需成功回调。 */
+  if (now - _BOOT_AT >= _BOOT_GRACE_MS
+      && now - _connFailSince >= _CONN_FAIL_MS) {
+    _connBanner('无法连接本地服务——正在重连，请确认 HopOn 是否在运行', true);
+  }
+  /* 未超 20 秒（安装/退出/启动空窗）：静默记时，横幅由探活循环驱动 */
 }
+
+/* 连接探活：每 5 秒 GET /api/env，按响应内容判定（引擎死时壳拦截层返回
+   502「引擎不可达」——fetch resolve 而非 reject，只靠 catch 会漏判）。
+   失败驱动横幅、成功清除。与业务轮询独立——统一连接健康源。 */
+function _connFailMark(){
+  const now = Date.now();
+  if (!_connFailSince) { _connFailSince = now; return; }
+  if (now - _BOOT_AT < _BOOT_GRACE_MS) return;           // 启动宽限：不表达
+  if (now - _connFailSince >= _CONN_FAIL_MS) {
+    _connBanner('无法连接本地服务——正在重连，请确认 HopOn 是否在运行', true);
+  } else {
+    _connBanner('连接本地服务中…');
+  }
+}
+setInterval(function(){
+  if (localStorage.getItem('rl-updating')) { _connBanner(''); return; }  // 黑幕期：清横幅
+  fetch('/api/env', { cache: 'no-store' }).then(function(r){
+    return r.json();
+  }).then(function(d){
+    if (d && d.version) {
+      if (_connFailSince) { _connFailSince = 0; _connBanner(''); }   // 恢复：清横幅
+    } else {
+      _connFailMark();   // 502/空响应 = 引擎不可达
+    }
+  }).catch(function(){ _connFailMark(); });
+}, 5000);
 
 /* 页内通知轮询：daemon 的 toast 渠道把推送同步投到 data/toasts.json，
    这里 30s 取走未读（消费型队列，服务端取走即标已读）并逐条弹出。

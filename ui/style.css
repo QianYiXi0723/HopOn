@@ -1713,3 +1713,9 @@
                    background:rgba(0,0,0,.78);flex-direction:column;
                    align-items:center;justify-content:center;gap:10px;color:#e8e8e8}
   #installing-mask[hidden]{display:none}
+  /* ---------- 连接状态横幅（2026-11-22）：引擎失联常驻顶部，恢复自动消失 ---------- */
+  .conn-banner{position:fixed;top:0;left:0;right:0;z-index:1190;
+               padding:8px 16px;text-align:center;font-size:13px;
+               background:var(--btn-bg);color:var(--fg);
+               box-shadow:0 1px 4px rgba(0,0,0,.25)}
+  .conn-banner.err{background:var(--err,#e06055);color:#fff}

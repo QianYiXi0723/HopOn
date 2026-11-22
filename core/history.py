@@ -458,15 +458,23 @@ def _ordered_games(meta: Dict[str, Dict[str, str]]) -> List[str]:
     return ordered
 
 
-def _streak(days: Dict[str, Any], game: str, today: datetime) -> int:
+def _streak(days: Dict[str, Any], game: str, today: datetime,
+            ovr: Dict[str, Any] | None = None) -> int:
     """连续完成天数：从今天往回数，遇到"查过但没完成"就断。
 
     今天还没检查过（无记录）不算断 —— 今天还没结束，不能判人家失败；
+    2026-11-20 扩展：「今天查过但没完成」同样不算断 —— 巡检时点不代表
+    今天结束时的状态（早上活跃度没满、下午打满了），把它当失败会把进行
+    中的一天错判成断签（朋友机报表全 ✓ 卡片 0 天实证）。
+    补录覆盖（2026-11-14 长按修正）也计入：ovr[key][game].finished 优先
+    于 store 原文——报表与连胜口径统一（此前 _streak 只读 store 原文，
+    补录后报表全 ✓ 卡片仍 0，两个数字自相矛盾）。
     一路回溯到最早有记录那天为止。
     """
     if not days:
         return 0
     earliest = min(days.keys())
+    ovr = ovr or {}
     streak = 0
     cursor = today
     for _ in range(KEEP_DAYS + 1):
@@ -474,21 +482,46 @@ def _streak(days: Dict[str, Any], game: str, today: datetime) -> int:
         if key < earliest:
             break
         node = (days.get(key) or {}).get(game)
+        ov = (ovr.get(key) or {}).get(game)
+        if isinstance(ov, dict):
+            # 覆盖优先（用户长按修正=明确意图）：finished=true 算完成，
+            # false = 用户明确撤销（连签就此作断）
+            if bool(ov.get("finished")):
+                streak += 1
+            else:
+                break
+            cursor -= timedelta(days=1)
+            continue
         if isinstance(node, dict):
             if node.get("finished"):
                 streak += 1
             elif node.get("known"):
-                break  # 查过、没做完 -> 断了
+                if cursor == today:
+                    pass  # 今天查过但没完成：今天还没结束，不判断
+                else:
+                    break  # 查过、没做完 -> 断了
             # 查过但全是失败（unknown）：跳过，不算断
         cursor -= timedelta(days=1)
     return streak
 
 
-def _month_stats(days: Dict[str, Any], game: str, month: str) -> Dict[str, int]:
-    """本月：完成天数 / 未完成天数（没记录的日子不算未完成）。"""
+def _month_stats(days: Dict[str, Any], game: str, month: str,
+                 ovr: Dict[str, Any] | None = None) -> Dict[str, int]:
+    """本月：完成天数 / 未完成天数（没记录的日子不算未完成）。
+
+    补录覆盖（2026-11-20 口径统一）：ovr[date][game].finished 优先于
+    store 原文——补录的日子计入 done，与月报表格子口径一致。"""
+    ovr = ovr or {}
     done = missed = 0
     for date_key in sorted(days.keys()):
         if not date_key.startswith(month):
+            continue
+        ov = (ovr.get(date_key) or {}).get(game)
+        if isinstance(ov, dict):
+            if bool(ov.get("finished")):
+                done += 1
+            else:
+                missed += 1
             continue
         node = (days.get(date_key) or {}).get(game)
         if not isinstance(node, dict) or not node.get("known"):
@@ -737,15 +770,19 @@ def _summary_unsafe(
     apply_overrides(recent)
 
     # --- 每个游戏的连胜与本月统计 ---
+    # 口径统一（2026-11-20）：补录覆盖同时计入连胜/月统计——此前
+    # _streak/_month_stats 只读 store 原文，补录后报表全 ✓ 卡片仍 0 天
+    # （朋友机报表 11/16-11/22 全 ✓ 卡片连续 0 天实证），两个数字自相矛盾。
+    ovr_all = load_overrides()
     stats: List[Dict[str, Any]] = []
     for game in games:
         info = meta.get(game) or {}
-        month_stat = _month_stats(store, game, month)
+        month_stat = _month_stats(store, game, month, ovr=ovr_all)
         stats.append({
             "game": game,
             "game_name": info.get("game_name") or game,
             "nickname": info.get("nickname") or "",
-            "streak": _streak(store, game, now),
+            "streak": _streak(store, game, now, ovr=ovr_all),
             "month_done": month_stat["done"],
             "month_missed": month_stat["missed"],
         })

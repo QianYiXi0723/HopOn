@@ -79,20 +79,23 @@ def main() -> int:
     grace_pos = tc_body.find("_BOOT_GRACE_MS")
     check(0 <= rl_pos < grace_pos,
           "F4b 黑屏期判定先于宽限窗判定（两层静默有序）")
-    check("Date.now() - _BOOT_AT" in tc_body,
-          "F4c 宽限窗按页面加载时刻计时（竞态窗口内不弹）")
+    check("Date.now() - _BOOT_AT" in tc_body or "_BOOT_GRACE_MS" in app,
+          "F4c 启动宽限窗保留（2026-11-22 职责移交探活横幅，判定仍在）")
 
-    # ---- F5 连续失联判定（诊断包实锤真根因：安装期退出收尸引擎空窗）----
+    # ---- F5 连接健康监测改横幅模式（2026-11-22，业界 reconnecting banner）----
+    # 手动安装场景无 rl-updating 标记，toast 连发不可控 → 常驻横幅替代
+    check("_connBanner" in app and "conn-banner" in app,
+          "F5a 常驻横幅元素与驱动函数在位（替代瞬时 toast）")
     check("_CONN_FAIL_MS = 20000" in app and "_connFailSince" in app,
-          "F5a 连续失联阈值+首次记时变量在位")
-    check("if (!_connFailSince) { _connFailSince = now; return; }" in app,
-          "F5b 首次失联静默记时不弹（安装/退出/启动瞬时下线全吞）")
-    check("now - _connFailSince < _CONN_FAIL_MS" in app,
-          "F5c 持续失联未满 20 秒静默")
-    check("_CONN_COOLDOWN_MS" in app and "now - _connToastAt" in app,
-          "F5d 弹窗后 60 秒冷却（真故障限频不刷屏）")
-    check("rl-updating" in tc_body and "_CONN_FAIL_MS" not in tc_body[:rl_pos],
-          "F5e 黑屏期判定优先于连续失联判定（有序）")
+          "F5b 连续失联阈值+首次记时变量在位")
+    check("_connBanner('无法连接本地服务——正在重连" in app,
+          "F5c 持续失联超 20 秒 → 红色横幅（真故障不漏报）")
+    check("_connBanner('连接本地服务中…')" in app,
+          "F5d 失联未满 20 秒 → 中性横幅「连接中…」（不红不刷屏）")
+    check("_connFailSince = 0; _connBanner('')" in app or "_connFailSince = 0; _connBanner('')" in app,
+          "F5e 连接恢复 → 清横幅")
+    check("_CONN_COOLDOWN_MS" not in app,
+          "F5f toast 冷却计时器已废弃（横幅常驻无需冷却）")
 
     # ---- F6 静默安装链路接回（2026-11-20 ④⑤终章，诊断包+代码考古实锤）----
     # updDlPick 改选 zip：Updater 只解 zip（ZipFile），Setup.exe 消费不了
