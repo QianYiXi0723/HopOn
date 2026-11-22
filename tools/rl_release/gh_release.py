@@ -83,7 +83,15 @@ def main() -> None:
 
     ver = version()
     tag = f"v{ver}"
-    print(f"目标：{tag}（main HEAD）")
+    # 2026-11-23 根修：target_commitish 不再写 "main"（GitHub 会把 tag ref
+    # 指到 remote main HEAD——发版分支与 main 不同步时，release 页源码包
+    # 就是旧代码）。改为本地 tag 指向的确切 sha，tag ref 与本地完全一致。
+    tag_sha = subprocess.run(
+        ["git", "rev-parse", tag], capture_output=True, text=True
+    ).stdout.strip()
+    if not tag_sha:
+        raise SystemExit(f"[FATAL] 本地没有 tag {tag}（先打 tag 再发版）")
+    print(f"目标：{tag} @ {tag_sha[:9]}")
 
     # 红线守卫：tag 已存在 = 这个版本发过，绝不重建/重传
     status, existing = api("GET", f"{API}/repos/{OWNER}/{REPO}/releases/tags/{tag}")
@@ -103,7 +111,7 @@ def main() -> None:
 
     status, rel = api("POST", f"{API}/repos/{OWNER}/{REPO}/releases", {
         "tag_name": tag,
-        "target_commitish": "main",
+        "target_commitish": tag_sha,
         "name": f"HopOn v{ver}",
         "body": notes,
         "draft": False,
