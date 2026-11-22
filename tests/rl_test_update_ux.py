@@ -114,6 +114,15 @@ def main() -> int:
     check('"/Programs" / "HopOn"' not in lu,
           "F6e 硬算标准目录已清除（自定义目录用户不再装出双份）")
 
+    # ---- F7 悬停提示去重（2026-11-23 用户圈图裁决：进度条已有的数值
+    #      悬停不再重复）----
+    check("live.tasks.map" not in app,
+          "F7a 悬停 tooltip 的任务明细分支已删除（进度重复不再出现）")
+    check("if (taskTip) tipParts.push(taskTip);" in app,
+          "F7b tip 组装空段过滤（防「｜｜」双分隔符）")
+    check("tipParts.join(' ｜ ')" in app,
+          "F7c tip 单源组装（上次检查/本月完成经 tipParts）")
+
     print(f"PASS {PASS} / FAIL {FAIL}")
     return 0 if FAIL == 0 else 1
 
