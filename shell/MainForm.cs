@@ -546,6 +546,46 @@ namespace HopOn
             };
             _engine = Process.Start(psi);
             AttachJobObject(_engine);           // 内核级收尸：壳死 = 引擎死
+            // 引擎守护（2026-11-22 朋友机实证：引擎中途死亡后壳不管，页面持续
+            // 「无法连接本地」直到人工重启——业界 supervisor 模式：引擎意外
+            // 退出自动拉起，连续失败退避停止防崩溃循环）
+            _engine.EnableRaisingEvents = true;
+            _engine.Exited += Engine_Exited;
+        }
+
+        private int _engineRestartFails = 0;
+
+        /// <summary>引擎意外退出（崩溃/被外部杀）→ 自动重启拉起。
+        /// 主动退出（ReallyExit 的 Kill）走 _reallyExit 不触发重启；
+        /// 连续 3 次重启失败停止自动拉起，防「起不来→退出→再起」死循环；
+        /// 端口已有 HopOn 实例在服务时不重复拉起。</summary>
+        private void Engine_Exited(object sender, EventArgs e)
+        {
+            if (_reallyExit) return;
+            var dead = sender as Process;
+            Log("引擎意外退出（pid=" + (dead != null ? dead.Id.ToString() : "?") + "）→ 自动重启");
+            try
+            {
+                if (IsHopOnAlive(_port)) return;   // 端口已有 HopOn 实例在服务 → 无需拉起
+                StartEngine(_port);
+                bool ready = Task.Run(() => WaitEngineReady(_port, 20000))
+                                  .GetAwaiter().GetResult();
+                if (!ready)
+                {
+                    _engineRestartFails++;
+                    Log("引擎自动重启后 20 秒未就绪（第 " + _engineRestartFails + " 次，详见 engine.log）");
+                    if (_engineRestartFails >= 3)
+                        Log("连续 3 次重启失败，停止自动拉起（请查看 logs\\engine.log）");
+                    return;
+                }
+                _engineRestartFails = 0;
+                Log("引擎已自动重启并就绪，页面连接自动恢复");
+            }
+            catch (Exception ex)
+            {
+                _engineRestartFails++;
+                Log("引擎自动重启异常（第 " + _engineRestartFails + " 次）：" + ex.Message);
+            }
         }
 
         private static bool WaitEngineReady(int port, int timeoutMs)

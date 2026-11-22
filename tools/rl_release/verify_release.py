@@ -92,8 +92,8 @@ print("\n=== 4. 版本与关键改动 ===")
 idx = (OUT / "engine" / "ui" / "index.html").read_text(encoding="utf-8")
 chk(not re.search(r"v\d+\.\d+\.\d+ · 本地运行", idx),
     "侧栏版本为服务端注入（静态页无硬编码版本，防漂移）")
-chk('<span class="foot-txt"></span>' in idx,
-    "侧栏版本占位在场（2026-11-21 改为空占位：删「· 本地运行」后缀）")
+chk('<span class="foot-txt">检查更新</span>' in idx,
+    "侧栏版本行=检查更新按钮（2026-11-22 用户设计：动作可见，版本号进悬停）")
 daemon = (OUT / "engine" / "daemon.py").read_text(encoding="utf-8")
 chk("use_tray=False" in daemon, "daemon 去托盘改写已生效")
 chk("use_tray=not args.no_tray" not in daemon, "daemon 原托盘开关已消失")
