@@ -153,17 +153,18 @@ def main() -> int:
     check(calls == 1 and state_file.exists(),
           "Q7 quiet_enabled=False：正常发送+落 state（回归）")
 
-    # ---- 跨天窗周键不变量（周报补发链的纯函数证据）----
+    # ---- 跨天窗周键不变量（2026-11-22 口径变更：翻键点=周一 04:30）----
     sun = datetime(2026, 11, 15)          # 2026-11-15=周日
-    late_sun = sun.replace(hour=23, minute=30)     # 窗内跳过的周日夜
-    mon_early = sun.replace(day=16, hour=0, minute=30)   # 次日凌晨仍在窗内
-    mon_after = sun.replace(day=16, hour=7, minute=30)   # 窗结束后第一个 tick
+    late_sun = sun.replace(hour=23, minute=30)     # 周日 23:30（免打扰窗内）
+    mon_early = sun.replace(day=16, hour=0, minute=30)   # 周一 00:30 仍在窗内
+    mon_after = sun.replace(day=16, hour=8, minute=30)   # 周一 08:30 窗结束
     key_late = D.weekly_slot_week(late_sun)
-    check(key_late == D.weekly_slot_week(mon_early)
-          == D.weekly_slot_week(mon_after),
-          "Q8 跨天窗：周日夜→次日凌晨→窗后，周键不变（补发链成立）")
-    check(key_late != D.weekly_slot_week(sun.replace(hour=20, minute=59)),
-          "Q8b 槽位边界：周日 21:00 前属上周键（翻键边界）")
+    check(key_late == D.weekly_slot_week(mon_early),
+          "Q8a 窗内键不变：周日夜=周一凌晨（跨天窗前段同上周槽位）")
+    check(D.weekly_slot_week(sun.replace(hour=20, minute=59)) == key_late,
+          "Q8b 周日全天属上周槽位（翻键点已迁周一 04:30）")
+    check(D.weekly_slot_week(mon_after) != key_late,
+          "Q8c 窗后周一 08:30 键已翻（本周槽位）——state 未落 → due 仍真 → 自动补发")
 
     # ---- _quiet_now 直测（跨零点/边界/非法串/未启用）----
     cfg = _push_cfg(True, "23:00", "08:00")
