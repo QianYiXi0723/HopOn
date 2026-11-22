@@ -428,76 +428,73 @@ namespace HopOn
                 string reason = "Bad Gateway";
                 byte[] body = Encoding.UTF8.GetBytes("{\"ok\":false,\"message\":\"引擎不可达\"}");
                 string ctype = "application/json; charset=utf-8";
-                try
+                // 连接类失败重试 2 次（2026-11-22 朋友机「点了没反应」取证：
+                // 引擎巡检期响应瞬时变慢，转发单次放弃加重感知）；
+                // 引擎已应答（任何 HTTP 码）不重试。
+                for (int attempt = 1; attempt <= 3; attempt++)
                 {
-                    // 连接类失败重试 2 次（2026-11-22 朋友机「点了没反应」取证：
-                    // 引擎巡检期间响应瞬时变慢，转发单次放弃加重感知）；
-                    // 引擎已应答（任何 HTTP 码）不重试。
-                    for (int attempt = 1; attempt <= 3; attempt++)
+                    code = 502;
+                    reason = "Bad Gateway";
+                    body = Encoding.UTF8.GetBytes("{\"ok\":false,\"message\":\"引擎不可达\"}");
+                    ctype = "application/json; charset=utf-8";
+                    bool answered = false;
+                    try
                     {
-                        code = 502;
-                        reason = "Bad Gateway";
-                        body = Encoding.UTF8.GetBytes("{\"ok\":false,\"message\":\"引擎不可达\"}");
-                        ctype = "application/json; charset=utf-8";
-                        bool answered = false;
-                        try
+                        var req = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port + pathAndQuery);
+                        req.Method = method;
+                        req.Proxy = null;
+                        req.Timeout = 30000;
+                        req.ReadWriteTimeout = 30000;
+                        req.KeepAlive = false;
+                        req.Accept = "application/json";
+                        if (reqBody != null && reqBody.Length > 0)
                         {
-                            var req = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port + pathAndQuery);
-                            req.Method = method;
-                            req.Proxy = null;
-                            req.Timeout = 30000;
-                            req.ReadWriteTimeout = 30000;
-                            req.KeepAlive = false;
-                            req.Accept = "application/json";
-                            if (reqBody != null && reqBody.Length > 0)
-                            {
-                                req.ContentType = string.IsNullOrEmpty(reqType) ? "application/json" : reqType;
-                                req.ContentLength = reqBody.Length;
-                                using (var rs = req.GetRequestStream()) rs.Write(reqBody, 0, reqBody.Length);
-                            }
-                            using (var resp = (HttpWebResponse)req.GetResponse())
-                            {
-                                code = (int)resp.StatusCode;
-                                reason = resp.StatusDescription;
-                                if (!string.IsNullOrEmpty(resp.ContentType)) ctype = resp.ContentType;
-                                using (var rs = resp.GetResponseStream())
-                                using (var ms = new MemoryStream())
-                                {
-                                    if (rs != null) rs.CopyTo(ms);
-                                    body = ms.ToArray();
-                                }
-                            }
-                            answered = true;
+                            req.ContentType = string.IsNullOrEmpty(reqType) ? "application/json" : reqType;
+                            req.ContentLength = reqBody.Length;
+                            using (var rs = req.GetRequestStream()) rs.Write(reqBody, 0, reqBody.Length);
                         }
-                        catch (WebException wex)
+                        using (var resp = (HttpWebResponse)req.GetResponse())
                         {
-                            var hr = wex.Response as HttpWebResponse;
-                            if (hr != null)
+                            code = (int)resp.StatusCode;
+                            reason = resp.StatusDescription;
+                            if (!string.IsNullOrEmpty(resp.ContentType)) ctype = resp.ContentType;
+                            using (var rs = resp.GetResponseStream())
+                            using (var ms = new MemoryStream())
                             {
-                                code = (int)hr.StatusCode;
-                                reason = hr.StatusDescription;
-                                if (!string.IsNullOrEmpty(hr.ContentType)) ctype = hr.ContentType;
-                                using (var rs = hr.GetResponseStream())
-                                using (var ms = new MemoryStream())
-                                {
-                                    if (rs != null) rs.CopyTo(ms);
-                                    body = ms.ToArray();
-                                }
-                                hr.Dispose();
-                                answered = true;   // 引擎已应答（HTTP 错误码）→ 不重试
-                            }
-                            else
-                            {
-                                Log("转发 " + pathAndQuery + " 失败（第 " + attempt + "/3 次）：" + wex.Message);
+                                if (rs != null) rs.CopyTo(ms);
+                                body = ms.ToArray();
                             }
                         }
-                        catch (Exception ex)
-                        {
-                            Log("转发 " + pathAndQuery + " 异常：" + ex.Message);
-                        }
-                        if (answered || attempt >= 3) break;
-                        Thread.Sleep(400 * attempt);
+                        answered = true;
                     }
+                    catch (WebException wex)
+                    {
+                        var hr = wex.Response as HttpWebResponse;
+                        if (hr != null)
+                        {
+                            code = (int)hr.StatusCode;
+                            reason = hr.StatusDescription;
+                            if (!string.IsNullOrEmpty(hr.ContentType)) ctype = hr.ContentType;
+                            using (var rs = hr.GetResponseStream())
+                            using (var ms = new MemoryStream())
+                            {
+                                if (rs != null) rs.CopyTo(ms);
+                                body = ms.ToArray();
+                            }
+                            hr.Dispose();
+                            answered = true;   // 引擎已应答（HTTP 错误码）→ 不重试
+                        }
+                        else
+                        {
+                            Log("转发 " + pathAndQuery + " 失败（第 " + attempt + "/3 次）：" + wex.Message);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("转发 " + pathAndQuery + " 异常（第 " + attempt + "/3 次）：" + ex.Message);
+                    }
+                    if (answered || attempt >= 3) break;
+                    Thread.Sleep(400 * attempt);
                 }
 
                 try
@@ -585,8 +582,7 @@ namespace HopOn
             try { exitCode = "，退出码=" + dead.ExitCode; } catch { }
             Log("引擎意外退出（pid=" + (dead != null ? dead.Id.ToString() : "?") + exitCode + "）→ 自动重启");
             // 退出码语义（死因分类）：0=正常；0x40010004 等=被 TerminateProcess
-            // 族外部终结（安全软件/人工/脚本）；0xC0000005 等异常码=真崩溃。
-            // 崩溃型的 Python 栈在数据根 logs/crash.log（faulthandler）。
+            // 族外部终结（安全软件/人工/脚本）；0xC0000005 等=真崩溃。
             try
             {
                 if (IsHopOnAlive(_port)) return;   // 端口已有 HopOn 实例在服务 → 无需拉起
