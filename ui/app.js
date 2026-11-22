@@ -4529,28 +4529,25 @@ function gameCardHtml(g){
     daily = '<div class="gcard-daily"><span class="dim">今日无日常判定数据</span></div>';
   }
 
-  /* 回顾信息（悬浮层）：上次检查｜每日任务明细｜本月统计。
-     顺序固定，一项都不删；#tip 是 textContent，换成「｜」分隔让它自然折行。 */
+  /* 回顾信息（悬浮层）：上次检查｜本月统计。
+     2026-11-23 用户裁决：日常进度（任务明细的数值）与卡片上的进度条完全
+     重复，悬停不再重复显示——live.tasks 明细分支删除；失败原因（why）与
+     历史未完成计数保留（进度条表达不了的信息）。taskTip 可能为空，组装
+     时过滤空段避免「｜｜」双分隔符。 */
   let taskTip;
   if (why) {
     taskTip = why;                       // 失败/待更新/未建号的原因（长文只进 tip）
-  } else if (live && (live.tasks || []).length) {
-    taskTip = live.tasks.map(function(t){
-      const hit = /(\d+)\s*\/\s*(\d+)/.exec(t.progress || '');
-      const val = hit ? (parseInt(hit[1], 10) + '/' + parseInt(hit[2], 10))
-                      : (t.progress ? String(t.progress) : (t.done ? '✓' : '✗'));
-      return t.name + ' ' + val;
-    }).join(' · ');
   } else if (today && today.known) {
     taskTip = today.finished ? '今日已完成'
       : '无实时明细 · 历史未完成 ' + (today.unfinished_tasks || 0) + ' 项';
   } else {
-    taskTip = '无实时明细';
+    taskTip = '';
   }
   const missed = Number(g.month_missed || 0);
-  const tip = '上次检查 ' + (today && today.last ? shortStamp(today.last) : '—') +
-    ' ｜ ' + taskTip +
-    ' ｜ 本月完成 ' + Number(g.month_done || 0) + ' 天' + (missed > 0 ? ' · 漏 ' + missed : '');
+  const tipParts = ['上次检查 ' + (today && today.last ? shortStamp(today.last) : '—')];
+  if (taskTip) tipParts.push(taskTip);
+  tipParts.push('本月完成 ' + Number(g.month_done || 0) + ' 天' + (missed > 0 ? ' · 漏 ' + missed : ''));
+  const tip = tipParts.join(' ｜ ');
 
   /* 连续天数保护话术：streak > 0 且今天还没做完时，用损失厌恶框架提醒
      「别断」——琥珀不用红（对比是信息不是告警，色彩纪律） */
