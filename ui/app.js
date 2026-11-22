@@ -953,10 +953,11 @@ function updDlPoll(){
 function refreshNotice(){
   fetch('/api/env').then(function(r){ return r.json(); }).then(function(d){
     /* 左下角版本号：以 /api/env 的 version 为准（HTML 里不再写死数字）。
-       拿不到就保持"本地运行"，不显示一个可能是错的版本。 */
+       拿不到就保持空（2026-11-20 删「· 本地运行」后缀——永远为真零信息量，
+       引擎未应答的罕见态下版本行短暂空白，不误导）。 */
     const ver = document.getElementById('ver-line');
     const label = ver ? ver.querySelector('.foot-txt') : null;
-    if (label && d.version) label.textContent = 'v' + d.version + ' · 本地运行';
+    if (label && d.version) label.textContent = 'v' + d.version;
     /* 演示模式横幅：出厂 mock 配置时点亮，扫码切换真实数据源后自然消失 */
     const wb = document.getElementById('welcome');
     if (wb) wb.hidden = !d.demo_mode || welcomeDismissed;
