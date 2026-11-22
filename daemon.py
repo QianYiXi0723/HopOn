@@ -569,23 +569,47 @@ def due_slots(
 WEEKLY_STATE_FILE = LOGS_DIR / ".last_weekly"
 
 
-def weekly_slot_week(now: datetime) -> str:
-    """最近一个已过去的「周日 21:00」槽位所属的 ISO 周键（如 "2026-W44"）。
+SLOT_VERSION = "2"   # 发送槽位口径版本（2026-11-22：周日 21:00 → 周一 04:30，
+                     # 统计窗口改自然周对齐游戏日）；state 里版本不符时强制
+                     # 重发一次，防口径切换的过渡周静默。
 
-    周日 21:00 之前指的是上一周的槽位（那时该补发的是上周报告），
-    21:00 起切换到本周。纯函数，rl_test_weekly 覆盖边界。
+
+def weekly_slot_monday(now: datetime) -> datetime:
+    """最近一个已过去的「周一 04:30」发送槽位锚（该周周一的日期）。
+
+    周一 04:30 之前指上一周的槽位（那时该补发的是上周报告），
+    04:30 起切到本周。纯函数，rl_test_weekly 覆盖边界。
+    2026-11-22 口径变更：统计窗口=上一完整自然周对齐游戏日（04:00 界），
+    发送时机随迁至周一 04:30——上一周最后一个游戏日（周日 04:00~周一
+    04:00）此刻刚好结算完毕，报告为完整最终版。
     """
-    last_sunday = now.date() - timedelta(days=(now.weekday() - 6) % 7)
-    slot = datetime.combine(last_sunday, datetime.min.time()).replace(hour=21)
+    monday = now.date() - timedelta(days=now.weekday())
+    slot = datetime.combine(monday, datetime.min.time()).replace(hour=4, minute=30)
     if now < slot:
-        last_sunday -= timedelta(days=7)
-    iso = last_sunday.isocalendar()
+        monday -= timedelta(days=7)
+    return monday
+
+
+def weekly_slot_week(now: datetime) -> str:
+    """最近一个已过去的「周一 04:30」发送槽位所属的 ISO 周键（如 "2026-W48"）。
+
+    周一 04:30 之前指的是上一周的槽位（那时该补发的是上周报告），
+    04:30 起切换到本周。纯函数，rl_test_weekly 覆盖边界。
+    """
+    iso = weekly_slot_monday(now).isocalendar()
     return f"{iso.year}-W{iso.week:02d}"
 
 
 def weekly_due(now: datetime, state: Optional[Dict[str, Any]] = None) -> bool:
-    """本周槽位还没发过周报 → True。"""
-    return (state or {}).get("week") != weekly_slot_week(now)
+    """本周槽位还没发过周报 → True。
+
+    state 里槽位口径版本（slot_version）不符时也发：口径切换的过渡周
+    不静默（否则旧 state 恰与新槽位键同值，用户要空等一整周）。
+    """
+    st = state or {}
+    if st.get("slot_version") != SLOT_VERSION:
+        return True
+    return st.get("week") != weekly_slot_week(now)
 
 
 def load_weekly_state() -> Dict[str, Any]:
@@ -715,11 +739,22 @@ def run_weekly_report() -> bool:
         )
         config.query.provider = "miyoushe"
     try:
-        digest = history.weekly_digest(days=7)
-        prev = history.weekly_digest(days=7, offset=1)
+        # 统计窗口=上一完整自然周（按游戏日 04:00 界对齐，2026-11-22 口径变更）：
+        # 发送槽位锚（本周一）-7 天=上周一游戏日键，+6=上周日游戏日键——
+        # 显式键范围替代「最近 7 个存在键」切片（漏检一天时旧切片会往前漂移）。
+        # prev=再往前一周（上上周），供周报趋势对比。
+        slot_mon = weekly_slot_monday(datetime.now())
+        last_mon = slot_mon - timedelta(days=7)
+        start_key = last_mon.strftime("%Y-%m-%d")
+        end_key = (last_mon + timedelta(days=6)).strftime("%Y-%m-%d")
+        prev_start = (last_mon - timedelta(days=7)).strftime("%Y-%m-%d")
+        prev_end = (last_mon - timedelta(days=1)).strftime("%Y-%m-%d")
+        digest = history.weekly_digest(start_key=start_key, end_key=end_key)
+        prev = history.weekly_digest(start_key=prev_start, end_key=prev_end)
         body = format_weekly_body(digest, prev)
         if not body:
-            logger.info("周报：过去 7 天没有任何已检查数据，跳过发送")
+            logger.info(
+                "周报：%s ~ %s 没有任何已检查数据，跳过发送", start_key, end_key)
             return False
         notifiers = build_notifiers(config.push)
         if not notifiers:
@@ -756,6 +791,7 @@ def _maybe_weekly_report() -> None:
         sent = run_weekly_report()
         save_weekly_state({
             "week": week_key,
+            "slot_version": SLOT_VERSION,
             "sent_at": now.strftime("%Y-%m-%d %H:%M:%S"),
             "ok": bool(sent),
         })

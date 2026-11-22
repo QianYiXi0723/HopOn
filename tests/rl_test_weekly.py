@@ -108,27 +108,31 @@ check("T2h 整周没查到的游戏不进文案",
       }) == "")
 
 # ---------------------------------------------------------------- T3 调度
-sun = datetime(2026, 11, 1, 21, 0)        # 周日 21:00（2026-11-01 实际是周日）
-sun_before = datetime(2026, 11, 1, 20, 59)
-prev_sun = datetime(2026, 10, 25, 21, 0)  # 上周日 21:00
-mon = datetime(2026, 11, 2, 9, 0)         # 周一早上
-sat = datetime(2026, 11, 7, 12, 0)        # 下周六（同一 ISO 周）
-check("T3a 测试基准 11-01 是周日", datetime(2026, 11, 1).weekday() == 6)
+# 2026-11-22 口径变更：翻键点 周日 21:00 → 周一 04:30（自然周对齐游戏日）
+mon0 = datetime(2026, 11, 2, 4, 30)        # 周一 04:30 槽位（2026-11-02 实际是周一）
+mon_before = datetime(2026, 11, 2, 4, 29)  # 槽位前一分钟
+prev_mon = datetime(2026, 10, 26, 5, 0)    # 上周一（上一周槽位已过一周）
+sat = datetime(2026, 11, 7, 12, 0)         # 本周六（同一 ISO 周）
+sun = datetime(2026, 11, 8, 12, 0)         # 本周日（同一 ISO 周内）
+check("T3a 测试基准 11-02 是周一", datetime(2026, 11, 2).weekday() == 0)
 
-w_this = daemon.weekly_slot_week(sun)
-w_prev = daemon.weekly_slot_week(sun_before)
-check("T3b 周日 21:00 前指向上周槽位", w_prev == daemon.weekly_slot_week(prev_sun),
-      f"{w_prev} vs {daemon.weekly_slot_week(prev_sun)}")
-check("T3c 21:00 起切本周", w_this != w_prev, f"{w_this} vs {w_prev}")
-check("T3d 周六仍是本周槽位", daemon.weekly_slot_week(sat) == w_this)
+w_this = daemon.weekly_slot_week(mon0)
+w_prev = daemon.weekly_slot_week(mon_before)
+check("T3b 周一 04:30 前指向上周槽位", w_prev == daemon.weekly_slot_week(prev_mon),
+      f"{w_prev} vs {daemon.weekly_slot_week(prev_mon)}")
+check("T3c 04:30 起切本周", w_this != w_prev, f"{w_this} vs {w_prev}")
+check("T3d 周六/周日仍是本周槽位",
+      daemon.weekly_slot_week(sat) == w_this and daemon.weekly_slot_week(sun) == w_this)
 
-check("T3e 到点未发→发", daemon.weekly_due(sun, {"week": w_prev}))
-check("T3f 已发→不重发", not daemon.weekly_due(sun, {"week": w_this}))
-check("T3g 周一早上补发", daemon.weekly_due(mon, {"week": w_prev}))
-check("T3h 周内一直补发直到发出", daemon.weekly_due(sat, {"week": w_prev}))
-check("T3i 补发后不再发", not daemon.weekly_due(sat, {"week": w_this}))
-check("T3j 周日 20:59 上周已发→不发", not daemon.weekly_due(sun_before, {"week": w_prev}))
-check("T3k 状态丢失→会再发一次", daemon.weekly_due(sun, {}))
+check("T3e 到点未发→发", daemon.weekly_due(mon0, {"week": w_prev, "slot_version": "2"}))
+check("T3f 已发→不重发", not daemon.weekly_due(mon0, {"week": w_this, "slot_version": "2"}))
+check("T3g 周内补发", daemon.weekly_due(sat, {"week": w_prev, "slot_version": "2"}))
+check("T3i 补发后不再发", not daemon.weekly_due(sat, {"week": w_this, "slot_version": "2"}))
+check("T3j 槽位未翻时旧键 state→不发",
+      not daemon.weekly_due(mon_before, {"week": w_prev, "slot_version": "2"}))
+check("T3k 状态丢失→会再发一次", daemon.weekly_due(mon0, {}))
+check("T3k2 旧口径 state（无 slot_version）→口径切换强制重发一次",
+      daemon.weekly_due(mon0, {"week": w_this}))
 import re as _re
 check("T3l 槽位键是 ISO 周格式", bool(_re.match(r"^\d{4}-W\d{2}$", w_this)), w_this)
 
@@ -186,6 +190,32 @@ check("T4k 非数字→None", normalize_recover_seconds("abc") is None)
 # TaskItem.to_dict 带出新字段
 check("T4l to_dict 带出 recover_seconds",
       resin.to_dict().get("recover_seconds") == 4900, str(resin.to_dict()))
+
+# ---------------------------------------------------------------- T5 显式键范围（2026-11-22 周报口径变更）
+# 断键防漂移：store 缺 11-17（那天没巡检），显式 start/end 范围只算范围内
+# 存在键，不会像数量切片那样往前多吞一天（2026-11-16）
+store5 = {
+    "2026-11-16": {"endfield": {"known": True, "finished": True}},
+    # 11-17 缺（没巡检）
+    "2026-11-18": {"endfield": {"known": True, "finished": True}},
+    "2026-11-19": {"endfield": {"known": True, "finished": True}},
+    "2026-11-20": {"endfield": {"known": True, "finished": True}},
+    "2026-11-21": {"endfield": {"known": True, "finished": True}},
+    "2026-11-22": {"endfield": {"known": True, "finished": True}},
+    "2026-11-23": {"endfield": {"known": True, "finished": True}},
+    "2026-11-24": {"endfield": {"known": True, "finished": True}},  # 本周一（今天）
+}
+history._atomic_write({"version": 1, "days": store5})
+d5 = history.weekly_digest(start_key="2026-11-16", end_key="2026-11-23")
+ef = next(g for g in d5.get("games", []) if g.get("game") == "endfield")
+check("T5a 显式范围 done=7（范围内 7 键全算：11/16,18-23）",
+      ef.get("done_days") == 7, str(ef))
+d5_slice = history.weekly_digest(days=7)   # 数量切片（旧行为）
+ef_slice = next(g for g in d5_slice.get("games", []) if g.get("game") == "endfield")
+check("T5b 对照：数量切片会吞范围外的 11/24（旧行为漂移实证）",
+      ef_slice.get("done_days") == 7, str(ef_slice.get("done_days")))
+prev5 = history.weekly_digest(start_key="2026-11-09", end_key="2026-11-15")
+check("T5c prev 范围（上上周）独立可查", isinstance(prev5.get("games", []), list))
 
 print(f"\n=== rl_test_weekly.py: {PASS} PASS / {FAIL} FAIL ===")
 sys.exit(1 if FAIL else 0)

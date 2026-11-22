@@ -645,14 +645,19 @@ def summary(
         return empty_payload(days, today=now)
 
 
-def weekly_digest(days: int = DEFAULT_DAYS, offset: int = 0) -> Dict[str, Any]:
+def weekly_digest(days: int = DEFAULT_DAYS, offset: int = 0,
+                  start_key: str | None = None,
+                  end_key: str | None = None) -> Dict[str, Any]:
     """过去 N 个游戏日的逐游戏完成统计（daemon 周报与报表页「本周汇总」同口径）。
 
     ``offset`` 向前跳过的窗口数：0 = 最近 N 天（默认），1 = 上一批 N 天
-    （周报趋势对比用）。一天的口径与 record() 一致：known = 当天查到过
-    数据；done = 当天完成；missed = known - done（查过但没做完）。
-    整天没查过的游戏不进结果，整周没有任何数据时 games 为空列表。
-    任何异常兜底成空结构 —— 周报不发可以，守护进程不能挂。
+    （周报趋势对比用）。 ``start_key``/``end_key``（2026-11-22 周报口径
+    变更新增）：显式游戏日键范围，给出时优先于 days/offset 切片——周报
+    按「上一完整自然周（对齐游戏日 04:00 界）」统计，断键（某天没巡检）
+    时显式范围不会往前漂移（数量切片会）。一天的口径与 record() 一致：
+    known = 当天查到过数据；done = 当天完成；missed = known - done（查过
+    但没做完）。整天没查过的游戏不进结果，范围内没有任何数据时 games
+    为空列表。任何异常兜底成空结构 —— 周报不发可以，守护进程不能挂。
     """
     days = max(1, min(int(days or DEFAULT_DAYS), 60))
     offset = max(0, min(int(offset or 0), 52))
@@ -664,8 +669,13 @@ def weekly_digest(days: int = DEFAULT_DAYS, offset: int = 0) -> Dict[str, Any]:
         keys = sorted(
             k for k, v in store.items() if isinstance(k, str) and isinstance(v, dict)
         )
-        end = len(keys) - offset
-        keys = keys[max(0, end - days):end]
+        if start_key is not None or end_key is not None:
+            lo = start_key if start_key is not None else ""
+            hi = end_key if end_key is not None else "\U0010FFFF"
+            keys = [k for k in keys if lo <= k <= hi]
+        else:
+            end = len(keys) - offset
+            keys = keys[max(0, end - days):end]
         stats: Dict[str, Dict[str, int]] = {}
         for key in keys:
             for game, cell in store[key].items():
