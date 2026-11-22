@@ -919,36 +919,48 @@ function updDlAutoInstall(){
   btn.hidden = false;
   btn.disabled = true;
   btn.textContent = '正在静默安装… 应用将自动重启';
-  fetch('/api/update/install').then(function(r){ return r.json(); }).then(function(d){
-    if (d && !d.ok) {
-      localStorage.removeItem('rl-updating');
-      document.getElementById('installing-mask').hidden = true;
-      toast(d.error || '安装发起失败', true);
-      updDlReset();
-      return;
-    }
-    document.getElementById('installing-mask').hidden = false;
-    document.getElementById('inst-ver').textContent = 'v' + (window.__updateInfo ? window.__updateInfo.latest : '');
-    updInstallProgress();   // 黑暗期时间基进度+阶段文案（业界惯例）
-    let tries = 0;
-    const probe = function(){
-      tries++;
-      // 超时兜底必须在失败路径同样生效（2026-11-20 修复）：tries 判定放
-      // fetch 之前——引擎装完没被拉起时 fetch 永远走 catch，判定留在
-      // then 里黑幕会挂到天荒地老。约 90 秒（1.5s × 60）给手动启动指引。
-      if (tries > 60) {
+  /* 连接类失败重试 2 次（2026-11-22 朋友机实证：引擎巡检期响应瞬时变慢）；
+     端点已应答（HTTP 错误码）不重试——那是确定性失败。 */
+  let installTries = 0;
+  const postInstall = function(){
+    installTries++;
+    fetch('/api/update/install').then(function(r){ return r.json(); }).then(function(d){
+      if (d && !d.ok) {
         localStorage.removeItem('rl-updating');
         document.getElementById('installing-mask').hidden = true;
+        toast(d.error || '安装发起失败', true);
         updDlReset();
-        toast('等待重启超时——安装已完成，请手动启动 HopOn，或到「打开文件夹」手动安装', true);
         return;
       }
-      fetch('/api/update/download').then(function(){
-        setTimeout(function(){ location.reload(); }, 800);
-      }).catch(function(){ setTimeout(probe, 1500); });
-    };
-    setTimeout(probe, 6000);
-  }).catch(function(){ updDlReset(); toast('无法连接本地服务', true); });
+      document.getElementById('installing-mask').hidden = false;
+      document.getElementById('inst-ver').textContent = 'v' + (window.__updateInfo ? window.__updateInfo.latest : '');
+      updInstallProgress();   // 黑暗期时间基进度+阶段文案（业界惯例）
+      let tries = 0;
+      const probe = function(){
+        tries++;
+        // 超时兜底必须在失败路径同样生效（2026-11-20 修复）：tries 判定放
+        // fetch 之前——引擎装完没被拉起时 fetch 永远走 catch，判定留在
+        // then 里黑幕会挂到天荒地老。约 90 秒（1.5s × 60）给手动启动指引。
+        if (tries > 60) {
+          localStorage.removeItem('rl-updating');
+          document.getElementById('installing-mask').hidden = true;
+          updDlReset();
+          toast('等待重启超时——安装已完成，请手动启动 HopOn，或到「打开文件夹」手动安装', true);
+          return;
+        }
+        fetch('/api/update/download').then(function(){
+          setTimeout(function(){ location.reload(); }, 800);
+        }).catch(function(){ setTimeout(probe, 1500); });
+      };
+      setTimeout(probe, 6000);
+    }).catch(function(){
+      /* 连接类失败重试 2 次（引擎巡检期响应瞬时变慢）；端点已应答不重试 */
+      if (installTries < 3) { setTimeout(postInstall, 1200 * installTries); return; }
+      updDlReset();
+      toast('无法连接本地服务', true);
+    });
+  };
+  postInstall();
 }
 function updDlPoll(){
   fetch('/api/update/download').then(function(r){ return r.json(); }).then(function(d){
