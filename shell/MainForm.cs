@@ -563,7 +563,12 @@ namespace HopOn
         {
             if (_reallyExit) return;
             var dead = sender as Process;
-            Log("引擎意外退出（pid=" + (dead != null ? dead.Id.ToString() : "?") + "）→ 自动重启");
+            string exitCode = "";
+            try { exitCode = "，退出码=" + dead.ExitCode; } catch { }
+            Log("引擎意外退出（pid=" + (dead != null ? dead.Id.ToString() : "?") + exitCode + "）→ 自动重启");
+            // 退出码语义（死因分类）：0=正常；0x40010004 等=被 TerminateProcess
+            // 族外部终结（安全软件/人工/脚本）；0xC0000005 等异常码=真崩溃。
+            // 崩溃型的 Python 栈在数据根 logs/crash.log（faulthandler）。
             try
             {
                 if (IsHopOnAlive(_port)) return;   // 端口已有 HopOn 实例在服务 → 无需拉起
