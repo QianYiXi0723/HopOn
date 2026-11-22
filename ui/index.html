@@ -60,15 +60,13 @@
       <button type="button" data-tab="schedule"><span class="nav-ico"><svg class="ico"><use href="#i-clock"/></svg></span>定时与状态</button>
     </nav>
     <div class="side-foot">
-      <button type="button" class="foot-row" id="btn-theme" data-mode="auto"
-              data-tip="配色模式：跟随系统 / 深色 / 浅色，点击可依次切换">
+      <button type="button" class="foot-row" id="btn-theme" data-mode="auto">
         <span class="foot-ico" id="theme-ico">🖥️</span><span class="foot-txt" id="theme-txt">跟随系统</span>
       </button>
       <!-- 版本号由 /api/env 的 version 字段填入（唯一来源 core/__init__.py），
            这里只放一个不含数字的占位，别再写死 -->
-      <button type="button" class="foot-row" id="ver-line"
-              data-tip="看看有没有新版本可以升（需要联网）">
-        <span class="foot-ico"><svg class="ico"><use href="#i-laptop"/></svg></span><span class="foot-txt"></span>
+      <button type="button" class="foot-row" id="ver-line">
+        <span class="foot-ico"><svg class="ico"><use href="#i-laptop"/></svg></span><span class="foot-txt">检查更新</span>
       </button>
       <button type="button" class="foot-row" id="btn-official-group"
               data-tip="官方 QQ 交流群：1135683779 —— 点击复制群号">

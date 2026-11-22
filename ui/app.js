@@ -984,12 +984,13 @@ function updDlPoll(){
 
 function refreshNotice(){
   fetch('/api/env').then(function(r){ return r.json(); }).then(function(d){
-    /* 左下角版本号：以 /api/env 的 version 为准（HTML 里不再写死数字）。
-       拿不到就保持空（2026-11-20 删「· 本地运行」后缀——永远为真零信息量，
-       引擎未应答的罕见态下版本行短暂空白，不误导）。 */
+    /* 左下角版本行（2026-11-22 用户设计）：常驻「检查更新」按钮（动作可见），
+       版本号挪到悬停提示（信息型内容进 tooltip，业界 1Password/Strata 同款）。
+       版本以 /api/env 的 version 为准，拿不到时悬停留空（不显示可能错的版本）。 */
     const ver = document.getElementById('ver-line');
     const label = ver ? ver.querySelector('.foot-txt') : null;
-    if (label && d.version) label.textContent = 'v' + d.version;
+    if (label) label.textContent = '检查更新';
+    if (ver && d.version) ver.setAttribute('data-tip', '当前版本 v' + d.version);
     /* 演示模式横幅：出厂 mock 配置时点亮，扫码切换真实数据源后自然消失 */
     const wb = document.getElementById('welcome');
     if (wb) wb.hidden = !d.demo_mode || welcomeDismissed;
