@@ -61,6 +61,16 @@ def setup_logging() -> None:
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     root.addHandler(handler)
+    # faulthandler（2026-11-22 朋友机引擎静默死亡实证）：pythonw 无 stderr，
+    # 硬崩溃（段错误/C 扩展崩溃）时 Python 级 traceback 无处可去——faulthandler
+    # 把它落盘到 crash.log（stderr 重定向到文件是 pythonw 的标准解）。
+    # 正常运行零写入，只在崩溃瞬间 dump，无增长风险。
+    import faulthandler
+
+    try:
+        faulthandler.enable(open(LOGS_DIR / "crash.log", "a", encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - 取证兜底失败绝不影响引擎启动
+        pass
 
 
 def main(argv=None) -> int:

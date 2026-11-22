@@ -3179,6 +3179,28 @@ def diag_export() -> Dict[str, Any]:
             warnings.append(f"{arc_name}: 窗口内无内容")
         entries.append([f"logs/{arc_name}", text + ("\n" if text else ""),
                         f"{desc}（近 7 天，最多 1200 行）"])
+    # Windows 崩溃事件（2026-11-22 朋友机引擎静默死亡取证）：Event Viewer
+    # 的 Application 日志 EventID 1000（应用错误）/1001（WER 报告）由系统
+    # 自动记录崩溃的故障模块与异常码——引擎静默死亡（pythonw 无 stderr、
+    # 崩溃不留日志）的死因取证主通道。wevtutil 系统自带零依赖；采集失败
+    # 只占位，不影响诊断包其余部分。
+    try:
+        import subprocess
+
+        _ev = subprocess.run(
+            ["wevtutil", "qe", "Application",
+             "/q:*[System[(EventID=1000) or (EventID=1001)]]",
+             "/c:40", "/rd:true", "/f:text"],
+            capture_output=True, timeout=30,
+            encoding="utf-8", errors="replace")  # 取证关键字段（EventID/P1）均为 ASCII；中文装饰字段乱码不影响分析
+        ev_text = (_ev.stdout or "").strip()
+        if not ev_text and _ev.stderr:
+            ev_text = f"[wevtutil 输出: {_ev.stderr.strip()[:200]}]"
+        entries.append(["events_app_error.txt", ev_text + "\n",
+                        "Windows 应用崩溃事件（EventID 1000/1001，近 40 条）"])
+    except Exception as exc:  # noqa: BLE001 - 取证失败不影响诊断包其余部分
+        entries.append(["events_app_error.txt", f"[采集失败: {exc}]\n",
+                        "Windows 应用崩溃事件（采集失败）"])
 
     # 3) 配置快照（值脱敏）
     def _mask(node: Any) -> Any:
