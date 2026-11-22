@@ -3202,6 +3202,18 @@ def diag_export() -> Dict[str, Any]:
         entries.append(["events_app_error.txt", f"[采集失败: {exc}]\n",
                         "Windows 应用崩溃事件（采集失败）"])
 
+    # 2b) 更新链状态原文（2026-11-22 朋友机「点立即安装没反应」取证盲区修复）：
+    # download_state.json 的 message 字段=上次下载/验签失败的报错原文，
+    # update_check.json 的 latest/current=检查更新视角——这两个文件的内容
+    # 是判定「一键更新卡在哪一步」的决定性证据，此前诊断包只有键名没有内容。
+    for arc_name, data_file in (("download_state.json", USER_DIR / "data" / "download_state.json"),
+                                ("update_check.json", USER_DIR / "data" / "update_check.json")):
+        try:
+            body = data_file.read_text(encoding="utf-8") if data_file.exists() else ""
+            entries.append([arc_name, body, f"更新链状态原文（{data_file.name}）"])
+        except OSError as exc:
+            entries.append([arc_name, f"[读取失败: {exc}]", "更新链状态原文（读取失败）"])
+
     # 3) 配置快照（值脱敏）
     def _mask(node: Any) -> Any:
         if isinstance(node, dict):
@@ -3413,8 +3425,17 @@ _GET_SIMPLE_ROUTES: Dict[str, Any] = {
 class Handler(BaseHTTPRequestHandler):
     server_version = "DailyCheckLogin/1.1"
 
-    def log_message(self, fmt: str, *args: Any) -> None:  # 静音默认访问日志
-        logger.debug("%s - %s", self.address_string(), fmt % args)
+    def log_message(self, fmt: str, *args: Any) -> None:  # 访问日志写 engine.log
+        # 2026-11-22 朋友机取证盲区修复：每请求一行进 engine.log——此前静音
+        # 导致「页面 POST 是否到达引擎」永远无法判定（连发四轮修不全）。
+        # /api/env GET 排除（探活 5 秒一次，纯噪音）。
+        try:
+            line = fmt % args
+            if "GET /api/env" in line:
+                return
+            logger.info("HTTP %s", line)
+        except Exception:  # noqa: BLE001 - 日志失败不影响请求处理
+            pass
 
     def _send(self, code: int, body: bytes, ctype: str, cache: str = "no-store") -> None:
         self.send_response(code)
