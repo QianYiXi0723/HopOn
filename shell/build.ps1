@@ -188,7 +188,9 @@ try {
     $slog = Join-Path $gate "logs\shell.log"
     if (-not (Test-Path $slog)) { throw "壳没写 logs\shell.log" }
     $probe = $null
-    for ($i = 0; $i -lt 60; $i++) {
+    # 2026-11-22 预算 24s→48s：冷启动实例会补发错过班次的巡检（6 账号+skland
+    # 换取+风控重试可达 10s+），与页面探针并发争抢引擎——两次连续门禁失败实证
+    for ($i = 0; $i -lt 120; $i++) {
         Start-Sleep -Milliseconds 400
         $probe = Select-String -Path $slog -Pattern 'API 探针 200/LEN\d+' | Select-Object -Last 1
         if ($probe) { break }
