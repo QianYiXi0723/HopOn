@@ -67,8 +67,10 @@ def main() -> int:
           "F3b 后台轮询失联站点已换 toastConn（≥4）")
     check(len(re.findall(r"toastConn\('当场验货无法连接本地服务'\)", app)) == 1,
           "F3c 当场验货失联站点已换 toastConn")
-    check(len(re.findall(r"updDlReset\(\); toast\('无法连接本地服务'", app)) == 2,
-          "F3d 操作类失败双站点保留原样（不静默）")
+    check(len(re.findall(r"updDlReset\(\);\s*\n\s*toast\('无法连接本地服务'", app)) == 1,
+          "F3d 操作类失败站点保留 toast（updDlStart；3d6b232 起 updDlAutoInstall 改重试横幅）")
+    check("if (installTries < 3) { setTimeout(postInstall, 1200 * installTries); return; }" in app,
+          "F3e 安装发起 POST 失败重试 2 次（连接类）；放弃路径保留 updDlReset+toast")
 
     # ---- F4 启动宽限窗（手动安装/每次启动的竞态窗口，2026-11-20 ④）----
     check("_BOOT_GRACE_MS = 15000" in app and "_BOOT_AT = Date.now()" in app,

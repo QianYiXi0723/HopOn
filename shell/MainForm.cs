@@ -430,56 +430,74 @@ namespace HopOn
                 string ctype = "application/json; charset=utf-8";
                 try
                 {
-                    var req = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port + pathAndQuery);
-                    req.Method = method;
-                    req.Proxy = null;
-                    req.Timeout = 30000;
-                    req.ReadWriteTimeout = 30000;
-                    req.KeepAlive = false;
-                    req.Accept = "application/json";
-                    if (reqBody != null && reqBody.Length > 0)
+                    // 连接类失败重试 2 次（2026-11-22 朋友机「点了没反应」取证：
+                    // 引擎巡检期间响应瞬时变慢，转发单次放弃加重感知）；
+                    // 引擎已应答（任何 HTTP 码）不重试。
+                    for (int attempt = 1; attempt <= 3; attempt++)
                     {
-                        req.ContentType = string.IsNullOrEmpty(reqType) ? "application/json" : reqType;
-                        req.ContentLength = reqBody.Length;
-                        using (var rs = req.GetRequestStream()) rs.Write(reqBody, 0, reqBody.Length);
-                    }
-                    using (var resp = (HttpWebResponse)req.GetResponse())
-                    {
-                        code = (int)resp.StatusCode;
-                        reason = resp.StatusDescription;
-                        if (!string.IsNullOrEmpty(resp.ContentType)) ctype = resp.ContentType;
-                        using (var rs = resp.GetResponseStream())
-                        using (var ms = new MemoryStream())
+                        code = 502;
+                        reason = "Bad Gateway";
+                        body = Encoding.UTF8.GetBytes("{\"ok\":false,\"message\":\"引擎不可达\"}");
+                        ctype = "application/json; charset=utf-8";
+                        bool answered = false;
+                        try
                         {
-                            if (rs != null) rs.CopyTo(ms);
-                            body = ms.ToArray();
+                            var req = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port + pathAndQuery);
+                            req.Method = method;
+                            req.Proxy = null;
+                            req.Timeout = 30000;
+                            req.ReadWriteTimeout = 30000;
+                            req.KeepAlive = false;
+                            req.Accept = "application/json";
+                            if (reqBody != null && reqBody.Length > 0)
+                            {
+                                req.ContentType = string.IsNullOrEmpty(reqType) ? "application/json" : reqType;
+                                req.ContentLength = reqBody.Length;
+                                using (var rs = req.GetRequestStream()) rs.Write(reqBody, 0, reqBody.Length);
+                            }
+                            using (var resp = (HttpWebResponse)req.GetResponse())
+                            {
+                                code = (int)resp.StatusCode;
+                                reason = resp.StatusDescription;
+                                if (!string.IsNullOrEmpty(resp.ContentType)) ctype = resp.ContentType;
+                                using (var rs = resp.GetResponseStream())
+                                using (var ms = new MemoryStream())
+                                {
+                                    if (rs != null) rs.CopyTo(ms);
+                                    body = ms.ToArray();
+                                }
+                            }
+                            answered = true;
                         }
-                    }
-                }
-                catch (WebException wex)
-                {
-                    var hr = wex.Response as HttpWebResponse;
-                    if (hr != null)
-                    {
-                        code = (int)hr.StatusCode;
-                        reason = hr.StatusDescription;
-                        if (!string.IsNullOrEmpty(hr.ContentType)) ctype = hr.ContentType;
-                        using (var rs = hr.GetResponseStream())
-                        using (var ms = new MemoryStream())
+                        catch (WebException wex)
                         {
-                            if (rs != null) rs.CopyTo(ms);
-                            body = ms.ToArray();
+                            var hr = wex.Response as HttpWebResponse;
+                            if (hr != null)
+                            {
+                                code = (int)hr.StatusCode;
+                                reason = hr.StatusDescription;
+                                if (!string.IsNullOrEmpty(hr.ContentType)) ctype = hr.ContentType;
+                                using (var rs = hr.GetResponseStream())
+                                using (var ms = new MemoryStream())
+                                {
+                                    if (rs != null) rs.CopyTo(ms);
+                                    body = ms.ToArray();
+                                }
+                                hr.Dispose();
+                                answered = true;   // 引擎已应答（HTTP 错误码）→ 不重试
+                            }
+                            else
+                            {
+                                Log("转发 " + pathAndQuery + " 失败（第 " + attempt + "/3 次）：" + wex.Message);
+                            }
                         }
-                        hr.Dispose();
+                        catch (Exception ex)
+                        {
+                            Log("转发 " + pathAndQuery + " 异常：" + ex.Message);
+                        }
+                        if (answered || attempt >= 3) break;
+                        Thread.Sleep(400 * attempt);
                     }
-                    else
-                    {
-                        Log("转发 " + pathAndQuery + " 失败：" + wex.Message);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log("转发 " + pathAndQuery + " 异常：" + ex.Message);
                 }
 
                 try
