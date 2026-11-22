@@ -71,6 +71,47 @@ def setup_logging() -> None:
         faulthandler.enable(open(LOGS_DIR / "crash.log", "a", encoding="utf-8"))
     except Exception:  # noqa: BLE001 - 取证兜底失败绝不影响引擎启动
         pass
+    _ensure_wer_localdumps()
+
+
+def _ensure_wer_localdumps() -> None:
+    """WER LocalDumps per-app 键（2026-11-22 死因取证第三层）：pythonw 真崩溃
+    （C 扩展段错误等 native 级）时 Windows 自动生成 minidump 到数据根
+    logs\\dumps——faulthandler 只覆盖 Python 级，native 级靠这个。
+
+    写 HKCU（无需管理员，红线不破）；DumpType=1 minidump、DumpCount=5 自动
+    轮换。幂等：键已配置则跳过。失败静默（取证增强不影响主功能）。
+    注意覆盖边界：只有真崩溃（unhandled exception）才生成 dump——进程被
+    TerminateProcess 杀掉不留 dump，那类死因靠 Event Viewer System 日志。
+    """
+    try:
+        import winreg
+
+        key_path = r"Software\Microsoft\Windows\Windows Error Reporting\LocalDumps\pythonw.exe"
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ) as k:
+            try:
+                winreg.QueryValueEx(k, "DumpFolder")
+                return   # 已配置过：幂等跳过
+            except FileNotFoundError:
+                pass
+        dump_dir = LOGS_DIR / "dumps"
+        dump_dir.mkdir(parents=True, exist_ok=True)
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as k:
+            winreg.SetValueEx(k, "DumpFolder", 0, winreg.REG_EXPAND_SZ, str(dump_dir))
+            winreg.SetValueEx(k, "DumpType", 0, winreg.REG_DWORD, 1)
+            winreg.SetValueEx(k, "DumpCount", 0, winreg.REG_DWORD, 5)
+    except Exception:  # noqa: BLE001 - 取证增强失败绝不影响引擎启动
+        pass
+    # faulthandler（2026-11-22 朋友机引擎静默死亡实证）：pythonw 无 stderr，
+    # 硬崩溃（段错误/C 扩展崩溃）时 Python 级 traceback 无处可去——faulthandler
+    # 把它落盘到 crash.log（stderr 重定向到文件是 pythonw 的标准解）。
+    # 正常运行零写入，只在崩溃瞬间 dump，无增长风险。
+    import faulthandler
+
+    try:
+        faulthandler.enable(open(LOGS_DIR / "crash.log", "a", encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - 取证兜底失败绝不影响引擎启动
+        pass
 
 
 def main(argv=None) -> int:
