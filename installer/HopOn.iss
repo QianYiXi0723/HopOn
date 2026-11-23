@@ -110,12 +110,15 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: deskto
 Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: startup
 
 [Run]
-; 装完可选立即运行。2026-11-20 去掉 skipifsilent：静默装完也拉起——此前
-; 静默装完的重启全押在 HopOnUpdater 桥接上，桥接被安全软件拦就没人拉起，
-; 用户面对满屏「无法连接本地服务」（朋友机实证）。单实例互斥保证与桥接
-; 重复拉起只活一个；runasoriginaluser 防提权安装器把应用带成管理员身份。
-Filename: "{app}\{#AppExeName}"; Description: "立即启动 {#AppName}"; \
-    Flags: nowait postinstall runasoriginaluser
+; 装完**无条件**拉起（2026-11-23 用户裁决：「谁更新完还要手动重启」）。
+; 此前带 postinstall 标志 = 只在安装完成页勾选「立即启动」时才运行；
+; 不勾 / 静默 / 自动更新场景都不拉起 → 用户装完看不到窗口，以为没成功，
+; 再手动开一次才「看到更新完成」。业界（Chrome/VS Code/Slack）全部
+; 是装完直接用，绝不让用户自己找「该不该重启」。
+; 2026-11-20 起已去 skipifsilent（静默装完也拉起）；本次再去 postinstall。
+; 单实例互斥保证与桥接重复拉起只活一个；runasoriginaluser 防提权安装器
+; 把应用带成管理员身份。
+Filename: "{app}\{#AppExeName}"; Flags: nowait runasoriginaluser
 
 [UninstallRun]
 ; 卸载前先停掉引擎/守护：调用 exe 的退出参数（若壳支持），否则靠 taskkill

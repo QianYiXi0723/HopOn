@@ -950,11 +950,15 @@ function updDlAutoInstall(){
         // 超时兜底必须在失败路径同样生效（2026-11-20 修复）：tries 判定放
         // fetch 之前——引擎装完没被拉起时 fetch 永远走 catch，判定留在
         // then 里黑幕会挂到天荒地老。约 90 秒（1.5s × 60）给手动启动指引。
+        /* 2026-11-23 用户裁决「谁更新完还要手动重启」——超时文案已改为
+           不把责任推给用户。真正的兜底在壳侧：旧壳退出→Updater 覆盖→
+           StartShell 拉起新壳（5 轮重试 + 连续 5 秒存活确认）。
+           这里只负责在**引擎先回来**的罕见路径上刷新页面。 */
         if (tries > 60) {
           localStorage.removeItem('rl-updating');
           document.getElementById('installing-mask').hidden = true;
           updDlReset();
-          toast('等待重启超时——安装已完成，请手动启动 HopOn，或到「打开文件夹」手动安装', true);
+          toast('更新已完成，应用正在启动中——稍候会自动打开', true);
           return;
         }
         fetch('/api/update/download').then(function(){
