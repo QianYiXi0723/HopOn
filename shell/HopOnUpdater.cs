@@ -20,6 +20,7 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
@@ -78,32 +79,98 @@ namespace HopOnUpdater
         private static extern bool SetInformationJobObject(IntPtr job, int infoClass,
             IntPtr info, uint length);
 
+        // JOBOBJECT_EXTENDED_LIMIT_INFORMATION 的 LimitFlags 位
+        private const uint JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x00000800;
+        // JobObjectExtendedLimitInformation = 9
+        private const int JobObjectExtendedLimitInformation = 9;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+        {
+            public long PerProcessUserTimeLimit;
+            public long PerJobUserTimeLimit;
+            public uint LimitFlags;
+            public UIntPtr MinimumWorkingSetSize;
+            public UIntPtr MaximumWorkingSetSize;
+            public uint ActiveProcessLimit;
+            public UIntPtr Affinity;
+            public uint PriorityClass;
+            public uint SchedulingClass;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IO_COUNTERS
+        {
+            public ulong ReadOperationCount, WriteOperationCount, OtherOperationCount;
+            public ulong ReadTransferCount, WriteTransferCount, OtherTransferCount;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+        {
+            public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+            public IO_COUNTERS IoInfo;
+            public UIntPtr ProcessMemoryLimit;
+            public UIntPtr JobMemoryLimit;
+            public UIntPtr PeakProcessMemoryUsed;
+            public UIntPtr PeakJobMemoryUsed;
+        }
+
+        /// <summary>从宿主壳的 Job Object 脱离（2026-11-23 根修）。
+        ///
+        /// 旧实现是错的：CreateJobObject 建的新 Job **没有** BREAKAWAY_OK 标志，
+        /// 随后 AssignProcessToJobObject 必然失败（进程已属于旧 Job 且旧 Job
+        /// 不允许 breakaway）——于是 Updater 全程留在壳的 KILL_ON_JOB_CLOSE
+        /// Job 里，壳一退出就把 Updater 连同刚拉起的新壳一起内核收尸。
+        /// 朋友机「更新后无法连接本地」的真根因。
+        ///
+        /// 正确路径：先给**新 Job** 设 BREAKAWAY_OK，再 AssignProcessToJobObject。
+        /// 若旧 Job 本身不许 breakaway（壳侧已用 CREATE_BREAKAWAY_FROM_JOB 解决，
+        /// 这里再加一层），失败时如实记 WARN（不再静默）。</summary>
         private static void DetachFromJob()
         {
             try
             {
                 bool inJob;
                 if (!IsProcessInJob(Process.GetCurrentProcess().Handle, IntPtr.Zero, out inJob) || !inJob)
-                    return;   // 本来就不在 Job 里
+                {
+                    Log("不在 Job Object 里，无需脱离");
+                    return;
+                }
 
-                // 建一个「允许 breakaway」的新 Job 并把自己挂进去，
-                // 旧 Job 的 KILL_ON_JOB_CLOSE 就管不到我们了。
                 IntPtr newJob = CreateJobObject(IntPtr.Zero, null);
-                if (newJob == IntPtr.Zero) return;
+                if (newJob == IntPtr.Zero)
+                {
+                    Log("WARN CreateJobObject 失败（err=" + Marshal.GetLastWin32Error() + "），无法脱离");
+                    return;
+                }
 
-                // JOBOBJECT_EXTENDED_LIMIT_INFORMATION 里设
-                // LimitFlags |= JOB_OBJECT_LIMIT_BREAKAWAY_OK (0x0800)
-                // 结构太复杂，这里用简化的 24 字节布局：
-                //   struct { LARGE_INTEGER a,b; DWORD LimitFlags; ... }
-                // 只用最保险的做法：直接 AssignProcessToJobObject 到一个新 Job，
-                // 若旧 Job 未设 breakaway 会失败——那也说明我们无法脱离，记日志继续。
+                // 关键：新 Job 必须设 BREAKAWAY_OK，否则 Assign 必失败
+                var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+                int size = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
+                IntPtr pInfo = Marshal.AllocHGlobal(size);
+                try
+                {
+                    Marshal.StructureToPtr(info, pInfo, false);
+                    if (!SetInformationJobObject(newJob, JobObjectExtendedLimitInformation, pInfo, (uint)size))
+                        Log("WARN SetInformationJobObject 失败（err=" + Marshal.GetLastWin32Error() + "）");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(pInfo);
+                }
+
                 IntPtr self = Process.GetCurrentProcess().Handle;
                 if (AssignProcessToJobObject(newJob, self))
                     Log("已脱离父 Job Object（防止杀壳时被连带终止）");
+                else
+                    Log("WARN 脱离 Job 失败（err=" + Marshal.GetLastWin32Error()
+                        + "）——若壳侧已用 CREATE_BREAKAWAY_FROM_JOB 则无害，否则壳退出时本进程会被连带终止");
             }
-            catch
+            catch (Exception ex)
             {
-                // 脱离失败不阻断主流程（有时调用方已用 CREATE_BREAKAWAY_FROM_JOB 达成目的）
+                Log("WARN 脱离 Job 异常：" + ex.Message);
             }
         }
 
@@ -140,14 +207,8 @@ namespace HopOnUpdater
 
         private static int Run(string[] args)
         {
-            // 2026-11-16 真机实证（头号坑）：Updater 由引擎派生，而引擎被壳挂在
-            // KILL_ON_JOB_CLOSE 的 Job Object 里，Job 会被子进程继承。于是
-            // Updater 去 Kill 壳时会把自己一起带走——日志停在「结束占用进程」
-            // 之后戛然而止、backup 未清理、也没回滚（进程已死）。
-            // 双重保险：调用方已传 CREATE_BREAKAWAY_FROM_JOB，这里再主动
-            // 从当前 Job 脱离一次（有些环境会忽略 creation flag）。
-            DetachFromJob();
-
+            // DetachFromJob() 挪到 _logPath 就绪之后（见下方），否则脱离结果
+            // 的日志写进 null——2026-11-23 实测：脱离失败但零日志，真因被掩盖。
             int pid = -1;
             string root = null, pkg = null;
             bool restart = false, dryRun = false, staged = false;
@@ -219,6 +280,12 @@ namespace HopOnUpdater
             Log("=== HopOn Updater 启动 ===");
             Log("参数：pid=" + pid + " root=" + root + " pkg=" + pkg
                 + " restart=" + restart + " dryRun=" + dryRun);
+
+            // 0) 脱离宿主壳的 Job Object——必须在 _logPath 就绪之后调用，
+            //    否则脱离成败的日志写进 null（2026-11-23 实测：脱离失败零日志，
+            //    真因被掩盖，朋友机「更新后无法连接本地」卡了多轮）。
+            //    调用方已传 CREATE_BREAKAWAY_FROM_JOB，这里再主动脱离一次。
+            DetachFromJob();
 
             // 1) 目标目录合法性：拒绝盘符根 / 桌面 / 下载目录（防手滑把手滑变成灾难）
             string rootCheck = CheckRootSafety(root);
@@ -825,13 +892,88 @@ namespace HopOnUpdater
             }
             try
             {
-                Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = root, UseShellExecute = true });
-                Log("已启动：" + exe);
+                // 2026-11-23 根修（朋友机「更新后无法连接本地」真因）：
+                // UseShellExecute=true 会走 Shell 关联，在 DetachFromJob /
+                // DETACHED_PROCESS 的 Updater 上下文里**静默失败**——日志照写
+                // 「已启动」但进程从没起来（对照实验：方式B 立刻 200、A 恒 000）。
+                // 改 UseShellExecute=false + CreateNoWindow：直接 CreateProcess，
+                // 无 Shell 依赖。主窗由程序自己 Show（--tray 时藏托盘），不冲突。
+                // --relaunched：告知新壳这是更新后拉起，若旧壳仍持有单实例
+                // 互斥则等其释放再接管（2026-11-23 根修——此前新壳撞上未退
+                // 干净的旧壳互斥会静默 return，表现「更新成功但打不开」）。
+                var psi = new ProcessStartInfo(exe)
+                {
+                    WorkingDirectory = root,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    Arguments = "--relaunched",
+                };
+                var child = Process.Start(psi);
+                if (child == null)
+                {
+                    Log("WARN Process.Start 返回 null（未真正创建进程）");
+                    return;
+                }
+                Log("已启动：" + exe + "  childPid=" + child.Id);
+                // 等 3 秒确认子壳没立刻退出（互斥/崩溃都会退，退出码进日志）
+                try
+                {
+                    if (child.WaitForExit(3000))
+                        Log("WARN 子壳 3 秒内退出，退出码=" + child.ExitCode
+                            + "（若 code=0 且 shell.log 报互斥，说明旧壳未退干净）");
+                }
+                catch (Exception wex)
+                {
+                    Log("WARN 观察子壳异常：" + wex.Message);
+                }
+                // 2026-11-23 根因实测：新壳可能撞上旧壳的单实例互斥
+                // （HopOn.Shell.Mutex）→ createdNew=false → 静默退出码 0，
+                // 表现="更新成功但打不开"。轮询等互斥释放最多 30 秒，再确认
+                // 子进程真活着；都不行则明确报 WARN（不再假报成功）。
+                for (int i = 0; i < 30; i++)
+                {
+                    Thread.Sleep(1000);
+                    if (IsProcessAliveByName(exe, out int childPid))
+                    {
+                        Log("新壳存活确认（pid=" + childPid + "）");
+                        return;
+                    }
+                }
+                Log("WARN 新壳 30 秒内未存活——可能被单实例互斥顶回"
+                    + "（旧壳未退干净）或安全软件拦截");
             }
             catch (Exception ex)
             {
                 Log("WARN 启动失败：" + ex.Message);
             }
+        }
+
+        // ------------------------------------------------------------------
+        // 按可执行路径精确判断某 exe 是否有存活进程（2026-11-23 新增：
+        // StartShell 后确认新壳真的起来了，避免「日志说已启动、实际已退出」）
+        // ------------------------------------------------------------------
+        private static bool IsProcessAliveByName(string exePath, out int pid)
+        {
+            pid = 0;
+            string full;
+            try { full = Path.GetFullPath(exePath); } catch { return false; }
+            foreach (Process p in Process.GetProcessesByName("HopOn"))
+            {
+                try
+                {
+                    string path = null;
+                    try { path = p.MainModule.FileName; } catch { }
+                    if (!string.IsNullOrEmpty(path) &&
+                        string.Equals(path, full, StringComparison.OrdinalIgnoreCase))
+                    {
+                        pid = p.Id;
+                        return true;
+                    }
+                }
+                catch { }
+                finally { try { p.Dispose(); } catch { } }
+            }
+            return false;
         }
 
         private static int Usage(string msg)

@@ -215,6 +215,21 @@ def structure_tests() -> None:
     check("if (TryResumeStagedUpdate()) return;" in mf,
           "B14 BootAsync 里续 apply 在拉引擎之前")
 
+    # ---- E 组：2026-11-23「更新后打不开」根因（朋友机实测复现）----
+    prog = (ROOT / "shell" / "Program.cs").read_text(encoding="utf-8")
+    check("--relaunched" in prog and "已有实例持有互斥" in prog,
+          "E1 壳 --relaunched 等旧壳释放互斥 + 放弃时写日志（此前静默退出码0零日志=不可查）")
+    check("HOPON_SHELL_MUTEX" in prog,
+          "E2 互斥名可覆盖（沙箱 E2E 与用户实例隔离）")
+    check("JOB_OBJECT_LIMIT_BREAKAWAY_OK" in up and "SetInformationJobObject" in up,
+          "E3 DetachFromJob 正确设 BREAKAWAY_OK（旧实现新 Job 无此标志→Assign 必失败）")
+    check(up.index("_logPath = Path.Combine") < up.index("\n            DetachFromJob();"),
+          "E4 DetachFromJob 在 _logPath 就绪之后调用（否则日志丢 null，真因被掩盖）")
+    check('"--relaunched"' in up and "UseShellExecute = false" in up,
+          "E5 StartShell 用 UseShellExecute=false + 传 --relaunched")
+    check("新壳存活确认" in up and "子壳 3 秒内退出" in up,
+          "E6 StartShell 确认子壳真存活（不再假报「已启动」）")
+
     # UI
     check("st === 'staging'" in app, "B15 UI staging 态显示解压进度")
     check("st === 'staged' && d.sha_ok" in app, "B16 UI staged 态才发起安装")
