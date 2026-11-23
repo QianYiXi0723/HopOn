@@ -306,6 +306,7 @@ namespace HopOnUpdater
                 if (!WaitPidGone(pid, 60))
                 {
                     Log("ABORT 等待主进程退出超时（60s）——未修改任何文件");
+                    WriteUpdateFailure(root, "等待主程序退出超时，更新未执行");
                     return ExitTimeout;
                 }
                 Log("主进程已退出");
@@ -448,6 +449,7 @@ namespace HopOnUpdater
                 Log("FATAL 覆盖失败于：" + failedRel + "（已覆盖 " + overwritten + " 个）——开始回滚");
                 Rollback(root, backup, touched);   // toDelete 未执行，无需涉及
                 Log("ROLLBACK 完成，已还原到升级前状态");
+                WriteUpdateFailure(root, "覆盖文件失败，已回滚到旧版本");
                 if (restart) StartShell(root);
                 return ExitRollback;
             }
@@ -490,6 +492,7 @@ namespace HopOnUpdater
                     touchedAll.AddRange(deletedTouched);   // 只收让位成功的（D4）
                     Rollback(root, backup, touchedAll);
                     Log("ROLLBACK 完成，已还原到升级前状态");
+                    WriteUpdateFailure(root, "校验失败（关键文件缺失），已回滚到旧版本");
                     if (restart) StartShell(root);
                     return ExitVerify;
                 }
@@ -1010,6 +1013,47 @@ namespace HopOnUpdater
             catch (Exception ex)
             {
                 Log("WARN 写更新结果失败（前端将无成功提示）：" + ex.Message);
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 写一次性「失败结果」到权威文件（update-parity Task1）。
+        // 对标 Memoh desktop-auto-update 的 installing→error 一等状态：更新失败
+        // 也必须留确定结果，否则前端 result.ok=false 分支是死代码、用户全程
+        // 静默。只改 result 字段，保留 phase/version 等既有字段（phase 保持
+        // applying，壳不会续 apply——staging 已被清或已回滚）。net48 无 JSON
+        // 库，复用 WriteUpdateResult 的极简合并手法。
+        // ------------------------------------------------------------------
+        private static void WriteUpdateFailure(string root, string reason)
+        {
+            try
+            {
+                string pending = Path.Combine(root, ".update", "pending.json");
+                // 没有权威文件也要造一个：失败结果本身就是"这次更新的确定结论"，
+                // 不能因为前置文件缺失就让前端静默（测试沙箱/引擎未写 pending 亦然）。
+                if (!File.Exists(pending))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(pending));
+                    File.WriteAllText(pending, "{}", new UTF8Encoding(false));
+                }
+                string existing = File.ReadAllText(pending).Trim();
+                if (existing.StartsWith("{")) existing = existing.Substring(1);
+                if (existing.EndsWith("}")) existing = existing.Substring(0, existing.Length - 1);
+                var re = new System.Text.RegularExpressions.Regex(",?\\s*\"result\"\\s*:\\s*\\{[^}]*\\}");
+                string body = re.Replace(existing, "").Trim().TrimStart(',').TrimEnd(',');
+                string ver = "";
+                try { ver = FileVersionInfo.GetVersionInfo(Path.Combine(root, "HopOn.exe")).FileVersion ?? ""; } catch { }
+                ver = ver.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                reason = (reason ?? "更新失败").Replace("\\", "\\\\").Replace("\"", "\\\"");
+                string result = "{\"ok\":false,\"error\":\"" + reason + "\",\"version\":\""
+                    + ver + "\",\"ts\":\"" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "\"}";
+                string json = "{" + (body.Length > 0 ? body + "," : "") + "\"result\":" + result + "}";
+                File.WriteAllText(pending, json, new UTF8Encoding(false));
+                Log("已写更新失败结果：result.ok=false reason=" + reason);
+            }
+            catch (Exception ex)
+            {
+                Log("WARN 写更新失败结果失败（前端将无提示）：" + ex.Message);
             }
         }
 

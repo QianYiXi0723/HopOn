@@ -137,8 +137,9 @@ def main() -> int:
     # 本测试的临时目录，后续全部使用私有副本（与外部清理彻底解耦）
     _sandbox0 = Path(tempfile.mkdtemp(prefix="rl_updater_pkg_"))
     _pkg_copy = _sandbox0 / pkg.name
+    pkg_source = pkg   # 保留 dist 原始 zip：Updater 成功路径会删传入的 pkg（File.Delete(pkg)），U4+ 需重新复制
     try:
-        shutil.copy2(pkg, _pkg_copy)
+        shutil.copy2(pkg_source, _pkg_copy)
         pkg = _pkg_copy
     except OSError as exc:
         print(f"\n[SKIP] dist zip 复制失败（正被并行会话清理）：{exc}")
@@ -200,12 +201,15 @@ def main() -> int:
         root4 = make_root(sandbox / "rb")
         bad_pkg = sandbox / "bad_pkg.zip"
         if not pkg.is_file():
-            # 2026-11-23 实测：本环境有外部删除者实时清理 zip（dist 与
-            # %TEMP% 副本都在 U1-U3 运行期间消失）——环境干扰明确 SKIP，
-            # 不伪装成代码失败
-            print("\n[SKIP] pkg 副本被外部删除（本机有 zip 实时清理者），跳过 U4+")
-            print("PASS 0 / FAIL 0")
-            return 0
+            # U3 成功升级时 Updater 会 File.Delete(pkg) 删掉传入的 zip（成功
+            # 清场语义）——不是"外部删除者"。从 dist 原始 zip 重新复制续跑，
+            # 保证 U4 回滚（关键项）真正执行而非永远 SKIP。
+            try:
+                shutil.copy2(pkg_source, pkg)
+            except OSError as exc:
+                print(f"\n[SKIP] 重复制 pkg 失败：{exc}")
+                print("PASS 0 / FAIL 0")
+                return 0
         with zipfile.ZipFile(pkg) as zin, zipfile.ZipFile(bad_pkg, "w", zipfile.ZIP_DEFLATED) as zout:
             for item in zin.infolist():
                 if item.filename.endswith("engine/daemon.py"):
@@ -227,6 +231,46 @@ def main() -> int:
               f"不一致项={[k for k in before4 if before4[k] != after4.get(k)][:3]}")
         check("U4e 回滚后 daemon.py 仍不存在（没被凭空造出来）",
               not (root4 / "engine" / "daemon.py").exists())
+        # U4f（update-parity Task1）：失败也必须留确定结果，否则前端 result.ok=false
+        # 分支是死代码、用户全程静默。对标 Memoh installing→error 一等状态。
+        pending4 = root4 / ".update" / "pending.json"
+        data4 = {}
+        if pending4.exists():
+            try:
+                data4 = json.loads(pending4.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                data4 = {}
+        res4 = data4.get("result") if isinstance(data4, dict) else None
+        check("U4f 校验失败(exit=3)写 result.ok=false 到权威文件",
+              isinstance(res4, dict) and res4.get("ok") is False and bool(res4.get("error")),
+              str(res4))
+
+        # ---- U4g 失败写 result 不破坏权威文件既有字段（U-MERGE review focus）----
+        # 预置 phase/version/saved_at 的 pending，失败后这些字段必须原样保留，
+        # 否则壳的 phase 判据与单飞字段被冲掉。
+        root4g = make_root(sandbox / "rb_merge")
+        (root4g / "engine" / "daemon.py").unlink()
+        pending4g = root4g / ".update" / "pending.json"
+        pending4g.parent.mkdir(parents=True, exist_ok=True)
+        seed = {"phase": "applying", "version": "3.2.1", "saved_at": "seed",
+                "install_started_ts": 123.0}
+        pending4g.write_text(json.dumps(seed), encoding="utf-8")
+        bad_pkg2 = sandbox / "bad_pkg2.zip"
+        with zipfile.ZipFile(pkg) as zin, zipfile.ZipFile(bad_pkg2, "w", zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                if item.filename.endswith("engine/daemon.py"):
+                    continue
+                zout.writestr(item, zin.read(item.filename))
+        p4g = wait_pid_forever(2)
+        run_updater("--pid", str(p4g.pid), "--root", str(root4g),
+                    "--pkg", str(bad_pkg2), "--norestart")
+        p4g.wait()
+        data4g = json.loads(pending4g.read_text(encoding="utf-8"))
+        check("U4g 失败写 result 保留 phase/version/saved_at/单飞字段（U-MERGE）",
+              data4g.get("phase") == "applying" and data4g.get("version") == "3.2.1"
+              and data4g.get("saved_at") == "seed" and data4g.get("install_started_ts") == 123.0
+              and isinstance(data4g.get("result"), dict),
+              str(data4g))
 
         # ---- U5 PID 等待 ----
         root5 = make_root(sandbox / "pw")
