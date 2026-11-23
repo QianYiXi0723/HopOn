@@ -104,6 +104,8 @@
   .feat-body{padding:18px 20px 20px}
   .feat-body h3{margin:0 0 6px;font-size:16px;font-weight:600}
   .feat-body p{margin:0;font-size:14px;color:var(--text-secondary);line-height:1.65}
+  /* 落单卡横跨两列吃掉空位，避免右侧留白、卡片变海带 */
+  .feat-item:last-child:nth-child(odd){grid-column:1/-1}
 
   /* ---------- 游戏覆盖 ---------- */
   .games{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
@@ -225,6 +227,13 @@
           <p>所有平台账号在同一个控制台里绑定；推送渠道与免打扰时段自行配置。</p>
         </div>
       </div>
+      <div class="feat-item">
+        <!-- ponytail: 无配图卡片（该功能暂无截图）。补图时按其余卡片格式加 <img> 即可。 -->
+        <div class="feat-body">
+          <h3>自定义提醒</h3>
+          <p>游戏之外的事也能记，比如健身、喝水。每项可单独设重置时刻，到点自动重开。</p>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -233,7 +242,7 @@
 <section>
   <div class="wrap">
     <h2>覆盖的游戏</h2>
-    <p class="sec-desc">同一个工具管完所有号；任何平台的任何游戏都可以绑不同账号。</p>
+    <p class="sec-desc">米游社、森空岛、库街区，装一个工具就够了。各家的游戏日常，一次看全。</p>
     <div class="games">
       <span class="game">原神</span>
       <span class="game">崩坏：星穹铁道</span>
@@ -258,7 +267,7 @@
     </div>
     <div class="req">
       首次打开需扫码登录，绑定账号后自动开始巡查<br>
-      安装器版 per-user 安装，无需管理员权限 · 绿色版解压即用<br>
+      安装器版装完直接用，不需管理员权限；绿色版解压即用<br>
       下载后可核对文件完整性：<code>certutil -hashfile 文件名 SHA256</code>
     </div>
   </div>
