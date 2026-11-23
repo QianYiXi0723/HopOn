@@ -85,8 +85,10 @@ def main() -> int:
     # ---- 4) 关键端点定点断言（朋友机事故点）----
     check("fetch('/api/update/install', { method: 'POST' })" in app,
           "P5 /api/update/install 用 POST（诊断包实锤：曾漏成 GET → 404 → 装不上）")
-    check("fetch('/api/update/open-folder', { method: 'POST' })" in app,
-          "P6 /api/update/open-folder 用 POST（同批修复）")
+    check("fetch('/api/update/open-folder'" not in app,
+          "P6 open-folder 前端调用已删（死 DOM 清理；单源后只留主按钮一个入口）")
+    check("fetch('/api/update/result')" in app,
+          "P7 /api/update/result 以 GET 消费（一次性结果，非写端点）")
 
     print(f"PASS {PASS} / FAIL {FAIL}")
     return 0 if FAIL == 0 else 1

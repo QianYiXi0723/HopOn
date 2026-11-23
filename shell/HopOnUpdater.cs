@@ -496,9 +496,11 @@ namespace HopOnUpdater
             }
             Log("校验通过：关键 5 文件均在位且非空");
 
-            // 7) 成功：清 backup + pending.json + staging + zip（磁盘归还），
-            //    按需重启。pending 清除必须在 StartShell **之前**——否则新壳
-            //    启动时会误判「又有更新待应用」。
+            // 7) 成功：清 backup + staging + zip（磁盘归还），按需重启。
+            // 2026-11-23 单源重做：pending.json **不删**——改写为 phase=done +
+            // result=success（一次性更新结果），供前端 /api/update/result 消费。
+            // 删除 pending 会让 result 丢失（前端永远看不到「✓ 已成功更新」）。
+            // phase=done 时壳启动不会续 apply（staging 也已删），正常启动。
             try
             {
                 Directory.Delete(backup, true);
@@ -508,18 +510,17 @@ namespace HopOnUpdater
             {
                 Log("WARN backup 清理失败（不影响升级结果）：" + ex.Message);
             }
+            WriteUpdateResult(root, staging);   // 先写 result（含新版本号）
             try
             {
-                string pending = Path.Combine(updateDir, "pending.json");
-                if (File.Exists(pending)) File.Delete(pending);
                 string stagingAll = Path.Combine(updateDir, "staging");
                 if (Directory.Exists(stagingAll)) Directory.Delete(stagingAll, true);
                 if (!string.IsNullOrEmpty(pkg) && File.Exists(pkg)) File.Delete(pkg);
-                Log("已清理 pending.json / staging / 安装包");
+                Log("已清理 staging / 安装包（pending 保留为 done+result）");
             }
             catch (Exception ex)
             {
-                Log("WARN staging/pending 清理失败（不影响升级结果）：" + ex.Message);
+                Log("WARN staging/zip 清理失败（不影响升级结果）：" + ex.Message);
             }
             // 7b) 自更新（2026-11-23 用户要求「自动更新加自动重启」的根子修复）：
             //     HopOnUpdater.exe 在保留名单里永不覆盖（它要活到换完文件），
@@ -959,6 +960,57 @@ namespace HopOnUpdater
             }
             Log("FATAL 自动重启失败（" + MAX_ROUNDS + " 轮均未存活）——"
                 + "请手动双击 " + exe + " 启动；更新本身已完成，数据未受影响");
+        }
+
+        // ------------------------------------------------------------------
+        // 写一次性更新结果到权威文件 pending.json（2026-11-23 单源重做）。
+        // apply 成功后：phase=done + result={ok:true,version,ts}，供前端
+        // GET /api/update/result 读后消费。net48 无 JSON 库，手写极简合并
+        // （保留已有字段，只替换 phase/result）。
+        // ------------------------------------------------------------------
+        private static void WriteUpdateResult(string root, string staging)
+        {
+            try
+            {
+                string pending = Path.Combine(root, ".update", "pending.json");
+                string version = "";
+                try
+                {
+                    foreach (string d in Directory.GetDirectories(staging))
+                    {
+                        string n = Path.GetFileName(d);
+                        if (n.StartsWith("HopOn_v")) { version = n.Substring("HopOn_v".Length); break; }
+                    }
+                }
+                catch { }
+                if (string.IsNullOrEmpty(version))
+                {
+                    try { version = FileVersionInfo.GetVersionInfo(Path.Combine(root, "HopOn.exe")).FileVersion ?? ""; }
+                    catch { }
+                }
+                version = version.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                string result = "{\"ok\":true,\"version\":\"" + version
+                    + "\",\"ts\":\"" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "\"}";
+
+                // 合并：读旧 JSON（扁平对象），去掉旧 phase/result 字段后追加新值
+                string existing = File.Exists(pending) ? File.ReadAllText(pending) : "{}";
+                string body = existing.Trim();
+                if (body.StartsWith("{")) body = body.Substring(1);
+                if (body.EndsWith("}")) body = body.Substring(0, body.Length - 1);
+                var re = new System.Text.RegularExpressions.Regex("\"phase\"\\s*:\\s*\"[^\"]*\"\\s*,?");
+                body = re.Replace(body, "");
+                re = new System.Text.RegularExpressions.Regex(",?\\s*\"result\"\\s*:\\s*\\{[^}]*\\}");
+                body = re.Replace(body, "");
+                body = body.Trim().TrimStart(',').TrimEnd(',');
+                string json = "{" + (string.IsNullOrEmpty(body) ? "" : body + ",")
+                    + "\"phase\":\"done\",\"result\":" + result + "}";
+                File.WriteAllText(pending, json, new UTF8Encoding(false));
+                Log("已写更新结果：phase=done result.ok=true version=" + version);
+            }
+            catch (Exception ex)
+            {
+                Log("WARN 写更新结果失败（前端将无成功提示）：" + ex.Message);
+            }
         }
 
         // ------------------------------------------------------------------

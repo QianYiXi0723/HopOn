@@ -573,12 +573,32 @@ namespace HopOn
 
         private int _engineRestartFails = 0;
 
-        /// <summary>.update\pending.json 是否在场（引擎 install 时写的
-        /// 「有更新待应用」事实源）。</summary>
+        /// <summary>读权威状态文件 .update\pending.json 的 phase 字段
+        /// （2026-11-23 单源重做：不再只看文件存在性）。net48 无 JSON 库，
+        /// 用极简字符串提取（字段是扁平 JSON 的 "phase":"..."）。
+        /// phase=staged→待应用；phase=applying→更新器接管中；phase=done→无待办。</summary>
+        private static string UpdatePhase()
+        {
+            try
+            {
+                string p = Path.Combine(Root, ".update", "pending.json");
+                if (!File.Exists(p)) return "";
+                string json = File.ReadAllText(p);
+                int i = json.IndexOf("\"phase\"", StringComparison.Ordinal);
+                if (i < 0) return "";
+                int c = json.IndexOf(':', i + 7);
+                if (c < 0) return "";
+                int a = json.IndexOf('"', c + 1);
+                int b = a < 0 ? -1 : json.IndexOf('"', a + 1);
+                return (a >= 0 && b > a) ? json.Substring(a + 1, b - a - 1) : "";
+            }
+            catch { return ""; }
+        }
+
         private bool UpdatePending()
         {
-            try { return File.Exists(Path.Combine(Root, ".update", "pending.json")); }
-            catch { return false; }
+            string phase = UpdatePhase();
+            return phase == "staged" || phase == "applying";
         }
 
         /// <summary>HopOnUpdater.exe 是否正在运行（按可执行路径精确匹配，
@@ -632,7 +652,9 @@ namespace HopOn
             try
             {
                 string pending = Path.Combine(Root, ".update", "pending.json");
-                if (!File.Exists(pending)) return false;
+                // 单源：只有 phase=staged（待应用）才续跑；phase=applying
+                // 说明更新器已在接管，phase=done 说明已完成——都不续。
+                if (UpdatePhase() != "staged") return false;
                 if (UpdaterRunning())
                     return false;   // 另一实例的更新器正在接管，本壳不抢
                 string staging = Path.Combine(Root, ".update", "staging");

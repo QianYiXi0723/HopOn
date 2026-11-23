@@ -3609,6 +3609,22 @@ class Handler(BaseHTTPRequestHandler):
             self._json(_update.download_status())
             return
 
+        if parsed.path == "/api/update/result":
+            # 一次性更新结果（2026-11-23 重做）：UI 首次加载时消费，替代前端
+            # localStorage rl-updating 标记。独立分支（非 _GET_SIMPLE_ROUTES
+            # ——那是无参只读轮询端点，消费型 GET 放进去会被首轮轮询吞掉）。
+            # 读后即清（take_update_result），幂等：拿不到返回 present=False，
+            # 前端不报错、下次加载再试（BUG A 教训）。
+            from core import update as _update
+
+            try:
+                result = _update.take_update_result()
+                self._json({"ok": True, "present": result is not None,
+                            "result": result, "current": _update.current_version()})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"ok": False, "message": str(exc)[:150]})
+            return
+
         if parsed.path == "/api/logtail":
             try:
                 n = int((query.get("n") or ["200"])[0])
@@ -4258,26 +4274,21 @@ class Handler(BaseHTTPRequestHandler):
                     return
 
                 try:
-                    # spawn 前写 pending.json（壳与 Updater 共认的「有更新待
-                    # 应用」事实源）：staged 态刷新它（staging 期已写过），
-                    # done 态补写——否则壳的 Engine_Exited 在 done 路径感知
-                    # 不到更新退出，会把旧引擎拉回来（脏竞态）。
-                    _update._atomic_json(_update.pending_path(), {
-                        "version": st.get("version"),
-                        "asset": st.get("asset"),
-                        "pkg": pkg,
-                        "staged_at": st.get("staged_at") or _update._now_text(),
-                        "src_pid": os.getpid(),
-                        "files": st.get("files"),
-                        # 自杀窗口单飞判据（见端点顶部注释 a 条）：15 秒内
-                        # 的第二次 install 一律 429
-                        "install_started": True,
-                        "install_started_ts": time.time(),
-                    })
+                    # spawn 前写权威状态（phase=applying）：壳与 Updater 共认的
+                    # 唯一事实源。staged 态刷新它（staging 期已写 phase=staged），
+                    # done 态补写——否则壳的 Engine_Exited 感知不到更新退出，
+                    # 会把旧引擎拉回来（脏竞态）。
+                    # 单飞字段保留（15s 内第二次 install 一律 429）。
+                    _update.write_update_state(
+                        phase="applying", version=st.get("version"),
+                        asset=st.get("asset"), pkg=pkg,
+                        staged_at=st.get("staged_at") or _update._now_text(),
+                        src_pid=os.getpid(), files=st.get("files"),
+                        install_started=True, install_started_ts=time.time(),
+                    )
                 except OSError as exc:
-                    # Z34（逐个比对）：pending 是壳感知与单飞判据的事实源，
-                    # 写失败还硬闯 spawn=壳复活旧引擎+双 POST 无保护并发——
-                    # 拒绝安装，磁盘/权限问题修好后再来
+                    # Z34：权威文件是壳感知与单飞判据的事实源，写失败还硬闯
+                    # spawn=壳复活旧引擎+双 POST 无保护并发——拒绝安装
                     self._json({"ok": False,
                                 "error": f"更新状态写入失败（磁盘或权限）：{exc}"}, 500)
                     return

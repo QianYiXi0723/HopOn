@@ -631,15 +631,10 @@ def _stage_job(job: Dict[str, Any], pkg: Path, version: str, asset: str) -> None
             if not p.is_file() or p.stat().st_size == 0:
                 raise IOError("staging 关键文件缺失或为空：%s" % rel)
         n_files = sum(1 for f in sroot.rglob("*") if f.is_file())
-        pending_path().parent.mkdir(parents=True, exist_ok=True)
-        _atomic_json(pending_path(), {
-            "version": version,
-            "asset": asset,
-            "pkg": str(pkg),
-            "staged_at": _now_text(),
-            "src_pid": os.getpid(),
-            "files": n_files,
-        })
+        # 单源：写权威状态（phase=staged），不再直接 _atomic_json pending
+        write_update_state(phase="staged", version=version, asset=asset,
+                           pkg=str(pkg), staged_at=_now_text(),
+                           src_pid=os.getpid(), files=n_files)
     except Exception as exc:  # noqa: BLE001 - 解压失败回 error，不比现状差
         clear_staging()
         with _download_lock:
@@ -669,6 +664,62 @@ def _atomic_json(path: Path, payload: Dict[str, Any]) -> None:
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
+
+
+# --------------------------------------------------------------------------- #
+# 更新链唯一权威状态（2026-11-23 重做：状态单源在后端安装根）
+#
+# 对照 AutoUpdater.NET / electron-updater / Squirrel.Windows 三个开源更新器
+# 的真实源码：状态都在后端/安装目录，UI 侧零跨进程标记。此前 HopOn 有三处
+# 状态源（前端 localStorage + download_state.json + pending.json），互相
+# 同步导致 A/D/E/F/G 五个「清标记」bug。现在 pending.json 升级为唯一权威：
+#   phase: staged(待应用) / applying(接管中) / done(完成)
+#   result: {ok, version, ts}  一次性更新结果，UI 首读即消费
+# download_state.json 降级为纯下载进度缓存（可随时重建，非判据）。
+# --------------------------------------------------------------------------- #
+
+def read_update_state() -> Dict[str, Any]:
+    """读权威状态；缺失/损坏返回空 dict（不抛异常）。"""
+    try:
+        raw = json.loads(pending_path().read_text(encoding="utf-8"))
+        return raw if isinstance(raw, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_update_state(**fields: Any) -> None:
+    """合并写权威状态（保留未指定的旧字段，如 install_started_ts）。
+
+    跨进程锁保证与 take_update_result 的「读即消费」互斥（复用 ipc_lock）。
+    """
+    from core import ipc_lock
+
+    with ipc_lock.blocking(str(pending_path()) + ".lock"):
+        cur = read_update_state()
+        cur.update(fields)
+        cur["saved_at"] = _now_text()
+        _atomic_json(pending_path(), cur)
+
+
+def take_update_result() -> Optional[Dict[str, Any]]:
+    """取走一次性更新结果（读后删除 result 字段），供 UI 首读消费。
+
+    复用 core/toasts.py:take_unread 的「读即消费+新鲜度+跨进程锁」模式。
+    拿不到结果返回 None（前端幂等：不报错，下次加载再试）。
+    """
+    from core import ipc_lock
+
+    with ipc_lock.blocking(str(pending_path()) + ".lock"):
+        cur = read_update_state()
+        result = cur.get("result")
+        if not isinstance(result, dict):
+            return None
+        cur.pop("result", None)
+        try:
+            _atomic_json(pending_path(), cur)
+        except OSError:
+            return None
+        return result
 
 
 #: 下载终态持久化（2026-11-15 用户实测「下载后检测不到本地资源而无法更新」

@@ -85,12 +85,22 @@ function toast(text, isErr){
    轰炸——朋友机 .5→.6 手动装 Setup 实测），改为页面顶部**常驻横幅**：
    失联即显示「重连中…」，恢复自动消失。引擎空窗（安装 1-3 分钟/退出
    收尸/启动窗口）横幅持续表达状态不刷屏；真故障（引擎死 20 秒+）文案
-   升级为红色。黑屏期（rl-updating 在位）黑幕已表达状态，横幅不显示。
-   toastConn 保留同名入口（调用站点不变），行为=驱动横幅。 */
+   升级为红色。
+   2026-11-23 重做（状态单源）：黑幕期静默闸改用 `_updStage`（后端
+   GET /api/update/download 的 stage 驱动，安装发起后本地置 installing），
+   不再读 localStorage rl-updating——业界无跨进程 UI 标记。 */
 const _BOOT_AT = Date.now();
 const _BOOT_GRACE_MS = 15000;
 const _CONN_FAIL_MS = 20000;       // 连续失联超此时长才判真故障（文案升级）
 let _connFailSince = 0;            // 首次失联时刻；0=当前连接正常
+let _updStage = 'idle';            // 后端更新阶段（单源静默闸）；安装中='installing'
+
+/* 更新进行中（含安装空窗）：这些阶段引擎会失联，横幅不该表达为故障 */
+function _updInFlight(){
+  return _updStage === 'downloading' || _updStage === 'verify'
+      || _updStage === 'staging' || _updStage === 'staged'
+      || _updStage === 'done' || _updStage === 'installing';
+}
 
 function _connBanner(text, isErr) {
   let box = document.getElementById('conn-banner');
@@ -106,7 +116,7 @@ function _connBanner(text, isErr) {
 }
 
 function toastConn(text){
-  if (localStorage.getItem('rl-updating')) return;
+  if (_updInFlight()) return;      // 更新期静默：黑幕/进度条已表达状态
   const now = Date.now();
   if (!_connFailSince) { _connFailSince = now; return; }   // 首次失联：静默记时
   if (now - _BOOT_AT >= _BOOT_GRACE_MS
@@ -130,7 +140,7 @@ function _connFailMark(){
   }
 }
 setInterval(function(){
-  if (localStorage.getItem('rl-updating')) { _connBanner(''); return; }  // 黑幕期：清横幅
+  if (_updInFlight()) { _connBanner(''); return; }       // 更新期：清横幅不表达
   fetch('/api/env', { cache: 'no-store' }).then(function(r){
     return r.json();
   }).then(function(d){
@@ -811,28 +821,21 @@ function updInstallProgress(){
   tick();
 }
 
-/* 更新结果确认（2026-11-15）：一键安装留下的 rl-updating 标记，重启后
-   对比版本——成功 toast「已更新」，失败（版本没变）提示重试，均清标记。
-   2026-11-23 逐行审修（BUG A）：原实现先 removeItem 再 fetch——若此刻
-   引擎还没起来（更新后首帧常见），fetch 失败 → 标记已删 → 本次更新结果
-   永久无人确认，用户永远看不到成功提示。改为**成功比对后才清标记**；
-   fetch 失败保留标记，下次加载页面再试（幂等）。 */
+/* 更新结果确认（2026-11-23 重做：状态单源在后端）：
+   不再读前端 localStorage 标记，改为 GET /api/update/result 消费后端一次性
+   结果（后端 take_update_result 读后即清）。幂等语义保留——拿不到结果
+   （引擎未就绪）不报错，下次页面加载再试（原 BUG A 教训）。
+   后端无 result 时 present=false，本 IIFE 静默返回（绝大多数启动）。 */
 (function(){
-  const pending = localStorage.getItem('rl-updating');
-  if (!pending) return;
-  const done = function(d){
-    const cur = d && d.current ? d.current : '';
-    if (!cur) return;                 // 拿不到版本：保留标记，下次再判
-    localStorage.removeItem('rl-updating');
-    if (cur === pending) {
-      toast('✓ 已成功更新到 v' + cur + '，欢迎回来');
+  fetch('/api/update/result').then(function(r){ return r.json(); }).then(function(d){
+    if (!d || !d.ok || !d.present || !d.result) return;   // 无结果：静默
+    const result = d.result;
+    if (result.ok) {
+      toast('✓ 已成功更新到 v' + (result.version || d.current) + '，欢迎回来');
     } else {
-      toast('更新未完成（当前仍是 v' + cur + '）——可重新检查更新后安装，或到下载页手动安装', true);
+      toast('更新未完成（当前仍是 v' + (d.current || '') + '）——可重新检查更新后安装，或到下载页手动安装', true);
     }
-  };
-  fetch('/api/update').then(function(r){ return r.json(); })
-    .then(done)
-    .catch(function(){ /* 引擎未就绪：保留标记，下次页面加载重判 */ });
+  }).catch(function(){ /* 引擎未就绪：后端 result 保留，下次页面加载重判 */ });
 })();
 
 /* 发现新版本弹窗（2026-11-15 双渠道版）：公告+下载途径选择。
@@ -874,17 +877,12 @@ function closeUpdateModal(){
   updDlReset();   // 关弹窗停轮询（下载任务在后端继续跑也不刷 UI）
 }
 
-/* 站内下载+一键安装按钮绑定（addEventListener 纪律；元素在全局弹窗区） */
+/* 站内下载+一键安装按钮绑定（addEventListener 纪律；元素在全局弹窗区）。
+   2026-11-23 重做：删掉历史残留的 upd-dl-open（死 DOM，从未显示过）。
+   一键更新只有主按钮 upd-dl-btn「下载并安装更新」一个入口。 */
 (function(){
   const btn = document.getElementById('upd-dl-btn');
-  const open = document.getElementById('upd-dl-open');
   if (btn) btn.addEventListener('click', updDlStart);
-  if (open) open.addEventListener('click', function(){
-    // 2026-11-23 同批修复：此端点只在 do_POST 注册，fetch 默认 GET 会 404
-    fetch('/api/update/open-folder', { method: 'POST' }).then(function(r){ return r.json(); }).then(function(d){
-      if (d && !d.ok) toast(d.error || '打开失败', true);
-    }).catch(function(){ toastConn('无法连接本地服务'); });
-  });
 })();
 
 /* 站内下载（2026-11-15）：引擎代理下载+SHA-256 校验+引导安装。
@@ -901,7 +899,6 @@ function updDlReset(){
   btn.disabled = false;
   btn.textContent = '下载并安装更新';
   document.getElementById('upd-dl-prog').hidden = true;
-  document.getElementById('upd-dl-done').hidden = true;
 }
 function updDlPick(){
   const d = window.__updateInfo || {};
@@ -916,20 +913,20 @@ function updDlPick(){
 function updDlStart(){
   const pick = updDlPick();
   updDlReset();
-  localStorage.setItem('rl-updating', pick.version);
+  _updStage = 'downloading';   // 单源静默闸：本地先置，后端 poll 随后校准
   const btn = document.getElementById('upd-dl-btn');
   btn.disabled = true;
   btn.textContent = '准备下载…';
   document.getElementById('upd-dl-prog').hidden = false;
   postJSON('/api/update/download', pick).then(function(d){
     if (!d || !d.ok) {
-      localStorage.removeItem('rl-updating');   // D15：发起失败清标记，否则连接横幅静默闸被残留标记锁死
+      _updStage = 'idle';      // 发起失败：后端不会推进，静默闸自然解除
       updDlReset();
       toast((d && d.message) || '下载发起失败', true);
       return;
     }
     updDlPoll();
-  }).catch(function(){ localStorage.removeItem('rl-updating'); updDlReset(); toast('无法连接本地服务', true); });
+  }).catch(function(){ _updStage = 'idle'; updDlReset(); toast('无法连接本地服务', true); });
 }
 /* done→自动接安装（单按钮贯穿全流程）；error→按钮复位+toast */
 function updDlAutoInstall(){
@@ -949,15 +946,15 @@ function updDlAutoInstall(){
        （staged 替换/Updater/自动重启）全都不会执行。 */
     fetch('/api/update/install', { method: 'POST' }).then(function(r){ return r.json(); }).then(function(d){
       if (d && !d.ok) {
-        /* 2026-11-23 逐行审修（BUG F）：原来无条件清标记。但 install 失败的
-           多数场景（staging 解压中/防降级前/更新器缺失）**包还在**，重启后
-           续 apply 仍可能装上——清掉标记会让用户看不到「✓ 已成功更新」。
-           保留标记：启动确认逻辑会在版本真变化时提示，未变化时如实说未完成。 */
+        /* 单源：install 失败不清本地闸——后端权威文件承载结果，重启后
+           /api/update/result 显示。多数失败场景包还在（可续 apply）。 */
+        _updStage = 'idle';
         document.getElementById('installing-mask').hidden = true;
         toast(d.error || '安装发起失败', true);
         updDlReset();
         return;
       }
+      _updStage = 'installing';      // 单源：引擎即将自杀，本地置安装中闸
       document.getElementById('installing-mask').hidden = false;
       document.getElementById('inst-ver').textContent = 'v' + (window.__updateInfo ? window.__updateInfo.latest : '');
       updInstallProgress();   // 黑暗期时间基进度+阶段文案（业界惯例）
@@ -972,10 +969,10 @@ function updDlAutoInstall(){
            StartShell 拉起新壳（5 轮重试 + 连续 5 秒存活确认）。
            这里只负责在**引擎先回来**的罕见路径上刷新页面。 */
         if (tries > 60) {
-          /* 2026-11-23 逐行审修（BUG D）：原来在这里 removeItem——但此刻
-             安装多半正在进行（壳要退出、Updater 在换文件），清掉标记会让
-             重启后的「✓ 已成功更新」确认永远不出现。保留标记交给启动确认
-             逻辑（L808）判定。 */
+          /* 单源：清本地安装闸（页面即将销毁），但后端权威文件的 result
+             由 Updater 写入，重启后 /api/update/result 正确显示——不靠
+             前端标记（原 BUG D 的教训是"别在前端清后端事实"，现已无前端事实）。 */
+          _updStage = 'idle';
           document.getElementById('installing-mask').hidden = true;
           updDlReset();
           toast('更新已完成，应用正在启动中——稍候会自动打开', true);
@@ -998,9 +995,9 @@ function updDlAutoInstall(){
 function updDlPoll(){
   fetch('/api/update/download').then(function(r){ return r.json(); }).then(function(d){
     const st = d.stage || 'idle';
+    _updStage = st;                    // 单源：后端 stage 驱动静默闸
     const fill = document.getElementById('upd-dl-fill');
     const txt = document.getElementById('upd-dl-txt');
-    const btn = document.getElementById('upd-dl-btn');
     if (st === 'downloading') {
       const pct = d.total ? Math.min(100, Math.round(d.bytes / d.total * 100)) : 0;
       fill.style.width = pct + '%';
@@ -1012,39 +1009,28 @@ function updDlPoll(){
       txt.textContent = d.message || '校验 SHA-256…';
       _updDlTimer = setTimeout(updDlPoll, 500);
     } else if (st === 'staging') {
-      // 运行期解压准备（2026-11-22 staged 改造）：引擎在校验通过后立即
-      // 把新版解压到暂存区（Firefox/VS Code prepare 前移同款）——这一步
-      // 做完才发安装，安装期只剩秒级纯覆盖
+      // 运行期解压准备：引擎校验通过后解压到暂存区，安装期只剩纯覆盖
       fill.style.width = '100%';
       txt.textContent = d.message || '解压准备更新…';
       _updDlTimer = setTimeout(updDlPoll, 500);
     } else if (st === 'staged' && d.sha_ok) {
-      // 暂存就绪→接静默安装（2026-11-22：此前 done 一到就装，会撞上
-      // 解压中；现在解压已前移完成，安装=纯覆盖）。
-      // Z27：进安装后停掉轮询链，防任何未知重入路径二次发起 install
+      // 暂存就绪→接静默安装；停轮询链防二次 install
       if (_updDlTimer) { clearTimeout(_updDlTimer); _updDlTimer = null; }
       updDlAutoInstall();
     } else if (st === 'done' && d.sha_ok) {
-      // done 但还没 staged（解压在排队/刚发端）：继续轮询等 staged。
-      // 引擎重启后 staging 失效被降级的 done 不会自己变 staged——15 秒
-      // 兜底直接发安装（Updater 自己解压的旧链，永不比现状差）。
+      // done 等 staged；引擎重启后 staged 失效降级 done 的 15s 兜底转安装
       if (++_updDonePolls > 30) { updDlAutoInstall(); return; }
       _updDlTimer = setTimeout(updDlPoll, 500);
     } else if (st === 'error') {
-      /* 2026-11-23 逐行审修（BUG E）：原实现在**任何** error 都清 rl-updating。
-         但 error 可能是「解压准备失败」——此时包已下载，标记清掉会让重启后的
-         续 apply / 结果确认全部失效（朋友机 15:38 就是靠续 apply 才装上）。
-         现在按 stage 是否已过 verify 区分：
-           - 下载/校验阶段失败（无 sha_ok）→ 清标记（本次更新未成立）
-           - 解压/安装阶段失败（sha_ok 已有）→ 保留标记，交给启动确认逻辑 */
-      if (!d.sha_ok) localStorage.removeItem('rl-updating');
+      /* 单源：error 时清本地 stage 闸（后端状态已是事实源，前端不再维护
+         跨进程标记）。失败结果由后端权威文件承载，重启后取 result 显示。 */
+      _updStage = 'idle';
       document.getElementById('installing-mask').hidden = true;
       updDlReset();
       toast(d.message || '下载失败', true);
     } else {
-      // idle（任务被引擎重启清掉等）：复位按钮停轮询（2026-11-23 逐行审
-      // P6——此前无限空转轮询，用户对着永远不动的进度条）
-      if (st === 'idle') { updDlReset(); return; }
+      // idle：复位停轮询（避免无限空转）
+      if (st === 'idle') { _updStage = 'idle'; updDlReset(); return; }
       _updDlTimer = setTimeout(updDlPoll, 800);
     }
   }).catch(function(){ _updDlTimer = setTimeout(updDlPoll, 1200); });

@@ -177,8 +177,8 @@ def structure_tests() -> None:
     check('not in ("done", "staged")' in lu, "B2 install 前置接受 done|staged")
     check('if st.get("stage") == "staged":\n                        _cmd.append("--staged")' in lu,
           "B3 staged 态 spawn 带 --staged")
-    check("_update._atomic_json(_update.pending_path()" in lu,
-          "B4 spawn 前写 pending.json（done/staged 统一事实源）")
+    check("_update.write_update_state(" in lu and 'phase="applying"' in lu,
+          "B4 spawn 前写权威状态 phase=applying（单源，替换旧直接写 pending）")
     check("from core.paths import install_root as _app_root" in lu,
           "B5 install 安装根走 install_root 单源（HOPON_APP_DIR/HOPON_INSTALL_DIR 不同源坑）")
 
@@ -194,8 +194,8 @@ def structure_tests() -> None:
           "B8b 删除计划在位（engine 子树幽灵文件，Firefox MAR 删除语义同款）")
     check('"engine", "core", "update.py"' in up and '"engine", "login_ui.py"' in up,
           "B9 落盘校验 3→5 文件")
-    check("已清理 pending.json / staging / 安装包" in up,
-          "B10 apply 成功清 pending/staging/zip")
+    check("WriteUpdateResult(root, staging)" in up and "已清理 staging / 安装包（pending 保留为 done+result）" in up,
+          "B10 apply 成功写 phase=done+result 后清 staging/zip（pending 保留供 UI 消费——单源）")
     check("pid<=0（壳启动续 apply 场景）——跳过等进程" in up,
           "B11 pid<=0 直通（--pid 0 场景）")
 

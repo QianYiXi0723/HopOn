@@ -62,12 +62,13 @@ def main() -> int:
     check("installing-mask" in timeout_zone,
           "F2d 超时分支撤黑幕（标记保留，交启动确认逻辑判定——BUG D 修正）")
 
-    # ---- F3 toastConn 静默闸 ----
+    # ---- F3 toastConn 静默闸（2026-11-23 单源重做：闸源从 localStorage
+    #     改为 _updInFlight() 读后端 stage 驱动的模块变量）----
     m2 = re.search(r"function toastConn\(text\)\{.*?\n\}", app, re.S)
-    check(m2 is not None and "rl-updating" in (m2.group(0) if m2 else ""),
-          "F3a toastConn 读 rl-updating 标记")
-    check(len(re.findall(r"toastConn\('无法连接本地服务'\)", app)) >= 4,
-          "F3b 后台轮询失联站点已换 toastConn（≥4）")
+    check(m2 is not None and "_updInFlight()" in (m2.group(0) if m2 else ""),
+          "F3a toastConn 用 _updInFlight() 静默闸（后端 stage 单源，无前端标记）")
+    check(len(re.findall(r"toastConn\('无法连接本地服务'\)", app)) >= 3,
+          "F3b 后台轮询失联站点已换 toastConn（≥3，删死 open 绑定后少一处）")
     check(len(re.findall(r"toastConn\('当场验货无法连接本地服务'\)", app)) == 1,
           "F3c 当场验货失联站点已换 toastConn")
     check(len(re.findall(r"updDlReset\(\);\s*\n\s*toast\('无法连接本地服务'", app)) == 1,
@@ -80,10 +81,10 @@ def main() -> int:
           "F4a 启动宽限窗常量在位（页面加载起 15 秒）")
     tc = re.search(r"function toastConn\(text\)\{.*?\n\}", app, re.S)
     tc_body = tc.group(0) if tc else ""
-    rl_pos = tc_body.find("rl-updating")
-    grace_pos = tc_body.find("_BOOT_GRACE_MS")
-    check(0 <= rl_pos < grace_pos,
-          "F4b 黑屏期判定先于宽限窗判定（两层静默有序）")
+    gate_pos = tc_body.find("_updInFlight()")
+    grace_pos = tc_body.find("_BOOT_AT >= _BOOT_GRACE_MS")
+    check(0 <= gate_pos < grace_pos,
+          "F4b 更新期静默闸先于宽限窗判定（两层静默有序，单源版）")
     check("Date.now() - _BOOT_AT" in tc_body or "_BOOT_GRACE_MS" in app,
           "F4c 启动宽限窗保留（2026-11-22 职责移交探活横幅，判定仍在）")
 
@@ -126,32 +127,21 @@ def main() -> int:
     check("tipParts.join(' ｜ ')" in app,
           "F7c tip 单源组装（上次检查/本月完成经 tipParts）")
 
-    # ---- F8 rl-updating 标记状态机（2026-11-23 逐行审：四处误清）----
-    # A: 启动确认必须先比对成功才清标记（原实现先清再 fetch，fetch 失败即永久丢结果）
-    confirm = re.search(r"\(function\(\)\{\s*const pending = localStorage.getItem\('rl-updating'\);.*?\}\)\(\);", app, re.S)
-    cbody = confirm.group(0) if confirm else ""
-    check("if (!cur) return;" in cbody,
-          "F8a 启动确认：拿不到版本时保留标记（引擎未就绪不丢结果）")
-    check(cbody.find("localStorage.removeItem('rl-updating')") > cbody.find("if (!cur) return;"),
-          "F8b 启动确认：先比对版本再清标记（原实现先清后判=BUG A）")
-    check(".catch(function(){ /* 引擎未就绪：保留标记" in cbody,
-          "F8c 启动确认：fetch 失败保留标记")
-
-    # D: probe 超时不得清标记（安装多半正在进行）
-    probe = re.search(r"if \(tries > 60\) \{.*?return;\s*\}", app, re.S)
-    pbody = probe.group(0) if probe else ""
-    check("localStorage.removeItem" not in pbody,
-          "F8d probe 超时保留标记（原实现清标记=更新结果永久丢失 BUG D）")
-
-    # E: poll error 分支按 stage 区分（解压失败不该清）
-    check("if (!d.sha_ok) localStorage.removeItem('rl-updating');" in app,
-          "F8e poll error 按 sha_ok 区分清标记（解压失败=包还在可续 apply BUG E）")
-
-    # F: install !ok 分支保留标记
-    inst = re.search(r"if \(d && !d\.ok\) \{.*?return;\s*\}", app, re.S)
-    ibody = inst.group(0) if inst else ""
-    check("removeItem" not in ibody,
-          "F8f install 失败保留标记（staging 多可续 apply BUG F）")
+    # ---- F8 状态单源重做（2026-11-23）：前端零标记，结果由后端
+    #     /api/update/result 消费。替换旧 F8a-f 的「标记读写」断言 ----
+    check("localStorage.getItem('rl-updating')" not in app
+          and "localStorage.setItem('rl-updating'" not in app,
+          "F8a 前端零 rl-updating 标记读写（状态单源在后端，业界三项目共识）")
+    check("fetch('/api/update/result')" in app and "d.present" in app,
+          "F8b 启动确认消费后端 /api/update/result（一次性结果，非前端标记）")
+    check("if (!d || !d.ok || !d.present || !d.result) return;" in app,
+          "F8c 无结果静默返回 + fetch 失败 catch 保留后端结果（幂等，BUG A 教训）")
+    check("result.ok" in app and "✓ 已成功更新到 v" in app,
+          "F8d 按后端 result.ok 显示成功提示（版本来自后端，非前端比对）")
+    check("_updInFlight()" in app and "let _updStage = 'idle'" in app,
+          "F8e 静默闸读 _updStage（后端 stage 驱动），非 localStorage")
+    check("localStorage.removeItem" not in app.split("function toastConn")[1].split("function _connFailMark")[0],
+          "F8f 连接健康链无标记清除（删掉 8 处散装清标记）")
 
     # G: 进度阶段覆盖到 90 秒（Updater 5 轮重试最坏 ~50s）
     check("if (el < 90) setTimeout(tick, 300);" in app,
