@@ -521,6 +521,13 @@ namespace HopOnUpdater
             {
                 Log("WARN staging/pending 清理失败（不影响升级结果）：" + ex.Message);
             }
+            // 7b) 自更新（2026-11-23 用户要求「自动更新加自动重启」的根子修复）：
+            //     HopOnUpdater.exe 在保留名单里永不覆盖（它要活到换完文件），
+            //     导致 Updater 自身的修复永远送不到已安装机器。这里在成功收尾
+            //     阶段用 rename 手法原地自替换：staging 里有新版 Updater 就
+            //     先把旧版改名让位、新版就位（同盘原子；旧版下次启动时清掉）。
+            SelfUpdateUpdater(staging, root);
+
             Log("=== 升级成功 ===");
             if (restart) StartShell(root);
             return ExitOk;
@@ -890,61 +897,112 @@ namespace HopOnUpdater
                 Log("WARN 无法重启：HopOn.exe 不存在");
                 return;
             }
-            try
+
+            // 2026-11-23 自动重启可靠性重做（用户令「解决自动重启问题」）：
+            // 单次 Start + 观察会漏掉「新壳被互斥顶回后偶发能起」的情况——
+            // 实测：旧壳退出与新壳抢互斥是有窗口的，起一次失败不代表彻底
+            // 失败。改为最多 5 轮重试（每轮起一次 + 观察 8 秒），任一轮成功
+            // 即返回；全部失败才 WARN（不再有「静默放弃」）。
+            const int MAX_ROUNDS = 5;
+            for (int round = 1; round <= MAX_ROUNDS; round++)
             {
-                // 2026-11-23 根修（朋友机「更新后无法连接本地」真因）：
-                // UseShellExecute=true 会走 Shell 关联，在 DetachFromJob /
-                // DETACHED_PROCESS 的 Updater 上下文里**静默失败**——日志照写
-                // 「已启动」但进程从没起来（对照实验：方式B 立刻 200、A 恒 000）。
-                // 改 UseShellExecute=false + CreateNoWindow：直接 CreateProcess，
-                // 无 Shell 依赖。主窗由程序自己 Show（--tray 时藏托盘），不冲突。
-                // --relaunched：告知新壳这是更新后拉起，若旧壳仍持有单实例
-                // 互斥则等其释放再接管（2026-11-23 根修——此前新壳撞上未退
-                // 干净的旧壳互斥会静默 return，表现「更新成功但打不开」）。
-                var psi = new ProcessStartInfo(exe)
-                {
-                    WorkingDirectory = root,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    Arguments = "--relaunched",
-                };
-                var child = Process.Start(psi);
-                if (child == null)
-                {
-                    Log("WARN Process.Start 返回 null（未真正创建进程）");
-                    return;
-                }
-                Log("已启动：" + exe + "  childPid=" + child.Id);
-                // 等 3 秒确认子壳没立刻退出（互斥/崩溃都会退，退出码进日志）
                 try
                 {
-                    if (child.WaitForExit(3000))
-                        Log("WARN 子壳 3 秒内退出，退出码=" + child.ExitCode
-                            + "（若 code=0 且 shell.log 报互斥，说明旧壳未退干净）");
-                }
-                catch (Exception wex)
-                {
-                    Log("WARN 观察子壳异常：" + wex.Message);
-                }
-                // 2026-11-23 根因实测：新壳可能撞上旧壳的单实例互斥
-                // （HopOn.Shell.Mutex）→ createdNew=false → 静默退出码 0，
-                // 表现="更新成功但打不开"。轮询等互斥释放最多 30 秒，再确认
-                // 子进程真活着；都不行则明确报 WARN（不再假报成功）。
-                for (int i = 0; i < 30; i++)
-                {
-                    Thread.Sleep(1000);
-                    if (IsProcessAliveByName(exe, out int childPid))
+                    // UseShellExecute=false：DETACHED/脱离 Job 的上下文里 Shell
+                    // 启动不可靠（实测静默失败）；--relaunched 让新壳等旧壳释放
+                    // 单实例互斥后再接管。
+                    var psi = new ProcessStartInfo(exe)
                     {
-                        Log("新壳存活确认（pid=" + childPid + "）");
-                        return;
+                        WorkingDirectory = root,
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        Arguments = "--relaunched",
+                    };
+                    var child = Process.Start(psi);
+                    if (child == null)
+                    {
+                        Log("WARN 第 " + round + " 轮 Process.Start 返回 null");
+                        continue;
                     }
+                    Log("第 " + round + " 轮启动：" + exe + "  childPid=" + child.Id);
+
+                    // 2026-11-23 实测教训：子壳可能启动后 200ms 内就因单实例
+                    // 互斥退出——只查一次「是否活着」会误判成功（曾把
+                    // 「活着 200ms 就死」当存活确认）。必须要求**连续存活**
+                    // 至少 5 秒（10 次 x 500ms 不间断）才算真正起来。
+                    int aliveStreak = 0;
+                    for (int i = 0; i < 16; i++)
+                    {
+                        Thread.Sleep(500);
+                        if (child.HasExited)
+                        {
+                            Log("第 " + round + " 轮子壳退出，退出码=" + child.ExitCode
+                                + "（存活不到 " + (i * 0.5) + " 秒）");
+                            break;
+                        }
+                        if (IsProcessAliveByName(exe, out _)) aliveStreak++;
+                        else aliveStreak = 0;
+                        if (aliveStreak >= 10)   // 连续 5 秒
+                        {
+                            Log("新壳稳定存活确认（第 " + round + " 轮，pid=" + child.Id + "，已连续 5 秒）");
+                            return;
+                        }
+                    }
+                    if (round < MAX_ROUNDS)
+                        Log("第 " + round + " 轮未存活，2 秒后重试…");
                 }
-                Log("WARN 新壳 30 秒内未存活——可能被单实例互斥顶回"
-                    + "（旧壳未退干净）或安全软件拦截");
+                catch (Exception ex)
+                {
+                    Log("WARN 第 " + round + " 轮启动异常：" + ex.Message);
+                }
+                Thread.Sleep(2000);
+            }
+            Log("FATAL 自动重启失败（" + MAX_ROUNDS + " 轮均未存活）——"
+                + "请手动双击 " + exe + " 启动；更新本身已完成，数据未受影响");
+        }
+
+        // ------------------------------------------------------------------
+        // 更新器自更新（2026-11-23）：保留名单让 HopOnUpdater.exe 永不被
+        // 覆盖，于是 Updater 自身的修复永远到不了已安装机器（用户要求「自动
+        // 更新加自动重启」在根子上就断在这一环）。这里在文件替换全部成功、
+        // 即将拉起新壳之前，用 rename 手法原地自替换：
+        //   旧 Updater → HopOnUpdater.exe.old（让位，同盘原子）
+        //   staging 里的新 Updater → HopOnUpdater.exe（就位）
+        // 旧版在下次启动时删除（本进程还映着它，删不掉也无害）。
+        // 失败只 WARN——绝不影响本次更新结果。
+        // ------------------------------------------------------------------
+        private static void SelfUpdateUpdater(string staging, string root)
+        {
+            try
+            {
+                string live = Path.Combine(root, "HopOnUpdater.exe");
+                string fresh = Path.Combine(staging, "HopOnUpdater.exe");
+                if (!File.Exists(fresh))
+                {
+                    Log("自更新：新包内无 HopOnUpdater.exe，跳过");
+                    return;
+                }
+                // 内容一致就不用折腾（续跑/重复 apply）
+                if (File.Exists(live) && FilesEqual(fresh, live))
+                {
+                    Log("自更新：更新器已是最新，跳过");
+                    return;
+                }
+                // 先清上次遗留的 .old（那时进程早退出了）
+                string old = live + ".old";
+                try { if (File.Exists(old)) File.Delete(old); } catch { }
+
+                if (File.Exists(live))
+                {
+                    File.Move(live, old);          // 让位（运行中的 exe 可 rename）
+                    Log("自更新：旧更新器已让位 → " + Path.GetFileName(old));
+                }
+                File.Move(fresh, live);            // 新版就位
+                Log("自更新：更新器已替换为新版（下次更新生效）");
             }
             catch (Exception ex)
             {
-                Log("WARN 启动失败：" + ex.Message);
+                Log("WARN 更新器自更新失败（不影响本次升级）：" + ex.Message);
             }
         }
 

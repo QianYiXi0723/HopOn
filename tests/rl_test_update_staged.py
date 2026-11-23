@@ -227,8 +227,11 @@ def structure_tests() -> None:
           "E4 DetachFromJob 在 _logPath 就绪之后调用（否则日志丢 null，真因被掩盖）")
     check('"--relaunched"' in up and "UseShellExecute = false" in up,
           "E5 StartShell 用 UseShellExecute=false + 传 --relaunched")
-    check("新壳存活确认" in up and "子壳 3 秒内退出" in up,
-          "E6 StartShell 确认子壳真存活（不再假报「已启动」）")
+    check("新壳稳定存活确认" in up and "已连续 5 秒" in up and "MAX_ROUNDS = 5" in up,
+          "E6 StartShell 连续 5 秒存活确认+最多 5 轮重试"
+          "（2026-11-23：活 200ms 就死曾被误判成功，必须持续存活才算数）")
+    check("SelfUpdateUpdater" in up,
+          "E7 更新器自更新（保留名单让 Updater 永不替换→自身修复送不到用户机）")
 
     # UI
     check("st === 'staging'" in app, "B15 UI staging 态显示解压进度")
