@@ -66,9 +66,31 @@ def _tag_commit(version: str) -> str:
     return out.stdout.strip()
 
 
+def _all_releases(gtok: str) -> list:
+    """拉全量 Release 列表（逐页翻到空页为止）。
+
+    2026-11-23 修：Gitee 的 `/releases` 默认只返回第一页，新版本排在后面
+    → 旧实现查不到刚发的 Release，误判「不存在」后走创建分支报 HTTP 400
+    （同名已存在）。所有需要全量列表的地方都必须走这里。
+    """
+    out: list = []
+    page = 1
+    while page <= 50:                      # 上限防死循环；50×100 远超实际版本数
+        url = (f"https://gitee.com/api/v5/repos/{GITEE_REPO}/releases"
+               f"?access_token={gtok}&page={page}&per_page=100")
+        rels = _api(url)
+        if not isinstance(rels, list) or not rels:
+            break
+        out.extend(rels)
+        if len(rels) < 100:                # 不满一页 = 最后一页
+            break
+        page += 1
+    return out
+
+
 def _release_exists(gtok: str, tag: str) -> bool:
-    rels = _api(f"https://gitee.com/api/v5/repos/{GITEE_REPO}/releases?access_token={gtok}")
-    return any(str(r.get("tag_name")) == tag for r in rels if isinstance(r, dict))
+    return any(str(r.get("tag_name")) == tag for r in _all_releases(gtok)
+               if isinstance(r, dict))
 
 
 def _upload(gtok: str, rel_id: str, path: Path) -> None:
@@ -108,7 +130,7 @@ def _verify(gtok: str, tag: str, expected: dict) -> None:
     import hashlib
     import time as _t
 
-    rels = _api(f"https://gitee.com/api/v5/repos/{GITEE_REPO}/releases?access_token={gtok}")
+    rels = _all_releases(gtok)
     hit = next(r for r in rels if str(r.get("tag_name")) == tag)
     have = {a.get("name") or "": a for a in (hit.get("assets") or [])}
     missing = [n for n in expected if n not in have]
@@ -149,7 +171,7 @@ def backfill(version: str) -> bool:
     if _release_exists(gtok, tag):
         # 修补模式（2026-11-13 实测：Release 建出来了但大文件上传断连，
         # 二跑必须只补缺资产而不是整体跳过）
-        rels = _api(f"https://gitee.com/api/v5/repos/{GITEE_REPO}/releases?access_token={gtok}")
+        rels = _all_releases(gtok)
         hit = next(r for r in rels if str(r.get("tag_name")) == tag)
         rel_id = str(hit["id"])
         have = {a.get("name") or "" for a in (hit.get("assets") or [])}
