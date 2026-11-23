@@ -56,8 +56,11 @@ def main() -> int:
     timeout_zone = body[tries_pos:fetch_pos] if tries_pos >= 0 else ""
     check("updDlReset" in timeout_zone,
           "F2c 超时分支带 updDlReset（按钮复位可重试）")
-    check("rl-updating" in timeout_zone,
-          "F2d 超时分支卸 rl-updating 标记（黑幕不悬挂）")
+    # 2026-11-23 逐行审：原断言要求超时分支卸 rl-updating——但那是错的
+    # （安装多半正在进行，清标记会让重启后的成功确认永久丢失 = BUG D）。
+    # 改为：超时分支必须撤销黑幕（mask hidden），标记保留。
+    check("installing-mask" in timeout_zone,
+          "F2d 超时分支撤黑幕（标记保留，交启动确认逻辑判定——BUG D 修正）")
 
     # ---- F3 toastConn 静默闸 ----
     m2 = re.search(r"function toastConn\(text\)\{.*?\n\}", app, re.S)
@@ -122,6 +125,37 @@ def main() -> int:
           "F7b tip 组装空段过滤（防「｜｜」双分隔符）")
     check("tipParts.join(' ｜ ')" in app,
           "F7c tip 单源组装（上次检查/本月完成经 tipParts）")
+
+    # ---- F8 rl-updating 标记状态机（2026-11-23 逐行审：四处误清）----
+    # A: 启动确认必须先比对成功才清标记（原实现先清再 fetch，fetch 失败即永久丢结果）
+    confirm = re.search(r"\(function\(\)\{\s*const pending = localStorage.getItem\('rl-updating'\);.*?\}\)\(\);", app, re.S)
+    cbody = confirm.group(0) if confirm else ""
+    check("if (!cur) return;" in cbody,
+          "F8a 启动确认：拿不到版本时保留标记（引擎未就绪不丢结果）")
+    check(cbody.find("localStorage.removeItem('rl-updating')") > cbody.find("if (!cur) return;"),
+          "F8b 启动确认：先比对版本再清标记（原实现先清后判=BUG A）")
+    check(".catch(function(){ /* 引擎未就绪：保留标记" in cbody,
+          "F8c 启动确认：fetch 失败保留标记")
+
+    # D: probe 超时不得清标记（安装多半正在进行）
+    probe = re.search(r"if \(tries > 60\) \{.*?return;\s*\}", app, re.S)
+    pbody = probe.group(0) if probe else ""
+    check("localStorage.removeItem" not in pbody,
+          "F8d probe 超时保留标记（原实现清标记=更新结果永久丢失 BUG D）")
+
+    # E: poll error 分支按 stage 区分（解压失败不该清）
+    check("if (!d.sha_ok) localStorage.removeItem('rl-updating');" in app,
+          "F8e poll error 按 sha_ok 区分清标记（解压失败=包还在可续 apply BUG E）")
+
+    # F: install !ok 分支保留标记
+    inst = re.search(r"if \(d && !d\.ok\) \{.*?return;\s*\}", app, re.S)
+    ibody = inst.group(0) if inst else ""
+    check("removeItem" not in ibody,
+          "F8f install 失败保留标记（staging 多可续 apply BUG F）")
+
+    # G: 进度阶段覆盖到 90 秒（Updater 5 轮重试最坏 ~50s）
+    check("if (el < 90) setTimeout(tick, 300);" in app,
+          "F8g 安装进度覆盖 90 秒（原 20 秒就暗示失败=误导 BUG G）")
 
     print(f"PASS {PASS} / FAIL {FAIL}")
     return 0 if FAIL == 0 else 1

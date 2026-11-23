@@ -785,12 +785,18 @@ function updInstallProgress(){
   const fill = document.getElementById('inst-fill');
   const txt = document.getElementById('inst-stage');
   if (!fill || !txt) return;
+  /* 2026-11-23 逐行审修（BUG G）：原来 20 秒就提示「请检查是否已启动」，
+     但 Updater 现在有 5 轮启动重试（最坏 ~50s）＋覆盖耗时，总时长可达
+     90 秒——过早暗示失败会误导用户去手动开第二个实例（触发单实例互斥，
+     反而更糟）。阶段表拉长到 90 秒，且措辞保持"正在"语义不催用户。 */
   const stages = [
-    [0,   10, '连接安装器…'],
-    [1.5, 25, '关闭运行中的应用…'],
-    [3,   35, '复制新版本文件（预计 10 秒左右）…'],
-    [11,  88, '重启应用…'],
-    [14,  96, '即将完成…'],
+    [0,   8,  '连接安装器…'],
+    [1.5, 20, '关闭运行中的应用…'],
+    [3,   34, '复制新版本文件（预计 10 秒左右）…'],
+    [14,  62, '重启应用…'],
+    [25,  78, '等待应用就绪…'],
+    [45,  88, '仍在启动中（网络盘或安全软件可能拖慢）…'],
+    [70,  93, '马上就好…'],
   ];
   const t0 = Date.now();
   const tick = function(){
@@ -799,26 +805,34 @@ function updInstallProgress(){
     for (const s of stages) { if (el < s[0]) { pct = s[1]; msg = s[2]; break; } }
     fill.style.width = pct + '%';
     txt.textContent = '预计进度 ' + pct + '% · ' + msg;
-    if (el < 20) setTimeout(tick, 300);
-    else txt.textContent = '即将完成…（超过 20 秒仍未重启请检查应用是否已启动）';
+    if (el < 90) setTimeout(tick, 300);
+    else txt.textContent = '即将完成…（超过 90 秒仍在启动，可稍候或在任务栏查看）';
   };
   tick();
 }
 
 /* 更新结果确认（2026-11-15）：一键安装留下的 rl-updating 标记，重启后
-   对比版本——成功 toast「已更新」，失败（版本没变）提示重试，均清标记 */
+   对比版本——成功 toast「已更新」，失败（版本没变）提示重试，均清标记。
+   2026-11-23 逐行审修（BUG A）：原实现先 removeItem 再 fetch——若此刻
+   引擎还没起来（更新后首帧常见），fetch 失败 → 标记已删 → 本次更新结果
+   永久无人确认，用户永远看不到成功提示。改为**成功比对后才清标记**；
+   fetch 失败保留标记，下次加载页面再试（幂等）。 */
 (function(){
   const pending = localStorage.getItem('rl-updating');
   if (!pending) return;
-  localStorage.removeItem('rl-updating');
-  fetch('/api/update').then(function(r){ return r.json(); }).catch(function(){ return null; }).then(function(d){
+  const done = function(d){
     const cur = d && d.current ? d.current : '';
-    if (cur && cur === pending) {
+    if (!cur) return;                 // 拿不到版本：保留标记，下次再判
+    localStorage.removeItem('rl-updating');
+    if (cur === pending) {
       toast('✓ 已成功更新到 v' + cur + '，欢迎回来');
-    } else if (cur && cur !== pending) {
+    } else {
       toast('更新未完成（当前仍是 v' + cur + '）——可重新检查更新后安装，或到下载页手动安装', true);
     }
-  });
+  };
+  fetch('/api/update').then(function(r){ return r.json(); })
+    .then(done)
+    .catch(function(){ /* 引擎未就绪：保留标记，下次页面加载重判 */ });
 })();
 
 /* 发现新版本弹窗（2026-11-15 双渠道版）：公告+下载途径选择。
@@ -935,7 +949,10 @@ function updDlAutoInstall(){
        （staged 替换/Updater/自动重启）全都不会执行。 */
     fetch('/api/update/install', { method: 'POST' }).then(function(r){ return r.json(); }).then(function(d){
       if (d && !d.ok) {
-        localStorage.removeItem('rl-updating');
+        /* 2026-11-23 逐行审修（BUG F）：原来无条件清标记。但 install 失败的
+           多数场景（staging 解压中/防降级前/更新器缺失）**包还在**，重启后
+           续 apply 仍可能装上——清掉标记会让用户看不到「✓ 已成功更新」。
+           保留标记：启动确认逻辑会在版本真变化时提示，未变化时如实说未完成。 */
         document.getElementById('installing-mask').hidden = true;
         toast(d.error || '安装发起失败', true);
         updDlReset();
@@ -955,7 +972,10 @@ function updDlAutoInstall(){
            StartShell 拉起新壳（5 轮重试 + 连续 5 秒存活确认）。
            这里只负责在**引擎先回来**的罕见路径上刷新页面。 */
         if (tries > 60) {
-          localStorage.removeItem('rl-updating');
+          /* 2026-11-23 逐行审修（BUG D）：原来在这里 removeItem——但此刻
+             安装多半正在进行（壳要退出、Updater 在换文件），清掉标记会让
+             重启后的「✓ 已成功更新」确认永远不出现。保留标记交给启动确认
+             逻辑（L808）判定。 */
           document.getElementById('installing-mask').hidden = true;
           updDlReset();
           toast('更新已完成，应用正在启动中——稍候会自动打开', true);
@@ -1011,7 +1031,13 @@ function updDlPoll(){
       if (++_updDonePolls > 30) { updDlAutoInstall(); return; }
       _updDlTimer = setTimeout(updDlPoll, 500);
     } else if (st === 'error') {
-      localStorage.removeItem('rl-updating');
+      /* 2026-11-23 逐行审修（BUG E）：原实现在**任何** error 都清 rl-updating。
+         但 error 可能是「解压准备失败」——此时包已下载，标记清掉会让重启后的
+         续 apply / 结果确认全部失效（朋友机 15:38 就是靠续 apply 才装上）。
+         现在按 stage 是否已过 verify 区分：
+           - 下载/校验阶段失败（无 sha_ok）→ 清标记（本次更新未成立）
+           - 解压/安装阶段失败（sha_ok 已有）→ 保留标记，交给启动确认逻辑 */
+      if (!d.sha_ok) localStorage.removeItem('rl-updating');
       document.getElementById('installing-mask').hidden = true;
       updDlReset();
       toast(d.message || '下载失败', true);
