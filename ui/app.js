@@ -866,7 +866,8 @@ function closeUpdateModal(){
   const open = document.getElementById('upd-dl-open');
   if (btn) btn.addEventListener('click', updDlStart);
   if (open) open.addEventListener('click', function(){
-    fetch('/api/update/open-folder').then(function(r){ return r.json(); }).then(function(d){
+    // 2026-11-23 同批修复：此端点只在 do_POST 注册，fetch 默认 GET 会 404
+    fetch('/api/update/open-folder', { method: 'POST' }).then(function(r){ return r.json(); }).then(function(d){
       if (d && !d.ok) toast(d.error || '打开失败', true);
     }).catch(function(){ toastConn('无法连接本地服务'); });
   });
@@ -928,7 +929,11 @@ function updDlAutoInstall(){
   let installTries = 0;
   const postInstall = function(){
     installTries++;
-    fetch('/api/update/install').then(function(r){ return r.json(); }).then(function(d){
+    /* 2026-11-23 致命根因（朋友机诊断包实锤）：fetch 默认 GET！此处漏了
+       method:'POST'，导致点「立即安装」时前端一直在发 GET /api/update/install
+       → 引擎 404 → 走失败分支弹 toast。POST 从未到达，所有安装逻辑
+       （staged 替换/Updater/自动重启）全都不会执行。 */
+    fetch('/api/update/install', { method: 'POST' }).then(function(r){ return r.json(); }).then(function(d){
       if (d && !d.ok) {
         localStorage.removeItem('rl-updating');
         document.getElementById('installing-mask').hidden = true;
