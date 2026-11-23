@@ -2521,6 +2521,16 @@ document.getElementById('df-save').addEventListener('click', function(){
 
 loadDailies().catch(function(){});   // 初始拉一次（报表组同源）
 
+/* dl-refresh-bind-begin */
+/* 托盘打卡走 C# 壳 POST toggle_done，只刷托盘菜单——已打开的概览页若一直
+   停留就看不到刚打的卡。切回窗口 / 从后台变可见时重拉（方案A，零后端改动，
+   不给接口添轮询请求）：数据同账本（custom_dailies_state.json），只补刷新触发。 */
+window.addEventListener('focus', function(){ loadDailies().catch(function(){}); });
+document.addEventListener('visibilitychange', function(){
+  if (!document.hidden) loadDailies().catch(function(){});
+});
+/* dl-refresh-bind-end */
+
 /* ========================= 折叠面板参数摘要 =========================
    每个设置行标题右侧的 11px 摘要，数据永远取当前 DOM（开关 + 输入框）。
    三类时机会刷新：
