@@ -23,8 +23,10 @@ JS = Path(__file__).with_suffix(".js")
 def main() -> int:
     node = shutil.which("node")
     if not node:
-        print("0 项断言全绿（node 不可用，闭环测试无法执行）")
-        print("FAIL node 不可用——失败 result 前端消费闭环无守护")
+        # 必须让 qa 的结论行解析为 FAIL：qa/run.py 只看 `PASS n / FAIL m` 的
+        # m==0，忽略退出码。旧文案「0 项断言全绿」会被解析成 (0,0) → 误判绿，
+        # 无 node 的机器整条回归静默不守护（review C1）。
+        print("PASS 0 / FAIL 1（node 不可用，失败 result 前端消费闭环无法执行）")
         return 1
     try:
         proc = subprocess.run(

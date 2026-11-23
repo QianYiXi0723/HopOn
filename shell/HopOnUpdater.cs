@@ -355,6 +355,7 @@ namespace HopOnUpdater
                     if (string.IsNullOrEmpty(pkg))
                     {
                         Log("ABORT --staged 但 staging 不完整且无 zip 可回退（壳续跑场景）——未动任何文件");
+                        WriteUpdateFailure(root, "暂存更新不完整且无安装包可回退");
                         return ExitGeneric;
                     }
                     Log("staged 模式但 staging 不完整 → 回退从 zip 解压（双保险）");
@@ -373,6 +374,7 @@ namespace HopOnUpdater
                 catch (Exception ex)
                 {
                     Log("FATAL 解压失败：" + ex.Message);
+                    WriteUpdateFailure(root, "更新包解压失败：" + ex.Message);
                     return ExitGeneric;
                 }
             }
@@ -387,6 +389,7 @@ namespace HopOnUpdater
             catch (Exception ex)
             {
                 Log("FATAL 生成计划失败：" + ex.Message);
+                WriteUpdateFailure(root, "生成更新计划失败：" + ex.Message);
                 return ExitGeneric;
             }
             Log("计划：将覆盖 " + toCopy.Count + " 个文件，删除旧版遗留 " + toDelete.Count + " 个");
@@ -420,6 +423,7 @@ namespace HopOnUpdater
             catch (Exception ex)
             {
                 Log("FATAL backup 目录创建失败：" + ex.Message);
+                WriteUpdateFailure(root, "备份目录创建失败：" + ex.Message);
                 return ExitGeneric;
             }
             int overwritten = 0;
@@ -1039,14 +1043,18 @@ namespace HopOnUpdater
                 string existing = File.ReadAllText(pending).Trim();
                 if (existing.StartsWith("{")) existing = existing.Substring(1);
                 if (existing.EndsWith("}")) existing = existing.Substring(0, existing.Length - 1);
-                var re = new System.Text.RegularExpressions.Regex(",?\\s*\"result\"\\s*:\\s*\\{[^}]*\\}");
-                string body = re.Replace(existing, "").Trim().TrimStart(',').TrimEnd(',');
+                // 贪婪匹配到 result 对象的最后一个 '}'（写入方总把 result 放最后），
+                // 只替换一次；避免 [^}]* 在字符串内 } / 嵌套对象处截断产生非法 JSON（review I3）。
+                var re = new System.Text.RegularExpressions.Regex(",?\\s*\"result\"\\s*:\\s*\\{.*\\}",
+                    System.Text.RegularExpressions.RegexOptions.Singleline);
+                string body = re.Replace(existing, "", 1).Trim().TrimStart(',').TrimEnd(',');
                 string ver = "";
                 try { ver = FileVersionInfo.GetVersionInfo(Path.Combine(root, "HopOn.exe")).FileVersion ?? ""; } catch { }
-                ver = ver.Replace("\\", "\\\\").Replace("\"", "\\\"");
-                reason = (reason ?? "更新失败").Replace("\\", "\\\\").Replace("\"", "\\\"");
-                string result = "{\"ok\":false,\"error\":\"" + reason + "\",\"version\":\""
-                    + ver + "\",\"ts\":\"" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "\"}";
+                // reason/version 只作诊断展示：剥掉会破坏 JSON 的字符（含 ex.Message 里
+                // 可能出现的 } / 换行 / 引号），避免注入使 read_update_state 吞异常→永久静默。
+                string result = "{\"ok\":false,\"error\":\"" + JsonSafe(reason ?? "更新失败")
+                    + "\",\"version\":\"" + JsonSafe(ver)
+                    + "\",\"ts\":\"" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "\"}";
                 string json = "{" + (body.Length > 0 ? body + "," : "") + "\"result\":" + result + "}";
                 File.WriteAllText(pending, json, new UTF8Encoding(false));
                 Log("已写更新失败结果：result.ok=false reason=" + reason);
@@ -1055,6 +1063,23 @@ namespace HopOnUpdater
             {
                 Log("WARN 写更新失败结果失败（前端将无提示）：" + ex.Message);
             }
+        }
+
+        /// <summary>JSON 字符串值消毒：剥掉会破坏 JSON 的双引号/反斜杠/花括号/
+        /// 控制字符，保留中文等正常 Unicode（在 JSON 里合法）。reason 仅作诊断
+        /// 展示，剥特殊字符换 pending.json 永不被写坏（review I3，ponytail: 不引 JSON 库）。</summary>
+        private static string JsonSafe(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            var sb = new StringBuilder(s.Length);
+            foreach (char c in s)
+            {
+                if (c == '\\' || c == '"' || c == '{' || c == '}' || c < 32)
+                    sb.Append(' ');
+                else
+                    sb.Append(c);
+            }
+            return sb.ToString();
         }
 
         // ------------------------------------------------------------------

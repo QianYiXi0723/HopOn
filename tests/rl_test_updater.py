@@ -272,6 +272,28 @@ def main() -> int:
               and isinstance(data4g.get("result"), dict),
               str(data4g))
 
+        # ---- U4h ExitGeneric 解压失败也写 result，且不残留旧成功 result（review I1）----
+        # 损坏的 zip 触发 :376 解压失败（ExitGeneric）；预置上次未消费的 ok:true
+        # result，断言失败后 result.ok=false 而不是残留误报「已成功更新」。
+        root4h = make_root(sandbox / "badzip")
+        pending4h = root4h / ".update" / "pending.json"
+        pending4h.parent.mkdir(parents=True, exist_ok=True)
+        stale = {"phase": "applying", "version": "3.2.1",
+                 "result": {"ok": True, "version": "3.2.1", "ts": "stale"}}
+        pending4h.write_text(json.dumps(stale), encoding="utf-8")
+        corrupt_zip = sandbox / "corrupt.zip"
+        corrupt_zip.write_bytes(b"NOT A ZIP FILE" * 20)
+        p4h = wait_pid_forever(2)
+        rc4h, _ = run_updater("--pid", str(p4h.pid), "--root", str(root4h),
+                              "--pkg", str(corrupt_zip), "--norestart")
+        p4h.wait()
+        data4h = json.loads(pending4h.read_text(encoding="utf-8"))
+        res4h = data4h.get("result")
+        check("U4h ExitGeneric(解压失败) 退出码 2", rc4h == 2, rc4h)
+        check("U4h 失败 result.ok=false 覆盖旧 ok=true（不残留误报成功）",
+              isinstance(res4h, dict) and res4h.get("ok") is False and bool(res4h.get("error")),
+              str(res4h))
+
         # ---- U5 PID 等待 ----
         root5 = make_root(sandbox / "pw")
         t0 = time.time()
