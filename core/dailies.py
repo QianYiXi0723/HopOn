@@ -100,10 +100,27 @@ def _save_state(user_dir: Path, state: Dict[str, Any]) -> None:
 
 
 def _parse_period(p: str) -> Optional[datetime]:
+    # 多时刻 fired 键形如 "2026-11-25|08:00"——取 "|" 前的日期段解析，
+    # 让 _prune 不把多时刻记录当坏键清掉（2026-11-25 多时间点）。
     try:
-        return datetime.strptime(str(p), "%Y-%m-%d")
+        return datetime.strptime(str(p).split("|", 1)[0], "%Y-%m-%d")
     except ValueError:
         return None
+
+
+def _times(item: Dict[str, Any]) -> List[str]:
+    """该项的提醒时刻列表（多时间点 2026-11-25）。
+
+    兼容：新数据用 times[]；旧数据只有 time → 派生单元素；都没有 → 空。
+    过滤掉格式非 HH:MM 的项，防止脏数据炸触发判定。
+    """
+    raw = item.get("times")
+    # 空 times[]（含 daemon 给旧数据补的空列表）= 走 time 单时刻，向后兼容
+    if not isinstance(raw, list) or not raw:
+        one = str(item.get("time") or "").strip()
+        return [one] if re.match(r"^\d{1,2}:\d{2}$", one) else []
+    return [str(t).strip() for t in raw
+            if re.match(r"^\d{1,2}:\d{2}$", str(t).strip())]
 
 
 def _prune(state: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
@@ -338,38 +355,55 @@ def standalone_due(items: List[Dict[str, Any]], user_dir: Path,
             continue
         if not _planned_weekday(it, _period_date(it, now)):
             continue   # 非计划日：不提醒（手动打卡不受限）
-        target = str(it.get("time") or "")
-        if not re.match(r"^\d{1,2}:\d{2}$", target):
+        targets = _times(it)
+        if not targets:
             continue
+        multi = len(targets) > 1
         iid = str(it.get("id") or "")
         period = _period_key(it, now)
-        if iid in done and period in (done[iid] or {}):
-            continue
-        if period in (fired.get(iid) or {}):
-            continue
+        fired_periods = fired.get(iid) or {}
         # 只早不迟（2026-11-11 裁决，2026-11-15 修正）：触发窗口=[目标-30s, +∞)
-        # ——原实现 now_hm >= target 是「越过目标才发」，比 merged 班次
-        # （[目标-30s, 目标] 窗口触发即推）晚一个轮询周期（实测慢 30-60s）。
         # 秒级比较（now_hm 分钟粒度撑不住提前量）；fired 账本防重复。
-        tt = datetime.strptime(target, "%H:%M").time()
-        win = datetime.combine(now.date(), tt) - timedelta(seconds=30)
-        if now >= win:
-            out.append(it)
+        for target in targets:
+            # 多时刻：每个时刻独立 fired 键（period|HH:MM），互不影响；
+            # 单时刻（含旧数据）：沿用裸 period，零回归。
+            key = f"{period}|{target}" if multi else period
+            if iid in done and period in (done[iid] or {}):
+                break   # 本周期已打卡：所有时刻都不再提醒
+            if key in (fired_periods or {}):
+                continue
+            tt = datetime.strptime(target, "%H:%M").time()
+            win = datetime.combine(now.date(), tt) - timedelta(seconds=30)
+            if now >= win:
+                if multi:
+                    slot_item = dict(it)
+                    slot_item["time"] = target       # {time} 渲染成触发时刻
+                    slot_item["_slot"] = target      # mark_fired 记账键
+                    out.append(slot_item)
+                else:
+                    out.append(it)
     return out
 
 
 def mark_fired(item: Dict[str, Any], user_dir: Path,
-               *, now: Optional[datetime] = None) -> None:
-    """独立提醒已推记账（本周期一次；重置时刻翻转自动重置）。"""
+               *, now: Optional[datetime] = None,
+               slot: Optional[str] = None) -> None:
+    """独立提醒已推记账（本周期一次；重置时刻翻转自动重置）。
+
+    slot：多时刻触发的具体时刻（来自 standalone_due 的 _slot）——多时刻项用
+    period|HH:MM 独立记账；单时刻/旧调用不传 slot，沿用裸 period 零回归。
+    """
     iid = str(item.get("id") or "")
     if not iid:
         return
     state = _load_state(user_dir)
     state = _prune(state, now)
     period = _period_key(item, now)
+    s = str(slot or item.get("_slot") or "").strip()
+    key = f"{period}|{s}" if s else period
     fired = state.get("fired") if isinstance(state.get("fired"), dict) else {}
     periods = dict(fired.get(iid) or {})
-    periods[period] = datetime.now().strftime("%H:%M:%S")
+    periods[key] = datetime.now().strftime("%H:%M:%S")
     state["fired"] = {**fired, iid: periods}
     _save_state(user_dir, state)
 

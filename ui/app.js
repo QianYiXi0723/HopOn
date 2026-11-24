@@ -2356,6 +2356,36 @@ function currentDailiesMode(){
   return b ? b.dataset.mode : 'merged';
 }
 
+/* 多提醒时刻（2026-11-25）：从 .df-time-input 收集合法 HH:MM（去重保序）。
+   独立成函数便于测试；空/非法过滤，与后端口径一致。 */
+function collectDailiesTimes(){
+  const out = [];
+  document.querySelectorAll('.df-time-input').forEach(function(inp){
+    const v = (inp.value || '').trim();
+    if (/^\d{1,2}:\d{2}$/.test(v) && out.indexOf(v) < 0 && out.length < 5) out.push(v);
+  });
+  return out;
+}
+
+/* 生成一行时刻输入（含删除钮）；value 空=新行。至少保留一行。 */
+function addDailiesTimeLine(value){
+  const wrap = document.getElementById('df-times');
+  if (!wrap) return;
+  const lines = wrap.querySelectorAll('.df-time-line');
+  if (lines.length >= 5) return;
+  const row = document.createElement('div');
+  row.className = 'df-time-line';
+  const inp = document.createElement('input');
+  inp.type = 'time'; inp.className = 'df-time-input'; inp.step = '60';
+  inp.value = value || '';
+  inp.addEventListener('input', updateDailiesPreview);
+  const del = document.createElement('button');
+  del.type = 'button'; del.className = 'mini df-time-del'; del.textContent = '×';
+  del.title = '删除这个时刻';
+  row.appendChild(inp); row.appendChild(del);
+  wrap.appendChild(row);
+}
+
 function updateDailiesPreview(){
   const ta = document.getElementById('df-template');
   const rawName = document.getElementById('df-name').value.trim();
@@ -2364,7 +2394,7 @@ function updateDailiesPreview(){
     || dlState.default_template
     || '{status} {name}：今日进度（{progress}）';
   const timeVal = currentDailiesMode() === 'standalone'
-    ? (document.getElementById('df-time').value || '--:--') : '';
+    ? (collectDailiesTimes().join('、') || '--:--') : '';
   /* 预览按未完成态示意（推送发生在未完成时）；{status}/{progress} 由后端按实态渲染 */
   const txt = tpl.replace(/\{name\}/g, name).replace(/\{time\}/g, timeVal)
     .replace(/\{status\}/g, '[未完成]').replace(/\{progress\}/g, '0/1')
@@ -2392,9 +2422,10 @@ function setDailiesMode(mode){
     b.classList.toggle('on', b.dataset.mode === mode);
   });
   const row = document.getElementById('df-time-row');
-  const time = document.getElementById('df-time');
   if (row) row.classList.toggle('is-disabled', mode !== 'standalone');
-  if (time) time.disabled = mode !== 'standalone';
+  document.querySelectorAll('.df-time-input').forEach(function(i){ i.disabled = mode !== 'standalone'; });
+  const add = document.getElementById('df-time-add');
+  if (add) add.disabled = mode !== 'standalone';
   updateDailiesPreview();
 }
 
@@ -2405,7 +2436,16 @@ function openDailiesModal(id){
     id ? '编辑提醒' : '新增提醒';
   document.getElementById('df-name').value = it.name || '';
   setDailiesMode(it.mode || 'merged');
-  document.getElementById('df-time').value = it.time || '20:00';
+  // 多时刻：先清掉旧行（保留第一行），再按 times[] 重建
+  const timesWrap = document.getElementById('df-times');
+  if (timesWrap) {
+    const lines = timesWrap.querySelectorAll('.df-time-line');
+    for (let k = lines.length - 1; k >= 1; k--) lines[k].remove();
+    const first = timesWrap.querySelector('.df-time-input');
+    const list = (it.times && it.times.length) ? it.times : [it.time || '20:00'];
+    if (first) first.value = list[0] || '20:00';
+    for (let k = 1; k < list.length; k++) addDailiesTimeLine(list[k]);
+  }
   document.getElementById('df-reset').value = it.reset || '04:00';
   setDays(it.days);
   document.getElementById('df-enabled').checked = it.enabled !== false;
@@ -2448,6 +2488,25 @@ document.getElementById('df-mode').addEventListener('click', function(e){
   const b = e.target.closest('button[data-mode]');
   if (b) setDailiesMode(b.dataset.mode);
 });
+const dfTimeAdd = document.getElementById('df-time-add');
+if (dfTimeAdd) dfTimeAdd.addEventListener('click', function(){ addDailiesTimeLine(''); });
+// 事件委托（动态行免疫重绘/重复绑定）：删时刻 + 输入预览，统一处理所有行含第一行
+const dfTimesWrap = document.getElementById('df-times');
+if (dfTimesWrap) {
+  dfTimesWrap.addEventListener('click', function(e){
+    const del = e.target.closest('.df-time-del');
+    if (!del) return;
+    const line = del.closest('.df-time-line');
+    const lines = dfTimesWrap.querySelectorAll('.df-time-line');
+    if (lines.length <= 1) {
+      const inp = line.querySelector('.df-time-input');
+      if (inp) { inp.value = ''; updateDailiesPreview(); }
+    } else { line.remove(); updateDailiesPreview(); }
+  });
+  dfTimesWrap.addEventListener('input', function(e){
+    if (e.target.closest('.df-time-input')) updateDailiesPreview();
+  });
+}
 document.getElementById('df-days').addEventListener('click', function(e){
   const chip = e.target.closest('.wd-chip');
   if (chip) chip.classList.toggle('on');   // 多选，全不选在保存时拦截
@@ -2484,11 +2543,11 @@ document.getElementById('df-save').addEventListener('click', function(){
   const btn = this;
   const name = document.getElementById('df-name').value.trim();
   const mode = currentDailiesMode();
-  const time = document.getElementById('df-time').value;
+  const times = mode === 'standalone' ? collectDailiesTimes() : [];
   const err = document.getElementById('df-err');
   if (!name) { err.textContent = '名称不能为空'; err.hidden = false; return; }
-  if (mode === 'standalone' && !time) {
-    err.textContent = '独立时刻需要选择时间'; err.hidden = false; return;
+  if (mode === 'standalone' && !times.length) {
+    err.textContent = '独立时刻至少需要选择一个时间'; err.hidden = false; return;
   }
   const days = collectDays();
   if (!days.some(Boolean)) {
@@ -2498,7 +2557,9 @@ document.getElementById('df-save').addEventListener('click', function(){
   btn.disabled = true;
   const payload = {
     action: dlEditingId ? 'update' : 'add',
-    name: name, mode: mode, time: mode === 'standalone' ? time : '',
+    name: name, mode: mode,
+    time: mode === 'standalone' ? (times[0] || '') : '',
+    times: times,
     reset: document.getElementById('df-reset').value || '04:00',
     template: document.getElementById('df-template').value.trim(),
     enabled: document.getElementById('df-enabled').checked,

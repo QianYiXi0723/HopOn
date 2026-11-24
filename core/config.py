@@ -702,6 +702,8 @@ class CustomDaily:
     name: str
     mode: str = "merged"
     time: str = ""
+    #: 多提醒时刻（2026-11-25）：standalone 项可一天多次提醒；空=用 time 单时刻
+    times: List[str] = field(default_factory=list)
     reset: str = "04:00"
     template: str = ""
     enabled: bool = True
@@ -812,6 +814,7 @@ class AppConfig:
                 "activity_deadline_tiers": list(self.activity_deadline_tiers),
                 "custom_dailies": [
                     dict(id=d.id, name=d.name, mode=d.mode, time=d.time,
+                         times=[str(t) for t in d.times],
                          reset=d.reset, template=d.template, enabled=bool(d.enabled),
                          days=[bool(x) for x in d.days])
                     for d in self.custom_dailies
@@ -945,6 +948,17 @@ def _parse_custom_dailies(raw: Any) -> List["CustomDaily"]:
             time_s = "20:00"
         if mode == "merged":
             time_s = ""
+        # 多提醒时刻（2026-11-25）：只接受合法 HH:MM、最多 5 个、去重保序；
+        # merged 模式清空；空列表=走 time 单时刻（向后兼容旧数据）。
+        times_raw = node.get("times")
+        times_list: List[str] = []
+        if mode == "standalone" and isinstance(times_raw, list):
+            for t in times_raw:
+                ts = str(t).strip()
+                if re.match(r"^\d{1,2}:\d{2}$", ts) and ts not in times_list:
+                    times_list.append(ts)
+                if len(times_list) >= 5:
+                    break
         reset = str(node.get("reset") or "04:00").strip()
         if not re.match(r"^\d{1,2}:\d{2}$", reset):
             reset = "04:00"
@@ -955,7 +969,8 @@ def _parse_custom_dailies(raw: Any) -> List["CustomDaily"]:
             days_raw = [True] * 7   # 缺失/坏格式 = 每天（向后兼容旧数据）
         out.append(CustomDaily(
             id=str(node.get("id") or f"cd-{_uuid.uuid4().hex[:8]}"),
-            name=name, mode=mode, time=time_s, reset=reset, template=template,
+            name=name, mode=mode, time=time_s, times=times_list,
+            reset=reset, template=template,
             enabled=bool(node.get("enabled", True)), days=list(days_raw),
         ))
     return out

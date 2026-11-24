@@ -957,8 +957,11 @@
             <button type="button" data-mode="merged" class="on">随巡检推送</button>
             <button type="button" data-mode="standalone">独立时刻</button>
           </div></div>
-        <div class="df-row" id="df-time-row"><span class="df-label">提醒时刻</span>
-          <input type="time" id="df-time" value="20:00" step="60"></div>
+        <div class="df-row df-row--top" id="df-time-row"><span class="df-label">提醒时刻</span>
+          <div class="df-times" id="df-times">
+            <div class="df-time-line"><input type="time" class="df-time-input" id="df-time" value="20:00" step="60"><button type="button" class="mini df-time-del" title="删除这个时刻">×</button></div>
+          </div>
+          <button type="button" class="mini df-time-add" id="df-time-add" title="最多 5 个提醒时刻">＋</button></div>
         <div class="df-row"><span class="df-label" data-tip="勾掉的「今日」到这个时刻自动重开">重置时刻</span>
           <input type="time" id="df-reset" value="04:00" step="60"></div>
         <div class="df-row"><span class="df-label" data-tip="只在勾选的星期提醒；手动打卡不受限，任何一天都能打">重复</span>

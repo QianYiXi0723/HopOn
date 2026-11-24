@@ -1200,6 +1200,7 @@ def _check_manual_dailies() -> None:
     if _quiet_now(config.push):
         return
     items = [dict(id=d.id, name=d.name, mode=d.mode, time=d.time,
+                  times=list(getattr(d, "times", [])),   # 多时刻（2026-11-25）：standalone 一天多次提醒
                   reset=d.reset, template=d.template, enabled=d.enabled,
                   days=list(d.days))
              for d in config.custom_dailies

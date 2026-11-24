@@ -1592,6 +1592,7 @@ def custom_dailies_status() -> Dict[str, Any]:
             "name": str(it.get("name") or ""),
             "mode": str(it.get("mode") or "merged"),
             "time": str(it.get("time") or ""),
+            "times": dailies._times(it),   # 多时刻（2026-11-25）：空=用 time 单时刻
             "reset": it["reset"],
             "template": str(it.get("template") or ""),
             "enabled": bool(it.get("enabled", True)),
@@ -1667,7 +1668,18 @@ def custom_dailies_update(payload: Dict[str, Any]) -> Dict[str, Any]:
     if mode not in ("merged", "standalone"):
         mode = "merged"
     time_s = str(payload.get("time") or "").strip()
-    if mode == "standalone" and not re.match(r"^\d{1,2}:\d{2}$", time_s):
+    # 多时刻（2026-11-25）：standalone 可用 times[]（≤5 合法 HH:MM 去重），
+    # 或退回落单 time；merged 清空。
+    times_list: List[str] = []
+    raw_times = payload.get("times")
+    if mode == "standalone" and isinstance(raw_times, list):
+        for t in raw_times:
+            ts = str(t).strip()
+            if re.match(r"^\d{1,2}:\d{2}$", ts) and ts not in times_list:
+                times_list.append(ts)
+            if len(times_list) >= 5:
+                break
+    if mode == "standalone" and not times_list and not re.match(r"^\d{1,2}:\d{2}$", time_s):
         raise ValueError("独立时刻需要有效的 HH:MM")
     if mode == "merged":
         time_s = ""
@@ -1688,7 +1700,7 @@ def custom_dailies_update(payload: Dict[str, Any]) -> Dict[str, Any]:
         from datetime import datetime as _dt2
 
         items.append({"id": f"cd-{_uuid.uuid4().hex[:8]}", "name": name,
-                      "mode": mode, "time": time_s, "reset": reset_s,
+                      "mode": mode, "time": time_s, "times": times_list, "reset": reset_s,
                       "template": template, "enabled": enabled, "days": days,
                       # 创建时间（2026-11-18）：报表「开始记录前」地板的锚点——
                       # 新建项的过去画 ⋯ 而不是 ✗ 漏打
@@ -1698,8 +1710,8 @@ def custom_dailies_update(payload: Dict[str, Any]) -> Dict[str, Any]:
         hit = next((it for it in items if str(it.get("id")) == item_id), None)
         if hit is None:
             raise ValueError("要编辑的项不存在")
-        hit.update({"name": name, "mode": mode, "time": time_s, "reset": reset_s,
-                    "template": template, "enabled": enabled, "days": days})
+        hit.update({"name": name, "mode": mode, "time": time_s, "times": times_list,
+                    "reset": reset_s, "template": template, "enabled": enabled, "days": days})
     else:
         raise ValueError(f"未知 action：{action}")
 

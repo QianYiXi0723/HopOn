@@ -1726,3 +1726,12 @@
                background:var(--btn-bg);color:var(--fg);
                box-shadow:0 1px 4px rgba(0,0,0,.25)}
   .conn-banner.err{background:var(--err,#e06055);color:#fff}
+  /* 多提醒时刻（2026-11-25）：standalone 项一天多次提醒，每行一个时刻+删除 */
+  .df-times{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}
+  .df-time-line{display:flex;align-items:center;gap:6px}
+  .df-time-line input[type=time]{flex:1;min-width:0;background:var(--subtle);
+    border:1px solid var(--line);border-radius:8px;padding:8px 10px;
+    color:var(--fg);font-family:inherit;font-size:14px}
+  .df-time-del{flex:none;width:26px;padding:0}
+  .df-time-add{flex:none}
+  .df-hint{color:var(--muted);font-size:12px;line-height:1.5}
