@@ -3116,6 +3116,27 @@ def _diag_collect_secrets() -> List[str]:
     return [t for t in found if t]
 
 
+def _diag_body(path: Path) -> str:
+    """读更新链状态文件；不存在或空时给明确占位，不裸空（2026-11-24 规范审查）。
+
+    诊断包里裸 0 字节文件看起来像采集失败；更新成功后 download_state.json
+    本就为空，应如实标注「本次无数据」而非让人误判。
+    """
+    if not path.exists():
+        return "[本次无数据] 文件不存在"
+    body = path.read_text(encoding="utf-8")
+    return body if body.strip() else "[本次无数据] 文件为空"
+
+
+def _manifest_line(arc_name: str, text: str, desc: str) -> str:
+    """MANIFEST 单行：报字节数，与 ZIP 内 encode('utf-8') 落盘口径一致。
+
+    此前用 len(text) 报字符数，中文 1 字符=3 字节，声明与实际对不上，
+    核包时会误判「文件被改过」（2026-11-24 规范审查缺陷1）。
+    """
+    return f"  {arc_name}  {len(text.encode('utf-8'))} 字节  — {desc}"
+
+
 def diag_export() -> Dict[str, Any]:
     """一键导出脱敏诊断包（2026-11-11 第一队列 #3）。
 
@@ -3215,8 +3236,7 @@ def diag_export() -> Dict[str, Any]:
     for arc_name, data_file in (("download_state.json", USER_DIR / "data" / "download_state.json"),
                                 ("update_check.json", USER_DIR / "data" / "update_check.json")):
         try:
-            body = data_file.read_text(encoding="utf-8") if data_file.exists() else ""
-            entries.append([arc_name, body, f"更新链状态原文（{data_file.name}）"])
+            entries.append([arc_name, _diag_body(data_file), f"更新链状态原文（{data_file.name}）"])
         except OSError as exc:
             entries.append([arc_name, f"[读取失败: {exc}]", "更新链状态原文（读取失败）"])
 
@@ -3279,7 +3299,7 @@ def diag_export() -> Dict[str, Any]:
     # MANIFEST（透明化：逐文件说明 + 行数）
     man_rows = ["HopOn 诊断包内容清单", ""]
     for arc_name, text, desc in entries:
-        man_rows.append(f"  {arc_name}  {len(text)} 字符  — {desc}")
+        man_rows.append(_manifest_line(arc_name, text, desc))
     if warnings:
         man_rows.append("")
         man_rows.append("警告: " + "; ".join(warnings))

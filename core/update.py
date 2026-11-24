@@ -139,6 +139,25 @@ def _strip_notes(body: str, limit: int = 500) -> str:
     return text[:limit].rstrip() + "…"
 
 
+def _status_message(latest: str, cur: str, has_update: bool,
+                    channel: str) -> str:
+    """检查更新的用户文案（2026-11-24 逐字审修订）。
+
+    逐句口径：
+    - 有新版：说清版本号即停，不追加催促（用户文案准则①）。
+    - Gitee 通道且 latest==cur：这就是「已是最新」，不再说「无法确认/
+      稍后重试」——那种措辞让用户以为更新没成功（诊断包实证的误导）。
+    - Gitee 通道且 latest<cur：备用通道数据确实落后，**如实**说无法确认，
+      这是事实不是情绪，保留（删情绪不删信息，见 lesson 0mwe2sbs）。
+    """
+    if has_update:
+        return "发现新版本 %s（当前 %s）" % (latest, cur)
+    if channel == "gitee" and _parse(latest) < _parse(cur):
+        return ("GitHub 暂不可达；Gitee 备用通道最新 %s 低于当前 %s"
+                "——备用通道数据落后，是否有更新暂无法确认" % (latest, cur))
+    return "已是最新版本（%s）" % cur
+
+
 def check(*, force: bool = False) -> UpdateInfo:
     """查一次最新版本。失败返回 ok=False 的 UpdateInfo，**不抛异常**。
 
@@ -212,16 +231,7 @@ def check(*, force: bool = False) -> UpdateInfo:
     info.notes = _strip_notes(str(payload.get("body") or ""))
     info.assets = assets
     info.published_at = str(payload.get("published_at") or "")
-    if info.has_update:
-        info.message = "发现新版本 %s（当前 %s）" % (latest, cur)
-    elif channel == "gitee":
-        # 备用通道数据可能落后（release 传漏时 Gitee 停在旧版）——此时不能
-        # 替 GitHub 下「已是最新」的结论，如实说无法判断
-        info.message = ("GitHub 暂不可达；Gitee 备用通道最新 %s 不高于当前 %s"
-                        "——备用通道数据落后，是否有更新无法确认，可稍后重试"
-                        % (latest, cur))
-    else:
-        info.message = "已是最新版本（%s）" % cur
+    info.message = _status_message(latest, cur, info.has_update, channel)
 
     _save_cache(
         {
