@@ -3331,6 +3331,29 @@ def diag_export() -> Dict[str, Any]:
             "message": f"诊断包已导出：{zip_path}"}
 
 
+def _diag_reveal_target(path: object) -> Optional[str]:
+    """把「打开所在文件夹」请求里的 path 收敛成可安全定位的诊断包 zip。
+
+    安全边界（2026-11-24 块A）：前端 path 可能来自 URL/误传/注入，绝不能
+    拿 explorer 去定位任意文件。只接受真实存在的、按本工具命名规则生成的
+    诊断包 zip（HopOn_Diagnostics_YYYYMMDD_HHMMSS.zip）；其余一律 None。
+    """
+    import re as _re
+
+    if not isinstance(path, str) or not path:
+        return None
+    name = os.path.basename(path)
+    if not _re.fullmatch(r"HopOn_Diagnostics_\d{8}_\d{6}\.zip", name):
+        return None
+    try:
+        candidate = Path(path)
+        if not candidate.is_file():
+            return None
+    except (OSError, ValueError):
+        return None
+    return str(candidate)
+
+
 def _try_current_version() -> str:
     try:
         from core.update import current_version
@@ -4186,6 +4209,25 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("库街区短信登录失败")
                     self._json({"ok": False, "error": f"登录失败：{exc}"}, 500)
+            return
+
+        if path == "/api/diag/open-folder":
+            # 块A（2026-11-24）：在资源管理器中定位刚导出的诊断包 zip。
+            # path 经 _diag_reveal_target 安全收敛，只接受本工具生成的诊断包。
+            payload = self._read_json_body()
+            if payload is None:
+                return
+            target = _diag_reveal_target(payload.get("path"))
+            if target is None:
+                self._json({"ok": False, "error": "路径无效或文件不存在"}, 400)
+                return
+            try:
+                import subprocess
+
+                subprocess.Popen(["explorer", "/select,", target])
+                self._json({"ok": True, "message": "已在资源管理器中定位诊断包"})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"ok": False, "error": f"打开失败：{exc}"}, 500)
             return
 
         if path == "/api/tools/open-apk-folder":

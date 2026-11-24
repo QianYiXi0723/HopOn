@@ -824,6 +824,12 @@
     </summary>
     <div class="console-body" id="console-body"><span class="console-empty">展开后加载…</span></div>
   </details>
+  <!-- 诊断包导出结果行（块A 2026-11-24）：默认隐藏，导出成功后显示真实落点 -->
+  <div class="diag-result" id="diag-result-row" hidden>
+    <span class="diag-result-label">诊断包位置</span>
+    <input type="text" id="diag-result-path" readonly title="诊断包实际保存的完整路径，可选中复制">
+    <button type="button" class="mini" id="btn-diag-open-folder" title="在资源管理器中打开并选中诊断包">打开所在文件夹</button>
+  </div>
 </div>
 
 <!-- 添加时间点：先确认，框内可 ▲▼ 微调。

@@ -778,6 +778,13 @@
   .console-last{flex:1;min-width:0;font-family:ui-monospace,Consolas,monospace;
                 font-size:12px;color:var(--muted);white-space:nowrap;
                 overflow:hidden;text-overflow:ellipsis;text-align:right}
+  /* 诊断包导出结果行（块A 2026-11-24）：默认 hidden，成功后显示真实落点。
+     复用 row3 的「输入框+按钮」骨架，但这里三列（标签/路径/按钮）。 */
+  .diag-result{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;
+               padding:8px 12px;border-top:1px solid var(--line)}
+  .diag-result[hidden]{display:none}
+  .diag-result-label{font-size:12px;color:var(--muted);white-space:nowrap}
+  .diag-result input{min-width:0;font-family:Consolas,"Courier New",monospace;font-size:12px}
   .console-body{background:var(--bg-sub);
                 font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:12px;
                 line-height:1.8;padding:10px 16px;height:152px;overflow-y:auto;

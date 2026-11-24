@@ -4825,7 +4825,14 @@ async function exportDiagnostics(btn){
     const res = await fetch('/api/diag_export').then(function(r){ return r.json(); });
     btn.disabled = false; btn.textContent = label;
     if (res && res.ok) {
-      toast('诊断包已导出到桌面');
+      const n = (res.files && res.files.length) || 0;
+      toast('诊断包已导出（' + n + ' 个文件）');
+      // 真实落点由后端 path 给出：桌面不存在时会回退 diagnostics 目录，
+      // 写死「桌面」会骗人（2026-11-24 块A）。路径放只读框，可选中复制。
+      const pathBox = document.getElementById('diag-result-path');
+      const row = document.getElementById('diag-result-row');
+      if (pathBox) pathBox.value = res.path || '';
+      if (row) row.hidden = false;
       if (res.empty && res.empty.length) {
         toast('注意：部分文件为空 — ' + res.empty.join('、'));
       }
@@ -4841,6 +4848,20 @@ async function exportDiagnostics(btn){
 
 const logDiagBtn = document.getElementById('btn-log-diag');
 if (logDiagBtn) logDiagBtn.addEventListener('click', function(){ exportDiagnostics(this); });
+
+/* 块A（2026-11-24）：打开刚导出的诊断包所在文件夹。
+   path 从只读结果行读，后端 _diag_reveal_target 会再校验一遍（双保险）。 */
+const diagOpenBtn = document.getElementById('btn-diag-open-folder');
+if (diagOpenBtn) diagOpenBtn.addEventListener('click', function(){
+  const box = document.getElementById('diag-result-path');
+  const p = box ? box.value : '';
+  if (!p) { toast('还没有导出诊断包', true); return; }
+  postJSON('/api/diag/open-folder', { path: p })
+    .then(function(d){
+      if (!d || !d.ok) toast((d && d.error) || '打开文件夹失败', true);
+    })
+    .catch(function(){ toastConn('无法连接本地服务'); });
+});
 
 /* 杀软拦截自检（#4）：状态驱动渲染——健康=一行绿字，其余信息只在
    疑似/被拦时出现（减法收尾：没必要的东西不占健康态的版面） */
