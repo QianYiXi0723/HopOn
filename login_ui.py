@@ -3137,7 +3137,7 @@ def _manifest_line(arc_name: str, text: str, desc: str) -> str:
     return f"  {arc_name}  {len(text.encode('utf-8'))} 字节  — {desc}"
 
 
-def diag_export() -> Dict[str, Any]:
+def diag_export(target_dir: object = None) -> Dict[str, Any]:
     """一键导出脱敏诊断包（2026-11-11 第一队列 #3）。
 
     模仿 sosreport/must-gather 的「收集-脱敏-附单」三段式 + CouchMode 的
@@ -3311,12 +3311,16 @@ def diag_export() -> Dict[str, Any]:
     if len(empty) == len([e for e in entries if e[0] != "MANIFEST.txt"]):
         return {"ok": False, "message": "诊断包内容全为空，已中止导出（请检查日志目录）。"}
 
-    # 落盘：桌面优先，异常回退数据目录
+    # 落盘：用户所选目录 > 桌面 > 数据目录兜底（块B 2026-11-24）
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    target_dir = Path.home() / "Desktop"
-    if not target_dir.is_dir():
-        target_dir = USER_DIR / "diagnostics"
-        target_dir.mkdir(parents=True, exist_ok=True)
+    chosen = str(target_dir).strip() if isinstance(target_dir, str) else ""
+    if chosen and os.path.isdir(chosen):
+        target_dir = Path(chosen)
+    else:
+        target_dir = Path.home() / "Desktop"
+        if not target_dir.is_dir():
+            target_dir = USER_DIR / "diagnostics"
+            target_dir.mkdir(parents=True, exist_ok=True)
     zip_path = target_dir / f"HopOn_Diagnostics_{stamp}.zip"
     try:
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -3352,6 +3356,48 @@ def _diag_reveal_target(path: object) -> Optional[str]:
     except (OSError, ValueError):
         return None
     return str(candidate)
+
+
+def _diag_pick_folder(initial_dir: object, runner=None) -> Optional[str]:
+    """弹 Windows 原生「选择文件夹」对话框，返回用户选中的目录；取消返回 None。
+
+    引擎便携 Python 无 tkinter，改用系统自带 PowerShell 的 FolderBrowserDialog：
+    - 零新依赖、不写临时脚本、三运行模式通用；
+    - runner(cmd, timeout)->(stdout, stderr) 可注入测试（默认真跑 PowerShell）。
+    初始目录做单引号转义（PowerShell 里 ' 用 '' 表示），防路径注入。
+    """
+    import subprocess as _sp
+
+    if runner is None:
+        def runner(cmd, timeout):
+            proc = _sp.run(cmd, capture_output=True, text=True, timeout=timeout)
+            return proc.stdout, proc.stderr
+
+    initial = str(initial_dir or "").strip()
+    if not initial or not os.path.isdir(initial):
+        initial = str(Path.home())
+    safe = initial.replace("'", "''")
+    # 纯 ASCII 命令体：中文放 Python 侧输出，避免 PS 5.1 无 BOM 的 GBK 解码坑。
+    ps = (
+        "Add-Type -AssemblyName System.Windows.Forms;"
+        "$d=New-Object System.Windows.Forms.FolderBrowserDialog;"
+        "$d.SelectedPath='%s';"
+        "if($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){"
+        "Write-Output ('PICKED|'+$d.SelectedPath)}" % safe
+    )
+    ps_path = str(Path(os.environ.get("WINDIR", r"C:\Windows")) /
+                  "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe")
+    cmd = [ps_path, "-NoProfile", "-STA", "-Command", ps]
+    try:
+        out, _err = runner(cmd, 300)  # 用户最多 5 分钟做选择
+    except Exception:  # noqa: BLE001 - 超时/未找到/对话框异常都当取消
+        return None
+    for line in (out or "").splitlines():
+        line = line.strip()
+        if line.startswith("PICKED|"):
+            picked = line[len("PICKED|"):].strip()
+            return picked or None
+    return None
 
 
 def _try_current_version() -> str:
@@ -4228,6 +4274,24 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "message": "已在资源管理器中定位诊断包"})
             except Exception as exc:  # noqa: BLE001
                 self._json({"ok": False, "error": f"打开失败：{exc}"}, 500)
+            return
+
+        if path == "/api/diag/pick-folder":
+            # 块B（2026-11-24）：弹原生「选择文件夹」对话框，返回选中目录。
+            # 对话框会阻塞本请求线程，但 HTTP 是 ThreadingHTTPServer，不挡其它请求。
+            payload = self._read_json_body()
+            if payload is None:
+                return
+            picked = _diag_pick_folder(payload.get("initial_dir"))
+            self._json({"ok": bool(picked), "dir": picked or ""})
+            return
+
+        if path == "/api/diag_export_ex":
+            # 块B：导出到用户所选目录（零参 GET /api/diag_export 保持原行为）
+            payload = self._read_json_body()
+            if payload is None:
+                return
+            self._json(diag_export(payload.get("dir")))
             return
 
         if path == "/api/tools/open-apk-folder":

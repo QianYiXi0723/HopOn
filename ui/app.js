@@ -4816,13 +4816,29 @@ document.getElementById('btn-stats-refresh').addEventListener('click', function(
 /* 立即巡检（2026-11-05 P2）：让 daemon 跑一轮并写历史，绑号当天不用等到
    明天第一个时间点才见报表。成功后 12 秒自动重拉一次报表（daemon 0.5s 内
    响应 .run_now 标记，一轮并行查询约 6-15s）。 */
+/* 块B（2026-11-24）：点导出先弹原生「选择文件夹」，选完才导出到该目录。
+   记住上次目录到 localStorage（回车即沿用）；取消则静默返回，不导出不报错。 */
+const DIAG_LAST_DIR_KEY = 'rl-diag-last-dir';
+async function pickDiagFolderAndExport(btn){
+  if (!btn || btn.disabled) return;
+  let last = '';
+  try { last = localStorage.getItem(DIAG_LAST_DIR_KEY) || ''; } catch (e) { last = ''; }
+  const d = await postJSON('/api/diag/pick-folder', { initial_dir: last });
+  if (!d || !d.ok || !d.dir) return;              // 取消：什么都不做
+  try { localStorage.setItem(DIAG_LAST_DIR_KEY, d.dir); } catch (e) { /* 存储不可用不影响导出 */ }
+  return exportDiagnostics(btn, d.dir);
+}
+
 /* 诊断包导出（#3）：控制台守护卡与杀软自检卡共用同一条链路 */
-async function exportDiagnostics(btn){
+async function exportDiagnostics(btn, dir){
   if (!btn || btn.disabled) return;              // 防连点
   const label = btn.dataset.label || '诊断包';
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
   try {
-    const res = await fetch('/api/diag_export').then(function(r){ return r.json(); });
+    // 块B：带 dir 走 POST 导出到用户所选目录；否则保持原 GET 行为
+    const res = dir
+      ? await postJSON('/api/diag_export_ex', { dir: dir })
+      : await fetch('/api/diag_export').then(function(r){ return r.json(); });
     btn.disabled = false; btn.textContent = label;
     if (res && res.ok) {
       const n = (res.files && res.files.length) || 0;
@@ -4847,7 +4863,7 @@ async function exportDiagnostics(btn){
 }
 
 const logDiagBtn = document.getElementById('btn-log-diag');
-if (logDiagBtn) logDiagBtn.addEventListener('click', function(){ exportDiagnostics(this); });
+if (logDiagBtn) logDiagBtn.addEventListener('click', function(){ pickDiagFolderAndExport(this); });
 
 /* 块A（2026-11-24）：打开刚导出的诊断包所在文件夹。
    path 从只读结果行读，后端 _diag_reveal_target 会再校验一遍（双保险）。 */
@@ -4922,7 +4938,7 @@ if (accAvEl) {
   });
 }
 const avDiagBtn = document.getElementById('btn-av-diag');
-if (avDiagBtn) avDiagBtn.addEventListener('click', function(){ exportDiagnostics(this); });
+if (avDiagBtn) avDiagBtn.addEventListener('click', function(){ pickDiagFolderAndExport(this); });
 
 document.getElementById('btn-run-now').addEventListener('click', function(){
   const btn = this;
