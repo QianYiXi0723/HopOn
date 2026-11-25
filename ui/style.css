@@ -604,25 +604,24 @@
                font-size:12px;color:var(--muted)}
 
   /* =====================================================================
-     定时与状态页：三卡网格 + 高度传递链
-     左列（1.55fr）上 = 提醒时间点（含守护进程状态条）、下 = 规则列表
+     定时与状态页：三卡网格 + 整页滚动
+     左列（1.55fr）上 = 提醒时间点（含守护进程状态条）、下 = 设置
      右列（1fr）   = 今日巡检动态，跨满两行 → 左右卡片底边天然齐平
-     高度链：.app(100vh) → .app-body → .main → 本网格 → .card → .card__body
-     每层都写 min-height:0，滚动只发生在卡体内部，全页不滚
+     不再锁死高度、卡体不再各自滚：整页由 .main(overflow-y:auto) 统一滚动，
+     避免小窗口下「卡内滚、整页不动」的画中画割裂感。
      ===================================================================== */
   #tab-schedule.on{display:grid;
     grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);
-    grid-template-rows:auto minmax(0,1fr);
-    align-items:stretch;
-    flex:1;min-height:0;height:calc(100% - 16px)}
+    grid-template-rows:auto auto;
+    align-items:start;
+    flex:0 0 auto;height:auto;min-height:0}
   #tab-schedule > .card{display:flex;flex-direction:column;min-height:0;
     margin:0;min-width:0}
   #tab-schedule .card--times{grid-column:1;grid-row:1}
   #tab-schedule .card--rules{grid-column:1;grid-row:2}
   #tab-schedule .card--timeline{grid-column:2;grid-row:1 / -1}
   /* 卡体吃满剩余高度；滚动槽稳定占用，滚动时行宽不跳 */
-  #tab-schedule .card__body{flex:1 1 auto;min-height:0;
-    overflow-y:auto;scrollbar-gutter:stable}
+  #tab-schedule .card__body{flex:0 0 auto;min-height:0;overflow-y:visible}
   /* A 卡所在行是 auto（内容多就长高），本身不需要卡内滚动；
      去掉滚动槽，否则标尺/胶囊右侧会永久多出一条 15px 空白、和标题不对齐 */
   #tab-schedule .card--times .card__body{overflow-y:visible}

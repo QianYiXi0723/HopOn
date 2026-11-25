@@ -6095,8 +6095,10 @@ function loadMobile(){
     .then(function(d){
       const box = document.getElementById('mobile-toggle');
       const body = document.getElementById('mobile-body');
+      const state = document.getElementById('mobile-state');
       if (box) box.checked = !!(d && d.enabled);
       if (body) body.hidden = !(d && d.enabled);
+      if (state) state.textContent = (d && d.enabled) ? '已开启' : '未开启';
       if (d && d.enabled) loadMobileQr();
     })
     .catch(function(){ /* 主控制台在则必有此端点，失败就保持默认关 */ });
@@ -6116,12 +6118,14 @@ function loadMobileQr(){
   if (!box) return;
   box.addEventListener('change', function(){
     const body = document.getElementById('mobile-body');
+    const state = document.getElementById('mobile-state');
     box.disabled = true;
     postJSON('/api/mobile/toggle', { enable: box.checked })
       .then(function(d){
         box.disabled = false;
         if (!d || !d.ok) { box.checked = !box.checked; toast((d && d.message) || '切换失败'); return; }
         if (body) body.hidden = !box.checked;
+            if (state) state.textContent = box.checked ? '已开启' : '未开启';
         if (box.checked) loadMobileQr();
       })
       .catch(function(){ box.disabled = false; box.checked = !box.checked; toast('无法连接本地服务'); });

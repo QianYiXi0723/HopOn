@@ -577,11 +577,35 @@
     <!-- B 卡：规则列表（三段式行，列表限宽 720px，卡体内滚动） -->
     <section class="card card--rules set-card">
       <div class="card-head card__header">
-        <h2><svg class="ico"><use href="#i-gear"/></svg> 开机与提醒行为</h2>
+        <h2><svg class="ico"><use href="#i-gear"/></svg> 设置</h2>
         <span class="spacer"></span>
       </div>
       <div class="card__body">
         <div class="rule-list">
+          <!-- 手机连接（M1）：开关+二维码，移进设置卡首位，小窗口也好找 -->
+          <div class="set-item set-item--flat" id="mobile-card">
+            <div class="set-head">
+              <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-link"/></svg></i>
+                <span class="set-txt"><b>手机连接
+                  <span class="q" data-tip="开启后手机可以连接这台电脑，查看体力、每日进度并打卡。只需在手机上扫一扫下方二维码，无需输入地址。手机和电脑需连同一个 WiFi；不用时关掉即可"></span></b>
+                </span>
+              </span>
+              <span class="set-sum" id="mobile-state">未开启</span>
+              <span class="set-end">
+                <label class="toggle" title="开启后手机可连接本机"><input type="checkbox" id="mobile-toggle"><i></i></label>
+              </span>
+            </div>
+            <div class="set-body" id="mobile-body" hidden>
+              <div class="mobile-pair">
+                <img id="mobile-qr" alt="配对二维码" width="180" height="180">
+                <div class="mobile-pair-tip">
+                  <div class="mobile-pair-title">用手机扫一下即可连接</div>
+                  <div class="hint">同一 WiFi 下可用 · 不用时把上方开关关掉</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- 2026-11-06 纯介绍型抽屉退役：body 只有说明文字的行不再做抽屉
                （展开的唯一产出是读一段话，却让开关嵌在 summary 里被展开点击
                误拨——开机自启「每次打开变关闭」的根因）。说明收进问号悬浮 -->
@@ -807,26 +831,6 @@
         <button type="button" class="btn sm" id="btn-log-refresh">刷新</button>
       </div>
       <div class="card__body" id="run-log"><div class="emptybox">读取中…</div></div>
-    </section>
-
-    <!-- D 卡：手机连接（2026-11-25 M1）——开关+二维码，手机扫一下即可连接 -->
-    <section class="card" id="mobile-card">
-      <div class="card-head card__header">
-        <h2><svg class="ico"><use href="#i-link"/></svg> 手机连接
-          <span class="q" data-tip="开启后手机可以连接这台电脑，查看体力、每日进度并打卡。只需在手机上扫一扫下方二维码，无需输入地址。手机和电脑需连同一个 WiFi；不用时关掉即可"></span>
-        </h2>
-        <span class="spacer"></span>
-        <label class="toggle" title="开启后手机可连接本机"><input type="checkbox" id="mobile-toggle"><i></i></label>
-      </div>
-      <div class="card__body" id="mobile-body" hidden>
-        <div class="mobile-pair">
-          <img id="mobile-qr" alt="配对二维码" width="180" height="180">
-          <div class="mobile-pair-tip">
-            <div class="mobile-pair-title">用手机扫一下即可连接</div>
-            <div class="hint">同一 WiFi 下可用 · 不用时把上方开关关掉</div>
-          </div>
-        </div>
-      </div>
     </section>
   </section>
 
