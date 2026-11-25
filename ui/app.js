@@ -25,8 +25,7 @@ function switchTab(name){
   if (name === 'query') loadQuery();
   if (name === 'schedule') { loadSchedule(); startSchedPoll(); loadThresholds(); loadAutostart(); loadAlwaysNotify(); loadQuiet(); loadMobile(); } else { stopSchedPoll(); }
   /* 账号与通知已合并为一页：通知的三路加载并入 account 分支 */
-  /* 记录卡（每日动态/最近推送）已合并在本页：按当前所选视图只加载其一 */
-  if (name === 'account') { loadDevice(); loadAccounts(); refreshNotice(); loadPush(); loadRecView(); }
+  if (name === 'account') { loadDevice(); loadAccounts(); refreshNotice(); loadPush(); }
   if (name === 'history') { loadHistory(); loadLive(false); startHistoryPoll(); loadActivities(); }
   else { stopHistoryPoll(); }
 }
@@ -1366,75 +1365,6 @@ document.querySelectorAll('.ch-item').forEach(function(el){
   el.addEventListener('click', function(){ selectChannel(this.dataset.ch); });
 });
 
-/* 最近推送记录：读 data/push_history.json（notifier 每次真实发送——成功/失败——
-   都落一条结构化记录）。不再解析纯文本日志：console 与 daemon 的日志分家
-   （desktop.log / dailycheck.log），按文件筛正则永远可能漏。 */
-const PUSH_LABELS = { serverchan: 'Server酱', qmsg: 'Qmsg 酱', bark: 'Bark' };
-
-/* 判断哪些格子的内容真的被裁掉了：只有它们才显示展开箭头。
-   注意正文用 -webkit-line-clamp 折叠，被裁的是正文元素自身，
-   父级 .pv-item 的 scrollHeight 不一定溢出，所以三个来源都要看。 */
-function markTruncatedPush(box){
-  Array.prototype.forEach.call(box.querySelectorAll('.pv-item'), function(el){
-    const b = el.querySelector('.pv-body');
-    const m = el.querySelector('.pv-meta');
-    const cut = (b && b.scrollHeight > b.clientHeight + 1) ||
-                (m && m.scrollWidth > m.clientWidth + 1) ||
-                (el.scrollHeight > el.clientHeight + 1);
-    if (cut) el.classList.add('has-more');
-  });
-}
-
-function loadPushRecent(){
-  const box = document.getElementById('pv-recent');
-  if (!box) return;
-  fetch('/api/push_history').then(function(r){ return r.json(); })
-    .then(function(d){
-      const items = (d && d.items) || [];
-      if (!d || d.ok === false || !items.length) {
-        box.innerHTML = '<div class="pv-empty">暂无数据。</div>';
-        return;
-      }
-      box.innerHTML = items.map(function(it){
-        const ch = PUSH_LABELS[it.channel] || it.channel || '未知渠道';
-        const ok = !!it.ok;
-        // 主内容显示推送标题+正文预览（老记录两者皆无，回退 message）。
-        // 失败行把错误原因带上：有 title 用「标题（原因）」，没有就直接给原因。
-        const text = ok ? (it.title || it.message || '推送成功')
-                        : (it.title ? it.title + '（' + (it.message || '未知原因') + '）'
-                                    : (it.message || '推送失败'));
-        const bodyLine = String(it.body || '').replace(/\s+$/, '');
-        return '<div class="pv-item">' +
-          '<div class="pv-meta"><span class="' + (ok ? 'i-ok' : 'i-no') + '">' +
-            (ok ? '✓' : '✗') + '</span> ' +
-            escHtml(String(it.ts || '').replace(/^\d{4}-/, '')) + ' · ' +
-            escHtml(ch) + ' · ' + escHtml(text) + '</div>' +
-          (bodyLine ? '<div class="pv-body">' + escHtml(bodyLine) + '</div>' : '') +
-          '<button type="button" class="pv-toggle" aria-expanded="false" title="展开全文">' +
-            '<svg class="ico pv-chev"><use href="#i-chev"/></svg></button>' +
-          '</div>';
-      }).join('');
-      // 折叠高度固定，只有真被裁掉的条目才给展开箭头（最多 8 条，量一次即可）
-      requestAnimationFrame(function(){ markTruncatedPush(box); });
-    })
-    .catch(function(){ box.innerHTML = '<div class="pv-empty">读取推送历史失败，请稍后重试。</div>'; });
-}
-
-/* 展开/收起：点格子右上角箭头切换；内容没被裁的条目不会出现箭头 */
-(function bindPushToggle(){
-  const box = document.getElementById('pv-recent');
-  if (!box) return;
-  box.addEventListener('click', function(e){
-    const btn = e.target.closest ? e.target.closest('.pv-toggle') : null;
-    if (!btn) return;
-    const item = btn.closest('.pv-item');
-    if (!item) return;
-    const open = item.classList.toggle('open');
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    btn.title = open ? '收起' : '展开全文';
-  });
-})();
-
 function collectPush(){
   const out = {};
   CHANNELS.forEach(function(name){
@@ -2673,7 +2603,6 @@ document.getElementById('btn-live-refresh')
   .addEventListener('click', function(){ loadLive(true); });
 document.getElementById('btn-act-refresh')
   .addEventListener('click', refreshActivities);
-/* 刷新按钮统一到合并后的「记录」卡：见 btn-rec-refresh 绑定 */
 /* 活动卡片是动态渲染的，删除按钮与抽屉把手用事件委托挂在容器上 */
 document.getElementById('act-list').addEventListener('click', function(e){
   if (!e.target.closest) return;
@@ -5377,101 +5306,6 @@ if (groupBtn) {
     }
   });
 }
-
-/* 记录卡：按 localStorage 里记的当前视图决定加载哪一块 */
-function loadRecView(){
-  const mode = localStorage.getItem('rl-recview') || 'log';
-  if (mode === 'push') loadPushRecent(); else loadRunLog();
-}
-
-/* ========================= 今日巡检动态 ========================= */
-function renderRunLog(h){
-  const box = document.getElementById('run-log');
-  if (!box) return;
-  const days = (h && h.days) || [];
-  const nameOf = {};
-  ((h && h.games) || []).forEach(function(g){ nameOf[g.game] = g.game_name || g.game; });
-  const tracked = (h && h.tracked) || [];
-  const rows = days.filter(function(row){
-    const cells = row.games || {};
-    return Object.keys(cells).some(function(k){ return cells[k] && cells[k].known; });
-  }).slice(-14).reverse();
-
-  if (!rows.length) {
-    box.innerHTML = '<div class="emptybox">还没有巡检记录，等第一次定时检查跑完后这里会有动态。</div>';
-    return;
-  }
-  /* 三列时间轴：时间列 / 节点列 / 内容列；节点色 = 本次检查整体状态
-     绿 = 参与检查的游戏全部完成 · 琥珀 = 仍有未完成 · 灰 = 无有效记录 */
-  box.innerHTML = '<div class="tl">' + rows.map(function(row){
-    const cells = row.games || {};
-    const done = [], miss = [];
-    let lastTime = '';
-    tracked.forEach(function(gid){
-      const c = cells[gid];
-      if (!c || !c.known) return;
-      if (c.last && c.last > lastTime) lastTime = c.last;
-      if (c.finished) done.push(nameOf[gid] || gid);
-      else miss.push(nameOf[gid] || gid);
-    });
-    const state = (!done.length && !miss.length) ? 'none' : (miss.length ? 'warn' : 'ok');
-    const sumText = state === 'none' ? '无有效记录'
-      : (miss.length ? miss.length + ' 款未完成' : '全部完成');
-    const detail = miss.length
-      ? '<div class="tl-desc">未完成：' + escHtml(miss.join('、')) + '</div>'
-      : (done.length ? '<div class="tl-desc">已完成：' + escHtml(done.join('、')) + '</div>' : '');
-    const when = lastTime ? '<span class="tl-when">' + escHtml(lastTime) + '</span>' : '';
-    return '<div class="tl-item" data-state="' + state + '">' +
-      '<div class="tl-time"><b>' + escHtml(row.label || '') + '</b>' +
-        escHtml((row.weekday || '') + (row.is_today ? ' · 今天' : '')) + '</div>' +
-      '<div class="tl-node"></div>' +
-      '<div class="tl-body">' +
-        '<div class="tl-title"><span class="tl-sum' +
-          (miss.length ? ' warn' : '') + '">' + escHtml(sumText) + '</span>' + when + '</div>' +
-        detail +
-      '</div>' +
-      '</div>';
-  }).join('') + '</div>';
-}
-
-function loadRunLog(){
-  fetch('/api/history?days=7').then(function(r){ return r.json(); })
-    .then(renderRunLog)
-    .catch(function(){
-      const box = document.getElementById('run-log');
-      if (box) box.innerHTML = '<div class="emptybox">读取巡检记录失败，请点「刷新」重试。</div>';
-    });
-}
-
-/* 记录卡（每日动态 + 最近推送）切换与刷新 */
-(function bindRecCard(){
-  const seg = document.getElementById('rec-view');
-  const btn = document.getElementById('btn-rec-refresh');
-  if (!seg || !btn) return;
-  const paint = function(){
-    const mode = localStorage.getItem('rl-recview') || 'log';
-    seg.querySelectorAll('button').forEach(function(b){
-      b.classList.toggle('on', b.dataset.view === mode);
-    });
-    const log = document.getElementById('rec-log');
-    const push = document.getElementById('rec-push');
-    if (log) log.hidden = mode !== 'log';
-    if (push) push.hidden = mode !== 'push';
-    return mode;
-  };
-  seg.addEventListener('click', function(e){
-    const b = e.target.closest ? e.target.closest('button[data-view]') : null;
-    if (!b || b.classList.contains('on')) return;
-    localStorage.setItem('rl-recview', b.dataset.view);
-    const mode = paint();
-    if (mode === 'push') loadPushRecent(); else loadRunLog();
-  });
-  btn.addEventListener('click', function(){
-    const mode = paint();
-    if (mode === 'push') loadPushRecent(); else loadRunLog();
-  });
-  paint();
-})();
 
 /* ========================= 全局 Tooltip ========================= */
 const tipBox = document.createElement('div');

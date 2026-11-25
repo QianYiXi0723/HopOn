@@ -399,30 +399,6 @@
       </div>
     </section>
 
-    <!-- 记录（2026-11-25 合并）：每日巡检动态 + 最近推送，同为只读记录类，
-         用 seg-mini 切换；两个容器 ID 均保留，JS 渲染路径不变 -->
-    <section class="card s12" id="rec-card">
-      <div class="card-head">
-        <h2><svg class="ico"><use href="#i-history"/></svg> 记录
-          <span class="q" data-tip="巡检历史（最近 7 天：节点绿 = 全部完成、琥珀 = 有未完成、灰 = 无记录）与真实推送记录（成功失败都有，最多 8 条）"></span>
-        </h2>
-        <span class="spacer"></span>
-        <div class="seg-mini" id="rec-view" role="group" aria-label="记录类型">
-          <button type="button" data-view="log" class="on">每日动态</button>
-          <button type="button" data-view="push">最近推送</button>
-        </div>
-        <button type="button" class="btn sm" id="btn-rec-refresh">刷新</button>
-      </div>
-      <div class="card-body">
-        <div id="rec-log">
-          <div class="card__body" id="run-log"><div class="emptybox">读取中…</div></div>
-        </div>
-        <div id="rec-push" hidden>
-          <div class="recent" id="pv-recent"><div>读取中…</div></div>
-        </div>
-      </div>
-    </section>
-
     <!-- 第一步：选择要登录的游戏 -->
     <div class="modal-mask" id="pick-modal" hidden>
       <div class="modal">
