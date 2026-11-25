@@ -742,9 +742,8 @@
      grid-column:span N 同时存在，会把这些块重新按 12 栅格摊开、
      把两列压成 344/222px（2026-11-16 实测） */
   #tab-account .acct-col.s7{grid-column:1 / 2 !important;grid-row:1 !important}
-  #tab-account .acct-col.s5{grid-column:2 / 3 !important;grid-row:1 !important}
-  #tab-account .card.s7{grid-column:1 / 2 !important;grid-row:2 !important}
-  #tab-account .s5.stack{grid-column:2 / 3 !important;grid-row:2 !important}
+  #tab-account .card.s7{grid-column:2 / 3 !important;grid-row:1 !important}
+  #tab-account .s5.stack{grid-column:1 / -1 !important;grid-row:2 !important}
   /* 落位后栅格宽度类失效，由列宽接管 */
   #tab-account > .acct-col,#tab-account > .card.s7,#tab-account > .s5.stack{width:auto}
   /* 窄屏回退（学定时页 681 行同款）：≤1099px 时 .tabpanel.on > *{grid-column:1/-1}
@@ -752,14 +751,12 @@
      顺序还原为：账号绑定 → 凭证健康/设备 → 通知绑定 → 推送预览 */
   @media (max-width:1099px){
     #tab-account.on{grid-template-columns:minmax(0,1fr) !important;
-      grid-template-rows:auto auto auto auto}
+      grid-template-rows:auto auto auto}
     #tab-account .acct-col.s7{grid-column:1 / -1 !important;grid-row:1 !important}
-    #tab-account .acct-col.s5{grid-column:1 / -1 !important;grid-row:2 !important}
-    #tab-account .card.s7{grid-column:1 / -1 !important;grid-row:3 !important}
-    #tab-account .s5.stack{grid-column:1 / -1 !important;grid-row:4 !important}
+    #tab-account .card.s7{grid-column:1 / -1 !important;grid-row:2 !important}
+    #tab-account .s5.stack{grid-column:1 / -1 !important;grid-row:3 !important}
   }
   /* 右列两块（凭证+设备）保持原堆叠间距 */
-  #tab-account .acct-col{display:flex;flex-direction:column;gap:16px;min-width:0}
   #tab-account .s5.stack{display:flex;flex-direction:column;gap:16px;min-width:0}
   /* 推送预览气泡在窄列/小窗下不被文字换行拉长：卡体内部滚动 */
   #tab-account .pv-bubble{max-height:420px;overflow-y:auto}

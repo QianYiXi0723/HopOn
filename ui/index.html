@@ -204,9 +204,7 @@
           <details class="card set-item" id="acc-monitor" style="margin-top:10px">
             <summary class="card-head set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-gamepad"/></svg></i>
-                <span class="set-txt"><b>游戏监控</b>
-                  <span class="q" data-tip="开启的游戏参与每日巡检并推送通知；关闭则不再巡检、不再推送。点击卡片任意位置即可切换"></span>
-                </span>
+                <span class="set-txt"><b>游戏监控<span class="q" data-tip="开启的游戏参与每日巡检并推送通知；关闭则不再巡检、不再推送。点击卡片任意位置即可切换"></span></b></span>
               </span>
               <span class="set-sum" id="sum-monitor"></span>
               <span class="set-end">
@@ -266,22 +264,14 @@
               </div>
             </div>
           </details>
-        </div>
-      </section>
-    </div>
-
-    <div class="acct-col s5">
-      <!-- 凭证健康：折叠抽屉（2026-11-06 用户要求——小窗口下要先翻很久才找得到
-           通知绑定，把凭证健康与游戏监控都收成抽屉，默认只看摘要） -->
-      <details class="card set-item" id="acc-cred">
-        <summary class="card-head set-head">
-          <h2><svg class="ico"><use href="#i-shield-check"/></svg> 凭证健康
-            <span class="q" data-tip="绿点 = 已绑定 · 黄点 = 超过 7 天未更新 · 红点 = 未绑定；时间为相对时间，从未扫码更新的显示「从未更新」，下次扫码后开始记录"></span>
-          </h2>
-          <span class="spacer"></span>
-          <span class="badge" id="cred-health-badge">-</span>
-        </summary>
-        <div class="set-body">
+          <details class="card set-item" id="acc-cred">
+            <summary class="card-head set-head">
+              <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-shield-check"/></svg></i>
+                <span class="set-txt"><b>凭证健康<span class="q" data-tip="绿点 = 已绑定 · 黄点 = 超过 7 天未更新 · 红点 = 未绑定；时间为相对时间，从未扫码更新的显示「从未更新」，下次扫码后开始记录"></span></b></span>
+              </span>
+              <span class="set-sum"><span class="badge" id="cred-health-badge">-</span></span>
+            </summary>
+<div class="set-body">
           <div id="cred-health"><div class="emptybox">读取中…</div></div>
           <!-- 三色图例常驻外显（Nielsen 启发式 6「靠识别而非回忆」）：
                色点语义与行内 .cred-dot 同类同名，措辞与行文案逐字一致 -->
@@ -291,20 +281,19 @@
             <span><span class="cred-dot err"></span>未绑定</span>
           </div>
         </div>
-      </details>
-
-      <!-- 设备伪装：点击入口卡弹配置弹窗（低频专注任务用模态，不再抽屉展开）。
-           2026-11-05 P4：定位为「高级·可选」——常规用户不需要碰，APK 也不随包分发 -->
-      <section class="card dev-entry" id="dev-card" onclick="openDev()">
-        <div class="card-head">
-          <h2><svg class="ico"><use href="#i-shield"/></svg> 设备伪装
-            <span class="badge">高级 · 可选</span>
-            <span class="q" data-tip="第一次用会随机挑一台常见手机型号，之后固定不变。被游戏官方拦住多半是网络被盯上，换机型救不了急；频繁换反而更像可疑设备，更容易被拦。配套的「设备信息」App 需要另外单独下载"></span>
-          </h2>
-          <span class="spacer"></span>
-          <svg class="dev-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      
+          </details>
+          <div class="set-item set-item--flat" id="dev-card" onclick="openDev()">
+            <div class="set-head">
+              <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-shield"/></svg></i>
+                <span class="set-txt"><b>设备伪装<span class="q" data-tip="第一次用会随机挑一台常见手机型号，之后固定不变。被游戏官方拦住多半是网络被盯上，换机型救不了急；频繁换反而更像可疑设备，更容易被拦。配套的「设备信息」App 需要另外单独下载"></span></b></span>
+                <span class="set-sum"><span class="badge">高级 · 可选</span></span>
+              </span>
+            </div>
+          </div>
         </div>
       </section>
+    </div>
 
       <div class="modal-mask" id="dev-modal" hidden>
         <div class="modal modal--dev">
@@ -358,7 +347,7 @@
           </div>
         </div>
       </div>
-    </div>
+
 
     <!-- ======== 通知绑定（并入账号页）：渠道切换改分段控件——约定形态自带
          可点击意符（Norman），原「渠道」空卡删除；两卡配满 12 栅格
