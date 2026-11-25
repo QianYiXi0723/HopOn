@@ -173,6 +173,25 @@ class MobileGatewayServer:
     def pair_url(self, ip: str) -> str:
         return f"http://{ip}:{self.port}/?code={self.pm.issue_code()}"
 
+    def issue_pair_qr(self, ip: str) -> dict:
+        """签发一次性配对码并生成二维码；地址藏进二维码，用户不用手填 IP。"""
+        code = self.pm.issue_code()
+        url = f"http://{ip}:{self.port}/pair?code={code}"
+        qr = ""
+        try:
+            import base64
+            from io import BytesIO
+            import qrcode
+            q = qrcode.QRCode(border=2, box_size=8)
+            q.add_data(url)
+            q.make(fit=True)
+            buf = BytesIO()
+            q.make_image(fill_color="#111111", back_color="#ffffff").save(buf, format="PNG")
+            qr = base64.b64encode(buf.getvalue()).decode("ascii")
+        except Exception:  # noqa: BLE001
+            logger.warning("配对二维码渲染失败", exc_info=True)
+        return {"url": url, "code": code, "qr_base64": qr}
+
 
 import socket  # noqa: E402 - 数据适配函数放文件末尾，保持上方配对核心内聚
 
@@ -194,14 +213,41 @@ def _accounts_status():
     return accounts_status()
 
 
+def _live_snapshot():
+    """只读 PC 已缓存的实时数据，绝不现场查询（风控安全）。"""
+    from login_ui import _live_disk_read
+    return _live_disk_read() or {"games": []}
+
+
+def _dailies_snapshot():
+    from login_ui import custom_dailies_status
+    return custom_dailies_status()
+
+
 def build_snapshot():
-    """只产白名单字段：账号 id/name/enabled/has_credential，绝不带 cookie/token。"""
-    raw = _accounts_status()
-    games = [{"id": str(i.get("id", "")), "name": str(i.get("name", "")),
-              "enabled": bool(i.get("enabled")),
-              "has_credential": bool(i.get("has_credential"))}
-             for i in (raw.get("items") or []) if isinstance(i, dict)]
-    return {"ok": True, "version": "m1", "games": games}
+    """真实体力/日常进度 + 自定义提醒，全部来自 PC 缓存，白名单字段不含凭证。"""
+    live = _live_snapshot()
+    games = []
+    for g in (live.get("games") or []):
+        if not isinstance(g, dict):
+            continue
+        res = g.get("resource") or {}
+        tasks = [t for t in (g.get("tasks") or []) if isinstance(t, dict)]
+        done = sum(1 for t in tasks if t.get("done"))
+        games.append({
+            "id": str(g.get("game", "")), "name": str(g.get("game_name", "")),
+            "stamina_name": str(res.get("name", "")),
+            "current": int(res.get("current") or 0), "max": int(res.get("maximum") or 0),
+            "recover": res.get("recover"),
+            "daily_done": done, "daily_total": len(tasks),
+            "daily_progress": str(tasks[0].get("progress", "")) if tasks else "",
+            "finished": bool(g.get("finished")), "stale": bool(g.get("stale")),
+        })
+    raw = _dailies_snapshot()
+    customs = [{"id": str(i.get("id", "")), "name": str(i.get("name", "")),
+                "done": bool(i.get("done")), "times": list(i.get("times") or [])}
+               for i in (raw.get("items") or []) if isinstance(i, dict)]
+    return {"ok": True, "version": "m1", "games": games, "custom_dailies": customs}
 
 
 def build_dailies():

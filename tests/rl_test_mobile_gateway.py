@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # qa 用 python test.py 直跑，需手动加根
 
 from core.mobile_gateway import PairingManager, MobileGatewayServer, build_snapshot, lan_ip
+from unittest.mock import patch
 
 
 class TestPairingManager(unittest.TestCase):
@@ -120,22 +121,53 @@ class TestMobileGateway(unittest.TestCase):
 
 class TestMobileData(unittest.TestCase):
     def test_snapshot_only_whitelist_fields(self):
-        from unittest.mock import patch
-        fake = {"ok": True, "items": [{"id": "genshin", "name": "原神",
-                 "has_credential": True, "nickname": "旅行者",
-                 "cookie": "SECRET", "token": "T"}]}
-        with patch("core.mobile_gateway._accounts_status", return_value=fake):
+        # v2 契约：快照来自 live_cache（含 has_credential 等敏感字段的源被白名单过滤）。
+        fake = {"games": [{"game": "genshin", "game_name": "原神",
+                 "resource": {}, "cookie": "SECRET", "token": "T"}]}
+        with patch("core.mobile_gateway._live_snapshot", return_value=fake), \
+             patch("core.mobile_gateway._dailies_snapshot", return_value={"items": []}):
             snap = build_snapshot()
         blob = json.dumps(snap)
         self.assertNotIn("SECRET", blob)
         self.assertNotIn("cookie", blob)
         self.assertNotIn('"token"', blob)
         self.assertIn("genshin", blob)
-        self.assertTrue(snap["games"][0]["has_credential"])
 
     def test_lan_ip_returns_address(self):
         import re
         self.assertRegex(lan_ip(), r"^\d+\.\d+\.\d+\.\d+$")
+
+
+class TestMobileSnapshotV2(unittest.TestCase):
+    def test_snapshot_has_real_stamina_and_dailies(self):
+        fake_live = {"ok": True, "games": [{
+            "game": "genshin", "game_name": "原神", "finished": True,
+            "resource": {"name": "原粹树脂", "current": 25, "maximum": 200,
+                         "progress": "25/200", "recover": 83545},
+            "tasks": [{"name": "每日委托", "done": True, "progress": "4/4"}],
+            "cookie": "LEAK"}]}
+        fake_daily = {"ok": True, "items": [
+            {"id": "d1", "name": "喝水", "done": False, "times": ["08:30"]}]}
+        with patch("core.mobile_gateway._live_snapshot", return_value=fake_live), \
+             patch("core.mobile_gateway._dailies_snapshot", return_value=fake_daily):
+            snap = build_snapshot()
+        g = snap["games"][0]
+        self.assertEqual(g["current"], 25)
+        self.assertEqual(g["max"], 200)
+        self.assertEqual(g["daily_done"], 1)
+        self.assertEqual(g["daily_total"], 1)
+        self.assertEqual(snap["custom_dailies"][0]["name"], "喝水")
+        self.assertNotIn("LEAK", json.dumps(snap))
+
+    def test_pair_qr_contains_url_and_code(self):
+        pm = PairingManager(ttl=60)
+        gw = MobileGatewayServer(pm, port=8766, snapshot_fn=lambda: {},
+                                 dailies_fn=lambda: {}, checkin_fn=lambda *a: {})
+        qr = gw.issue_pair_qr("192.168.1.50")
+        self.assertIn("192.168.1.50:8766", qr["url"])
+        self.assertIn("code=", qr["url"])
+        self.assertEqual(len(qr["code"]), 6)
+        self.assertTrue(qr["qr_base64"])
 
 
 if __name__ == "__main__":
