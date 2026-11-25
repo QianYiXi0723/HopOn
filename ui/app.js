@@ -5943,6 +5943,8 @@ function loadMobileCode(){
     .then(function(d){
       const box = document.getElementById('mobile-code');
       if (box && d && d.ok && d.code) box.textContent = d.code;
+      const ipBox = document.getElementById('mobile-ip');
+      if (ipBox && d && d.ip) ipBox.textContent = d.ip;
     })
     .catch(function(){ /* 配对码拉取失败不打扰，开关仍在 */ });
   // 码 60 秒过期，提前 10 秒换一个，用户看到的始终是当前有效码。

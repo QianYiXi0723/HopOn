@@ -240,7 +240,7 @@ class MobileGatewayServer:
             qr = base64.b64encode(buf.getvalue()).decode("ascii")
         except Exception:  # noqa: BLE001
             logger.warning("配对二维码渲染失败", exc_info=True)
-        return {"url": url, "code": code, "qr_base64": qr}
+        return {"url": url, "code": code, "qr_base64": qr, "ip": ip}
 
 
 import socket  # noqa: E402 - 数据适配函数放文件末尾，保持上方配对核心内聚

@@ -318,7 +318,6 @@ def main() -> int:
         # 断言后立刻清掉这个自带副作用（用户桌面不该因为跑 qa 就冒出 .update）。
         desktop_update = desktop / ".update"
         if desktop_update.exists():
-            import shutil
             shutil.rmtree(desktop_update, ignore_errors=True)
         check("U6c 测试未污染桌面（.update 已清理）", not desktop_update.exists(), str(desktop_update))
 
