@@ -610,16 +610,20 @@
      不再锁死高度、卡体不再各自滚：整页由 .main(overflow-y:auto) 统一滚动，
      避免小窗口下「卡内滚、整页不动」的画中画割裂感。
      ===================================================================== */
+  /* 2026-11-25：巡检动态卡删除后右列空了——两卡改单列、保持约原左列宽、
+     整组居中（不再靠左留大片空白）。宽度 ≈ 原 1.55fr/(1.55+1fr)=60.8%。 */
   #tab-schedule.on{display:grid;
-    grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);
+    grid-template-columns:minmax(0,1fr);
     grid-template-rows:auto auto;
-    align-items:start;
+    align-items:start;justify-items:center;
     flex:0 0 auto;height:auto;min-height:0}
   #tab-schedule > .card{display:flex;flex-direction:column;min-height:0;
-    margin:0;min-width:0}
+    margin:0;min-width:0;width:60.8%}
   #tab-schedule .card--times{grid-column:1;grid-row:1}
   #tab-schedule .card--rules{grid-column:1;grid-row:2}
-  #tab-schedule .card--timeline{grid-column:2;grid-row:1 / -1}
+  @media (max-width:1099px){
+    #tab-schedule > .card{width:100%}
+  }
   /* 卡体吃满剩余高度；滚动槽稳定占用，滚动时行宽不跳 */
   #tab-schedule .card__body{flex:0 0 auto;min-height:0;overflow-y:visible}
   /* A 卡所在行是 auto（内容多就长高），本身不需要卡内滚动；
@@ -677,15 +681,6 @@
   .tl-desc{margin-top:4px;font-size:12px;color:var(--muted);line-height:1.65;
     word-break:break-word}
 
-  /* 窄屏（<1100px）：降级单列上下堆叠，高度交还内容，由 .main 整页滚 */
-  @media (max-width:1099px){
-    #tab-schedule.on{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;
-      height:auto;flex:0 0 auto}
-    #tab-schedule .card--times,
-    #tab-schedule .card--rules,
-    #tab-schedule .card--timeline{grid-column:1;grid-row:auto}
-    #tab-schedule .card__body{overflow-y:visible}
-  }
   @media (max-width:520px){
     .tl-item{grid-template-columns:52px 18px minmax(0,1fr);column-gap:10px}
   }
