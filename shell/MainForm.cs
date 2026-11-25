@@ -145,12 +145,37 @@ namespace HopOn
                 _url = "http://127.0.0.1:" + port + "/";
                 _port = port;
 
-                if (IsHopOnAlive(port))
+                bool engineAlive = IsHopOnAlive(port);
+                if (engineAlive)
                 {
                     _engine = null;
                     Log("端口 " + port + " 检测到 HopOn 实例 → 直接复用，不重复拉起");
                 }
+
+                // 页面先出来（对标 Electron「页面先出、数据后填」）：UI 走 engine\ui 直接读盘，
+                // 不依赖 Python HTTP，先把 WebView2 初始化 + 拦截器注册 + Navigate 做完，
+                // 让骨架立刻显示；引擎就绪最多要 20 秒，不该挡在页面显示前面。
+                // 这期间前端 fetch('/api/*') 会拿到 502「引擎不可达」，都有 catch 兜底，
+                // 引擎起来后各自的轮询/重试会自动填上数据。
+                Directory.CreateDirectory(Path.Combine(Root, "logs", "webview2"));
+                var env = await CoreWebView2Environment.CreateAsync(
+                    userDataFolder: Path.Combine(Root, "logs", "webview2"));
+                await _web.EnsureCoreWebView2Async(env);
+
+                // 前端 fetch('/api/...') 与图标 /static/... 由本进程拦截代转，JS 一行不改。
+                if (TryMapUiFolder())
+                {
+                    _web.CoreWebView2.Navigate("https://" + UiHost + "/index.html");
+                    Log("壳加载 https://" + UiHost + "/index.html（engine\\ui 页面接管，不走本地 HTTP）");
+                }
                 else
+                {
+                    _web.CoreWebView2.Navigate(_url);
+                    Log("壳加载 " + _url + "（页面接管不可用，回退本地 HTTP）");
+                }
+
+                // 页面已在显示，再在后台确保引擎/守护就绪；不阻塞 UI 首帧。
+                if (!engineAlive)
                 {
                     Log("端口 " + port + " 无 HopOn 实例 → 静默拉起引擎（pythonw，无黑框）");
                     StartEngine(port);
@@ -164,30 +189,8 @@ namespace HopOn
                     }
                     Log("引擎就绪 pid=" + (_engine == null ? "?" : _engine.Id.ToString()) + "，端口 " + port);
                 }
-
-                // 冷启动兜底：daemon 唯一入口是页面按钮（发行版无 start.bat）；fire-and-forget 防 6 秒白屏。
                 _ = Task.Run(() => EnsureDaemon(port));
-                RefreshTraySummary();   // 托盘摘要首拉（引擎未就绪时静默失败，30s 后定时器补拉）
-
-                Directory.CreateDirectory(Path.Combine(Root, "logs", "webview2"));
-                var env = await CoreWebView2Environment.CreateAsync(
-                    userDataFolder: Path.Combine(Root, "logs", "webview2"));
-                await _web.EnsureCoreWebView2Async(env);
-
-                // UI 走虚拟主机映射：index.html / app.js / style.css 由 WebView2 直接读 engine\ui，
-                // 页面不再依赖 Python 的本地 HTTP 服务——引擎还没起完也能先把界面画出来，
-                // 不占端口、不受系统代理影响，顺手把 /favicon.ico 的 404 也免了。
-                // 前端 fetch('/api/...') 与图标 /static/... 由本进程拦截代转，JS 一行不改。
-                if (TryMapUiFolder())
-                {
-                    _web.CoreWebView2.Navigate("https://" + UiHost + "/index.html");
-                    Log("壳加载 https://" + UiHost + "/index.html（engine\\ui 页面接管，不走本地 HTTP）");
-                }
-                else
-                {
-                    _web.CoreWebView2.Navigate(_url);
-                    Log("壳加载 " + _url + "（页面接管不可用，回退本地 HTTP）");
-                }
+                RefreshTraySummary();   // 托盘摘要（引擎刚起可能未就绪，30s 后定时器补拉）
             }
             catch (Exception ex)
             {

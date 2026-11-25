@@ -47,15 +47,20 @@ def find_sandbox_engine(user_dir, want_version=None, attempts=1):
         for port in ports:
             try:
                 with urllib.request.urlopen(
-                        f"http://127.0.0.1:{port}/api/env", timeout=2) as r:
+                        f"http://127.0.0.1:{port}/api/env", timeout=3) as r:
                     if r.status != 200:
                         continue
                     env = json.loads(r.read().decode())
                     if want_version and env.get("version") != want_version:
                         continue
+                # 8765 可能是真实实例（版本恰好相同）→ 数据岛路径判别；
+                # 8899+ 是沙箱专属端口，版本匹配即可（全新数据岛首次
+                # /api/history 构建常超 5s，2026-11-22 首跑实证会误跳过）
+                if port != 8765:
+                    return port, env
                 with urllib.request.urlopen(
                         f"http://127.0.0.1:{port}/api/history?days=1",
-                        timeout=5) as r:
+                        timeout=15) as r:
                     hist = json.loads(r.read().decode())
                 if str(hist.get("path") or "").startswith(prefix):
                     return port, env
@@ -72,7 +77,7 @@ KEEP_SCENE = False
 def main() -> int:
     global KEEP_SCENE
     keep = "--keep" in sys.argv
-    old_setup = DIST / "HopOn_v2.6.8_Setup.exe"
+    old_setup = DIST / "HopOn_v2.6.10.5_Setup.exe"
     new_zip = None   # 目标版本由 V2a 的真实检查更新决定（latest）
     sandbox = Path(tempfile_root()) / ("rl_virgin_" + time.strftime("%H%M%S"))
     install_root = sandbox / "Programs" / "HopOn"
@@ -91,7 +96,7 @@ def main() -> int:
         return finish(keep)
 
     try:
-        print("=== V1 全新首装（2.6.8）===")
+        print("=== V1 全新首装（2.6.10.5）===")
         setup_log = sandbox / "setup.log"
         setup_log.parent.mkdir(parents=True, exist_ok=True)
         proc = subprocess.run([
@@ -108,9 +113,9 @@ def main() -> int:
         # （2026-11-19 实测事故：硬编码根被 391 文件覆盖=真实实例被换）
         env["HOPON_INSTALL_DIR"] = str(install_root)
         shell = subprocess.Popen(
-            [str(install_root / "HopOn.exe"), "--port", "8899"],
+            [str(install_root / "HopOn.exe"), "--allow-multi", "--port", "8899"],
             env=env, cwd=str(install_root))
-        port, envinfo = find_sandbox_engine(user_dir, want_version="2.6.8",
+        port, envinfo = find_sandbox_engine(user_dir, want_version="2.6.10.5",
                                             attempts=30)
         if port is None:
             # 首跑偶发超时（00:2x 两跑实证）：重启壳再探一次
@@ -118,27 +123,27 @@ def main() -> int:
                            capture_output=True)
             time.sleep(2)
             shell = subprocess.Popen(
-                [str(install_root / "HopOn.exe"), "--port", "8899"],
+                [str(install_root / "HopOn.exe"), "--allow-multi", "--port", "8899"],
                 env=env, cwd=str(install_root))
-            port, envinfo = find_sandbox_engine(user_dir, want_version="2.6.8",
+            port, envinfo = find_sandbox_engine(user_dir, want_version="2.6.10.5",
                                                 attempts=30)
         step("V1c 全新实例起在备用端口", port is not None,
              f"port={port} shell_pid={shell.pid}")
 
         if port:
             ver = (envinfo or {}).get("version")
-            step("V1d 首跑版本=2.6.8（旧版没被污染）", ver == "2.6.8", ver)
+            step("V1d 首跑版本=2.6.10.5（旧版没被污染）", ver == "2.6.10.5", ver)
             demo = (envinfo or {}).get("demo_mode")
             step("V1e 全新数据岛=演示模式（无账号）", demo is True, demo)
             cfg = user_dir / "config.json"
             step("V1f 数据岛落在 HOPON_USER_DIR", cfg.is_file(), cfg)
 
-        print("=== V2 一键更新（2.6.8 → GitHub 真实最新版）===")
+        print("=== V2 一键更新（2.6.10.5 → GitHub 真实最新版）===")
         chk = http_json(port, "/api/update?refresh=1")
         latest = (chk or {}).get("latest")
         has_update = (chk or {}).get("has_update")
         step("V2a 检查更新看到真实新版", has_update is True,
-             f"latest={latest} current=2.6.8")
+             f"latest={latest} current=2.6.10.5")
         if has_update:
             dl = http_json(port, "/api/update/download", method="POST",
                            body={"version": latest,
@@ -157,63 +162,61 @@ def main() -> int:
             step("V2c 真实下载 + SHA 校验通过", done,
                  (st or {}).get("message", "")[:80])
             if done:
-                # 直跑 HopOnUpdater（--root 参数化，rl_test_updater 同款）：
-                # 沙箱装的旧版其 /api/update/install 硬编码真实安装根，
-                # 绝不能 POST（2026-11-19 实测事故：391 文件覆盖真实安装）
-                eng_pid = None
-                elog = user_dir / "logs" / "engine.log"
-                if elog.is_file():
-                    import re as _re
-                    m = _re.findall(r"引擎启动（pid=(\d+)", elog.read_text(encoding="utf-8", errors="replace"))
-                    eng_pid = m[-1] if m else None
-                step("V2d 取沙箱引擎 pid", bool(eng_pid), eng_pid)
-                # 更新器换文件+重启沙箱壳，轮询新版本号
-                if not eng_pid:
-                    step("V2d2 缺引擎 pid，跳过更新器", False)
-                    return finish(True)
-                upd = install_root / "HopOnUpdater.exe"
-                pkg = (user_dir / "data" / "downloads" / ("v" + latest)
-                       / f"HopOn_v{latest}_Windows_x64.zip")
-                step("V2d3 更新包在沙箱数据岛", pkg.is_file(), pkg)
-                # 应用内流程里引擎自己 os._exit 让位；直跑必须先停沙箱全家，
-                # 否则更新器 WaitPidGone 60s 超时 ABORT（正确拒改活文件）
-                killed_mid = kill_sandbox_family(install_root)
-                step("V2d4 沙箱全家已停（模拟引擎让位）", killed_mid > 0,
-                     f"killed={killed_mid}")
-                up = subprocess.run([str(upd), "--pid", eng_pid,
-                                     "--root", str(install_root),
-                                     "--pkg", str(pkg),
-                                     "--restart"], capture_output=True,
-                                    text=True, timeout=240)
-                step("V2d2 更新器直跑退出码 0", up.returncode == 0, up.returncode)
-                # 更新器只换文件；旧引擎进程还活着、会用旧代码继续服务——
-                # 重启沙箱应用让新代码上场（生产由自愈/更新器负责，E2E 由
-                # harness 代劳），再轮询沙箱引擎的新版本+数据岛路径
-                kill_sandbox_family(install_root)
+                # 释放全局单实例互斥（真实壳握着 Mutex，更新器重启的沙箱壳
+                # 会秒退——2026-11-22 实测）。真实实例停机窗口=升级期间，
+                # E2E 结束自动恢复。**按 PID 精确制导**：/IM 会把沙箱壳一起
+                # 杀掉（同名！首跑实证=沙箱引擎陪葬、安装 POST 打到死端口）
+                real_pids = subprocess.run([
+                    "powershell", "-NoProfile", "-Command",
+                    "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;"
+                    "Get-CimInstance Win32_Process -Filter \"Name='HopOn.exe'\" | "
+                    "Where-Object {$_.ExecutablePath -notlike '*rl_virgin*'} | "
+                    "Select-Object -ExpandProperty ProcessId",
+                ], capture_output=True, text=True, timeout=30).stdout
+                for pid in real_pids.split():
+                    if pid.strip().isdigit():
+                        subprocess.run(["taskkill", "/F", "/PID", pid.strip()],
+                                       capture_output=True)
                 time.sleep(2)
-                shell = subprocess.Popen(
-                    [str(install_root / "HopOn.exe"), "--port", "8899"],
-                    env=env, cwd=str(install_root))
-                new_ok = False
-                for _ in range(45):          # 最长 ~90s
+                # 1:1 复现朋友路径：应用内 POST 一键安装。安全前提=沙箱装的
+                # 2.6.10.5 已含 HOPON_INSTALL_DIR 钩子（V1g 断言），目标=沙箱根
+                hook_ok = "HOPON_INSTALL_DIR" in (install_root / "engine" / "login_ui.py").read_text(encoding="utf-8", errors="replace")
+                step("V2d0 沙箱 login_ui 含安装根钩子", hook_ok)
+                if not hook_ok:
+                    print("旧版无钩子=POST 会打真实安装根，绝不执行（2026-11-19 事故闸）")
+                    return finish(True)
+                ins = http_json(port, "/api/update/install", method="POST", body={})
+                step("V2d 应用内一键安装已触发", bool(ins and ins.get("ok")),
+                     (ins or {}).get("message", ""))
+                t0 = time.time()
+                # 空窗测量：安装响应→引擎重新应答的时长=「无法连接本地服务」
+                # 可见期（朋友症状的量化）
+                gap = None
+                ver_new = False
+                for _ in range(150):        # 最长 5 分钟
                     time.sleep(2)
                     p2, env2 = find_sandbox_engine(user_dir, want_version=latest)
                     if p2:
-                        new_ok = True
+                        gap = round(time.time() - t0, 1)
+                        ver_new = (env2 or {}).get("version") == latest
                         break
-                step("V2e 更新后版本=" + str(latest) + "（引擎复活）", new_ok)
+                step("V2e 升级后版本=" + str(latest), ver_new,
+                     f"引擎空窗≈{gap}s" if gap is not None else "5min 未复活")
+                step("V2f 引擎空窗时长（无法连接本地服务可见期）",
+                     gap is not None and gap < 60, f"{gap}s")
                 cfg2 = user_dir / "config.json"
-                step("V2f 更新不删用户数据（HOPON_USER_DIR 保留）",
+                step("V2g 更新不删用户数据（HOPON_USER_DIR 保留）",
                      cfg2.is_file(), cfg2)
-                if not new_ok:
-                    ulog = install_root / ".update" / "updater.log"
-                    if ulog.is_file():
-                        tail_text = ulog.read_text(encoding="utf-8", errors="replace")
-                        print("--- 沙箱 updater.log 尾部 ---")
-                        print("\n".join(tail_text.splitlines()[-12:]))
-                if not new_ok:
+                if not ver_new:
                     KEEP_SCENE = True
-                    print("V2e 未过——跳过卸载，保留现场供验尸")
+                    for name, f in (("updater.log", install_root / ".update" / "updater.log"),
+                                    ("shell.log", install_root / "logs" / "shell.log"),
+                                    ("engine.log", user_dir / "logs" / "engine.log")):
+                        if f.is_file():
+                            tail_text = f.read_text(encoding="utf-8", errors="replace")
+                            print(f"--- 沙箱 {name} 尾部 ---")
+                            print("\n".join(tail_text.splitlines()[-12:]))
+                    print("V2e 未过——保留现场供验尸")
                     return finish(True)
 
         real_log = (Path(os.environ.get("LOCALAPPDATA", ""))
@@ -248,6 +251,15 @@ def main() -> int:
             print("沙箱已清理（--keep 可保留现场）")
         else:
             print("沙箱保留：" + str(sandbox))
+        # 恢复真实实例（E2E 期间为释放互斥停过它）
+        try:
+            real = (Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "HopOn" / "HopOn.exe")
+            if real.is_file():
+                subprocess.run(["cmd", "/c", "start", "", str(real), "--tray"],
+                               capture_output=True, timeout=30)
+                print("真实实例已恢复启动")
+        except Exception as exc:
+            print("真实实例恢复失败（手动启动）：" + str(exc))
     return finish(keep)
 
 
