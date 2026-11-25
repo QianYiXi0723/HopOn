@@ -22,6 +22,8 @@ _CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"  # 去掉易混淆 0O1I
 
 #: 当前运行中的网关实例（由 login_ui.serve() 设置，供本机 UI 端点签发配对码）。
 _ACTIVE_GATEWAY = None
+#: 当前运行中的设备发现响应器（随网关启停）。
+_ACTIVE_DISCOVERY = None
 
 
 def set_active_gateway(gw) -> None:
@@ -35,6 +37,7 @@ def get_active_gateway():
 
 def start_gateway() -> dict:
     """运行时开启网关（UI 开关直接调用，立即生效，不必重启）。"""
+    global _ACTIVE_DISCOVERY
     gw = get_active_gateway()
     if gw is None:
         gw = MobileGatewayServer(
@@ -42,15 +45,22 @@ def start_gateway() -> dict:
             snapshot_fn=build_snapshot, dailies_fn=build_dailies, checkin_fn=do_checkin)
         gw.start()
         set_active_gateway(gw)
+    if _ACTIVE_DISCOVERY is None:
+        _ACTIVE_DISCOVERY = DiscoveryResponder()
+        _ACTIVE_DISCOVERY.start()
     return {"ok": True, "enabled": True}
 
 
 def stop_gateway() -> dict:
     """运行时关闭网关并撤销所有令牌。"""
+    global _ACTIVE_DISCOVERY
     gw = get_active_gateway()
     if gw is not None:
         gw.stop()
         set_active_gateway(None)
+    if _ACTIVE_DISCOVERY is not None:
+        _ACTIVE_DISCOVERY.stop()
+        _ACTIVE_DISCOVERY = None
     return {"ok": True, "enabled": False}
 
 
@@ -245,6 +255,58 @@ def lan_ip() -> str:
             return p.getsockname()[0]
     except OSError:
         return "127.0.0.1"
+
+
+DISCOVERY_MAGIC = b"HOPON_DISCOVER_V1"
+DISCOVERY_PORT = 8767
+
+
+class DiscoveryResponder:
+    """局域网设备发现：收到约定帧回 IP+端口，不回任何凭证/数据。
+
+    发现只负责让手机拿到 PC 的地址；信任完全靠 6 位配对码（见 PairingManager），
+    所以即便校园网里有多台同名 PC、或有人伪造设备名，选错/猜错码也连不上。
+    """
+    def __init__(self, port: int = DISCOVERY_PORT, gateway_port: int = 8766) -> None:
+        self.port = port
+        self.gateway_port = gateway_port
+        self._sock: socket.socket | None = None
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._sock is not None:
+            return
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind(("0.0.0.0", self.port))
+        outer = self
+
+        def loop() -> None:
+            while True:
+                try:
+                    data, addr = outer._sock.recvfrom(256)
+                except OSError:
+                    break
+                if data != DISCOVERY_MAGIC:
+                    continue
+                ip = addr[0] if addr[0] not in ("127.0.0.1", "0.0.0.0") else lan_ip()
+                body = json.dumps({"ip": ip, "port": outer.gateway_port}).encode("utf-8")
+                try:
+                    outer._sock.sendto(body, addr)
+                except OSError:
+                    break
+
+        self._thread = threading.Thread(target=loop, daemon=True, name="hopon-discovery")
+        self._thread.start()
+
+    def stop(self) -> None:
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+            self._sock = None
+        self._thread = None
 
 
 def _accounts_status():
