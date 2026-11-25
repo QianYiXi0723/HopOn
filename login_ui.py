@@ -3589,6 +3589,22 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, _render_page().encode("utf-8"), "text/html; charset=utf-8")
             return
 
+        if parsed.path == "/api/mobile/status":
+            from core.mobile_gateway import get_active_gateway
+            self._json({"ok": True, "enabled": get_active_gateway() is not None})
+            return
+
+        if parsed.path == "/api/mobile/pair-qr":
+            # 本机 UI 取配对二维码（地址+一次性码都在码里，用户不用手填）。
+            # 仅本机可访问：主控制台只绑 127.0.0.1，且此处不额外开放局域网。
+            from core.mobile_gateway import get_active_gateway, lan_ip
+            gw = get_active_gateway()
+            if gw is None:
+                self._json({"ok": False, "message": "手机访问未开启"}, 404)
+                return
+            self._json({"ok": True, **gw.issue_pair_qr(lan_ip())})
+            return
+
         if parsed.path == "/api/start":
             provider = (query.get("provider") or [""])[0]
             raw = (query.get("targets") or [""])[0]
@@ -4133,6 +4149,26 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("保存阈值失败")
                     self._json({"ok": False, "message": f"保存失败：{exc}"}, 500)
+            return
+
+        if path == "/api/mobile/toggle":
+            payload = self._read_json_body()
+            if payload is None:
+                return
+            try:
+                from core.mobile_gateway import start_gateway, stop_gateway
+                enable = bool(payload.get("enable"))
+                result = start_gateway() if enable else stop_gateway()
+                # 写 config 让下次启动保持该状态（沿用本模块串行写锁）。
+                with _CONFIG_WRITE_LOCK:
+                    raw = load_raw_config()
+                    app = raw.setdefault("app", {})
+                    app["mobile_gateway"] = enable
+                    save_raw_config(raw)
+                self._json(result)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("切换手机访问失败")
+                self._json({"ok": False, "message": f"切换失败：{exc}"}, 500)
             return
 
         if path == "/api/autostart":
@@ -4717,16 +4753,9 @@ def serve(
     gw = None
     try:
         if bool((load_raw_config().get("app") or {}).get("mobile_gateway")):
-            from core.mobile_gateway import (
-                MobileGatewayServer, PairingManager,
-                build_snapshot, build_dailies, do_checkin,
-            )
-            gw = MobileGatewayServer(
-                PairingManager(), port=8766,
-                snapshot_fn=build_snapshot, dailies_fn=build_dailies,
-                checkin_fn=do_checkin,
-            )
-            gw.start()
+            from core.mobile_gateway import start_gateway, get_active_gateway
+            start_gateway()
+            gw = get_active_gateway()
             logger.info("手机访问已开启：独立端口 8766（默认关闭）")
     except Exception:  # noqa: BLE001 - 网关失败不挡主控制台
         logger.warning("手机访问网关启动失败", exc_info=True)

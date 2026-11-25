@@ -808,6 +808,26 @@
       </div>
       <div class="card__body" id="run-log"><div class="emptybox">读取中…</div></div>
     </section>
+
+    <!-- D 卡：手机连接（2026-11-25 M1）——开关+二维码，手机扫一下即可连接 -->
+    <section class="card" id="mobile-card">
+      <div class="card-head card__header">
+        <h2><svg class="ico"><use href="#i-link"/></svg> 手机连接
+          <span class="q" data-tip="开启后手机可以连接这台电脑，查看体力、每日进度并打卡。只需在手机上扫一扫下方二维码，无需输入地址。手机和电脑需连同一个 WiFi；不用时关掉即可"></span>
+        </h2>
+        <span class="spacer"></span>
+        <label class="toggle" title="开启后手机可连接本机"><input type="checkbox" id="mobile-toggle"><i></i></label>
+      </div>
+      <div class="card__body" id="mobile-body" hidden>
+        <div class="mobile-pair">
+          <img id="mobile-qr" alt="配对二维码" width="180" height="180">
+          <div class="mobile-pair-tip">
+            <div class="mobile-pair-title">用手机扫一下即可连接</div>
+            <div class="hint">同一 WiFi 下可用 · 不用时把上方开关关掉</div>
+          </div>
+        </div>
+      </div>
+    </section>
   </section>
 
   <!-- ======================= 底部日志控制台 ======================= -->

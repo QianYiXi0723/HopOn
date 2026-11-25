@@ -17,6 +17,39 @@ from urllib.parse import parse_qs, urlparse
 
 _CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"  # 去掉易混淆 0O1I
 
+#: 当前运行中的网关实例（由 login_ui.serve() 设置，供本机 UI 端点签发配对码）。
+_ACTIVE_GATEWAY = None
+
+
+def set_active_gateway(gw) -> None:
+    global _ACTIVE_GATEWAY
+    _ACTIVE_GATEWAY = gw
+
+
+def get_active_gateway():
+    return _ACTIVE_GATEWAY
+
+
+def start_gateway() -> dict:
+    """运行时开启网关（UI 开关直接调用，立即生效，不必重启）。"""
+    gw = get_active_gateway()
+    if gw is None:
+        gw = MobileGatewayServer(
+            PairingManager(), port=8766,
+            snapshot_fn=build_snapshot, dailies_fn=build_dailies, checkin_fn=do_checkin)
+        gw.start()
+        set_active_gateway(gw)
+    return {"ok": True, "enabled": True}
+
+
+def stop_gateway() -> dict:
+    """运行时关闭网关并撤销所有令牌。"""
+    gw = get_active_gateway()
+    if gw is not None:
+        gw.stop()
+        set_active_gateway(None)
+    return {"ok": True, "enabled": False}
+
 
 class PairingManager:
     def __init__(self, ttl: float = 60.0, max_failures: int = 5,

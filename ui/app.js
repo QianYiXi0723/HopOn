@@ -23,7 +23,7 @@ function switchTab(name){
   });
 
   if (name === 'query') loadQuery();
-  if (name === 'schedule') { loadSchedule(); startSchedPoll(); loadThresholds(); loadAutostart(); loadAlwaysNotify(); loadQuiet(); loadRunLog(); } else { stopSchedPoll(); }
+  if (name === 'schedule') { loadSchedule(); startSchedPoll(); loadThresholds(); loadAutostart(); loadAlwaysNotify(); loadQuiet(); loadRunLog(); loadMobile(); } else { stopSchedPoll(); }
   /* 账号与通知已合并为一页：通知的三路加载并入 account 分支 */
   if (name === 'account') { loadDevice(); loadAccounts(); refreshNotice(); loadPush(); loadPushPreview(); loadPushRecent(); }
   if (name === 'history') { loadHistory(); loadLive(false); startHistoryPoll(); loadActivities(); }
@@ -6088,3 +6088,42 @@ function kuroSaveToken(){
     })
     .catch(function(){ btn.disabled = false; kuroTokenStatus('无法连接本地服务', 'err'); });
 }
+
+/* ========================= 手机连接（M1） ========================= */
+function loadMobile(){
+  fetch('/api/mobile/status').then(function(r){ return r.json(); })
+    .then(function(d){
+      const box = document.getElementById('mobile-toggle');
+      const body = document.getElementById('mobile-body');
+      if (box) box.checked = !!(d && d.enabled);
+      if (body) body.hidden = !(d && d.enabled);
+      if (d && d.enabled) loadMobileQr();
+    })
+    .catch(function(){ /* 主控制台在则必有此端点，失败就保持默认关 */ });
+}
+
+function loadMobileQr(){
+  fetch('/api/mobile/pair-qr').then(function(r){ return r.json(); })
+    .then(function(d){
+      const img = document.getElementById('mobile-qr');
+      if (img && d && d.ok && d.qr_base64) img.src = 'data:image/png;base64,' + d.qr_base64;
+    })
+    .catch(function(){ /* 二维码拉取失败不打扰，开关仍在 */ });
+}
+
+(function bindMobileToggle(){
+  const box = document.getElementById('mobile-toggle');
+  if (!box) return;
+  box.addEventListener('change', function(){
+    const body = document.getElementById('mobile-body');
+    box.disabled = true;
+    postJSON('/api/mobile/toggle', { enable: box.checked })
+      .then(function(d){
+        box.disabled = false;
+        if (!d || !d.ok) { box.checked = !box.checked; toast((d && d.message) || '切换失败'); return; }
+        if (body) body.hidden = !box.checked;
+        if (box.checked) loadMobileQr();
+      })
+      .catch(function(){ box.disabled = false; box.checked = !box.checked; toast('无法连接本地服务'); });
+  });
+})();
