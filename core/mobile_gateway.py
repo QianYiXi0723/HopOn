@@ -348,6 +348,7 @@ def build_snapshot():
     raw = _dailies_snapshot()
     customs = [{"id": str(i.get("id", "")), "name": str(i.get("name", "")),
                 "done": bool(i.get("done_today", i.get("done"))),
+                "planned_today": bool(i.get("planned_today", True)),
                 "times": list(i.get("times") or [])}
                for i in (raw.get("items") or []) if isinstance(i, dict)]
     return {"ok": True, "version": "m1", "games": games, "custom_dailies": customs}
@@ -358,6 +359,7 @@ def build_dailies():
     raw = custom_dailies_status()
     items = [{"id": str(i.get("id", "")), "name": str(i.get("name", "")),
               "done": bool(i.get("done_today", i.get("done"))),
+              "planned_today": bool(i.get("planned_today", True)),
               "times": list(i.get("times") or [])}
              for i in (raw.get("items") or []) if isinstance(i, dict)]
     return {"ok": True, "items": items}
