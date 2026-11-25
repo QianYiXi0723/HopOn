@@ -314,6 +314,13 @@ def main() -> int:
         rc6b, _ = run_updater("--pid", str(os.getpid()), "--root", str(desktop),
                               "--pkg", str(pkg), "--norestart", "--dry-run")
         check("U6b 桌面目录被拒绝（退出码 6）", rc6b == 6, rc6b)
+        # Updater 在安全闸拒绝前仍会写 root/.update/updater.log —— 测试不能污染真桌面，
+        # 断言后立刻清掉这个自带副作用（用户桌面不该因为跑 qa 就冒出 .update）。
+        desktop_update = desktop / ".update"
+        if desktop_update.exists():
+            import shutil
+            shutil.rmtree(desktop_update, ignore_errors=True)
+        check("U6c 测试未污染桌面（.update 已清理）", not desktop_update.exists(), str(desktop_update))
 
         # ---- U7 参数校验 ----
         rc7, _ = run_updater("--root", str(root5), "--pkg", str(pkg))
