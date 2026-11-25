@@ -516,7 +516,7 @@
         </div>
       </div>
       <div class="daemon-bar">
-        <span class="daemon-title"><i class="dot" id="d-dot"></i><svg class="ico"><use href="#i-shield"/></svg> 守护进程</span>
+        <span class="daemon-title"><i class="dot" id="d-dot"></i><svg class="ico"><use href="#i-shield"/></svg> 守护进程<span class="q" data-tip="后台定时检查各游戏并推送提醒，关掉网页也照常运行；右侧开关只管本次运行，不影响开机自启"></span></span>
         <span class="badge" id="d-state" title="">运行中</span>
         <span class="daemon-kv"><span>下次</span><b id="d-next">-</b></span>
         <span class="daemon-kv"><span>最近</span><b id="d-last">-</b></span>
@@ -594,7 +594,7 @@
           <details class="set-item" id="acc-catchup">
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-moon"/></svg></i>
-                <span class="set-txt"><b>休眠提醒</b></span>
+                <span class="set-txt"><b>休眠提醒<span class="q" data-tip="休眠或关机错过巡检后，在设定分钟数内恢复运行会自动补跑一次，超时不补；填 0 不补发"></span></b></span>
               </span>
               <span class="set-sum" id="sum-catchup"></span>
               <span class="set-end">
@@ -606,7 +606,6 @@
                 <input type="number" id="catch-up-minutes" min="0" max="720" step="30">
                 <button id="btn-catch-up" class="btn">保存</button>
               </div>
-              <div class="hint">休眠或关机错过巡检时间后，若在下方的分钟数内恢复运行，会自动补跑一次；超时不补。填 0 表示不补发。</div>
             </div>
           </details>
 
@@ -707,7 +706,7 @@
           <details class="set-item" id="acc-av">
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-shield"/></svg></i>
-                <span class="set-txt"><b>杀软拦截自检</b></span>
+                <span class="set-txt"><b>杀软拦截自检<span class="q" data-tip="检查杀毒软件是否误拦本程序，被拦会导致检查失败；误拦时把它加进信任名单"></span></b></span>
               </span>
               <span class="set-sum" id="sum-av">尚未自检</span>
               <span class="set-end">
@@ -740,7 +739,7 @@
           <details class="set-item" id="acc-dailies">
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-list"/></svg></i>
-                <span class="set-txt"><b>自定义提醒</b></span>
+                <span class="set-txt"><b>自定义提醒<span class="q" data-tip="自己加想被提醒的事，可选每天或指定星期、一个或多个时间点；到点推送，也能在手机端打卡"></span></b></span>
               </span>
               <span class="set-sum" id="sum-dailies">读取中…</span>
               <span class="set-end"></span>
@@ -754,7 +753,7 @@
           <details class="set-item" id="acc-quiet">
             <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-clock"/></svg></i>
-                <span class="set-txt"><b>免打扰时段</b></span>
+                <span class="set-txt"><b>免打扰时段<span class="q" data-tip="这个时间段内不发任何推送，到点自动恢复；适合睡觉和上班时段"></span></b></span>
               </span>
               <span class="set-sum" id="sum-quiet">读取中…</span>
               <span class="set-end">
