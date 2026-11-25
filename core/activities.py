@@ -869,32 +869,50 @@ def _fmt_cn(node: Any) -> str:
         return ""
 
 
-def fetch_starrail_activities() -> List[Dict[str, Any]]:
-    """星铁 get_act_calender：活动 + 挑战（忘却之庭等）。"""
-    creds = _miyoushe_credentials("starrail")
-    _ltuid, _ltoken, uid, server, _cookie = creds
-    data = _miyoushe_get(STARRAIL_CAL_URL, {"role_id": uid, "server": server}, creds)
+#: 星铁 act_type → 活动类型标签（数据源现成字段，对标终末地 calendarTag）。
+#: 仅映射已确证的枚举，未知一律返回空串——不猜标题、不编数字。
+#: 2026-11-26 实拉 act_calendar 确认：位面分裂/异器盈界=ActivityTypeDouble（官方双倍掉落），
+#: 奇库寻遗=ActivityTypeOther。参见 sr.mihoyo.com/news/163304。
+_STARRAIL_ACT_TYPE_LABELS = {
+    "ActivityTypeDouble": "双倍活动",
+    "ActivityTypeOther": "其它活动",
+}
 
-    now = datetime.now()
+
+def _starrail_act_type_label(act_type: Any) -> str:
+    """把星铁原始 act_type 映射成中文类型标签；未知/空返回空串。"""
+    return _STARRAIL_ACT_TYPE_LABELS.get(str(act_type or ""), "")
+
+
+def _starrail_parse_act_list(raw_list: Any, now: datetime | None = None) -> List[Dict[str, Any]]:
+    """星铁 act_list → 活动字典（纯函数，便于无网络测试）。
+
+    无抽卡资源（_gacha_reward 返回空 label）时用原始 act_type 的类型标签填 reward，
+    与终末地 calendarTag 同构——避免"既没抽卡资源又没标注"（优化清单 #13）。
+    """
+    now = now or datetime.now()
+    status_map = {
+        "OtherActStatusUnFinish": "",
+        "OtherActStatusFinish": "已完成",
+        "DoubleRewardActStatusUnopened": "未开启",
+        "OtherActStatusUnopened": "未开启",
+    }
     result: List[Dict[str, Any]] = []
-    for raw in data.get("act_list") or []:
+    for raw in raw_list or []:
         if not isinstance(raw, dict):
             continue
         start, end = _pick_time(raw.get("time_info"))
         title = str(raw.get("name") or "").strip()
         if not title or not start or not end or end <= now:
             continue
-        status_map = {
-            "OtherActStatusUnFinish": "",
-            "OtherActStatusFinish": "已完成",
-            "DoubleRewardActStatusUnopened": "未开启",
-            "OtherActStatusUnopened": "未开启",
-        }
         progress = ""
         total, current = raw.get("total_progress"), raw.get("current_progress")
         if isinstance(total, int) and total > 0:
             progress = f"{current or 0}/{total}"
         keep, reward = _gacha_reward("starrail", raw)
+        # 无抽卡资源 → 用数据源自带的 act_type 类型标签兜底（不猜、不编）
+        if not reward:
+            reward = _starrail_act_type_label(raw.get("act_type"))
         result.append({
             "game": "starrail", "game_name": "崩坏：星穹铁道", "kind": "act", "title": title,
             "start": start.strftime("%Y-%m-%d %H:%M:%S"),
@@ -905,6 +923,17 @@ def fetch_starrail_activities() -> List[Dict[str, Any]]:
             "remote_id": str(raw.get("id") or ""),
             "reward": reward, "reward_ok": keep is not False,
         })
+    return result
+
+
+def fetch_starrail_activities() -> List[Dict[str, Any]]:
+    """星铁 get_act_calender：活动 + 挑战（忘却之庭等）。"""
+    creds = _miyoushe_credentials("starrail")
+    _ltuid, _ltoken, uid, server, _cookie = creds
+    data = _miyoushe_get(STARRAIL_CAL_URL, {"role_id": uid, "server": server}, creds)
+
+    now = datetime.now()
+    result = _starrail_parse_act_list(data.get("act_list") or [], now)
 
     for raw in data.get("challenge_list") or []:
         if not isinstance(raw, dict):
