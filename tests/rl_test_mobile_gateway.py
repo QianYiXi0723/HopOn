@@ -146,8 +146,9 @@ class TestMobileSnapshotV2(unittest.TestCase):
                          "progress": "25/200", "recover": 83545},
             "tasks": [{"name": "每日委托", "done": True, "progress": "4/4"}],
             "cookie": "LEAK"}]}
+        # 真实上游 custom_dailies_status() 输出 done_today（不是 done）——用真字段名钉死契约。
         fake_daily = {"ok": True, "items": [
-            {"id": "d1", "name": "喝水", "done": False, "times": ["08:30"]}]}
+            {"id": "d1", "name": "喝水", "done_today": True, "times": ["08:30"]}]}
         with patch("core.mobile_gateway._live_snapshot", return_value=fake_live), \
              patch("core.mobile_gateway._dailies_snapshot", return_value=fake_daily):
             snap = build_snapshot()
@@ -157,6 +158,7 @@ class TestMobileSnapshotV2(unittest.TestCase):
         self.assertEqual(g["daily_done"], 1)
         self.assertEqual(g["daily_total"], 1)
         self.assertEqual(snap["custom_dailies"][0]["name"], "喝水")
+        self.assertTrue(snap["custom_dailies"][0]["done"], "上游 done_today 必须映射为对外 done")
         self.assertNotIn("LEAK", json.dumps(snap))
 
     def test_pair_qr_contains_url_and_code(self):

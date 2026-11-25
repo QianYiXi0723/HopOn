@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 import secrets
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Dict, Optional
 from urllib.parse import parse_qs, urlparse
+
+logger = logging.getLogger(__name__)
 
 _CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"  # 去掉易混淆 0O1I
 
@@ -278,7 +281,8 @@ def build_snapshot():
         })
     raw = _dailies_snapshot()
     customs = [{"id": str(i.get("id", "")), "name": str(i.get("name", "")),
-                "done": bool(i.get("done")), "times": list(i.get("times") or [])}
+                "done": bool(i.get("done_today", i.get("done"))),
+                "times": list(i.get("times") or [])}
                for i in (raw.get("items") or []) if isinstance(i, dict)]
     return {"ok": True, "version": "m1", "games": games, "custom_dailies": customs}
 
@@ -287,7 +291,8 @@ def build_dailies():
     from login_ui import custom_dailies_status
     raw = custom_dailies_status()
     items = [{"id": str(i.get("id", "")), "name": str(i.get("name", "")),
-              "done": bool(i.get("done")), "times": list(i.get("times") or [])}
+              "done": bool(i.get("done_today", i.get("done"))),
+              "times": list(i.get("times") or [])}
              for i in (raw.get("items") or []) if isinstance(i, dict)]
     return {"ok": True, "items": items}
 
