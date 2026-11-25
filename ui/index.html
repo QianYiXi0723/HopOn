@@ -99,7 +99,7 @@
       <div class="kpi-sub" id="k-resin-sub">查询后显示</div>
     </div>
     <button type="button" class="kpi-toggle" id="kpi-toggle" aria-expanded="true"
-            data-tip="收起/展开顶部摘要">收起</button>
+            data-tip="收起顶部摘要">收起</button>
   </div>
 
   <!-- ======================= 每日报表 ======================= -->
@@ -107,7 +107,7 @@
     <section class="card s12" id="week-card">
       <div class="card-head">
         <h2><svg class="ico"><use href="#i-calendar"/></svg> 本周汇总</h2>
-        <span class="q" data-tip="本周和上周的完成率对比，和每周日晚 9 点发给你的周报是一套算法（查过但没做完的天才算「漏」）；每天哪天漏了看下面的七日报表"></span>
+        <span class="q" data-tip="本周和上周的完成率对比，和每周日晚 9 点的周报算法一致（查过但没做完的天才算「漏」）；每天哪天漏了看下面的七日报表"></span>
         <span class="spacer"></span>
         <span class="badge" id="week-badge">-</span>
         <button type="button" class="btn sm" id="btn-run-now" style="height:24px" data-tip="立刻检查一遍所有游戏、更新报表，不用等下一个自动时间">立即巡检</button>
@@ -180,7 +180,7 @@
       <section class="card">
         <div class="card-head">
           <h2><svg class="ico"><use href="#i-key"/></svg> 账号绑定</h2>
-          <span class="q" data-tip="点击胶囊更新登录凭证：米游社 / 森空岛为扫码，库街区为验证码或 Token。胶囊上的黄点表示该平台还有游戏未绑定，绑定后自动熄灭"></span>
+          <span class="q" data-tip="点击胶囊更新登录凭证：米游社 / 森空岛用扫码，库街区用验证码或密钥。黄点表示该平台还有游戏未绑定，绑定后自动熄灭"></span>
         </div>
         <div class="card-body">
           <div class="caps-row">
@@ -267,7 +267,7 @@
           <details class="card set-item" id="acc-cred">
             <summary class="card-head set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-shield-check"/></svg></i>
-                <span class="set-txt"><b>凭证健康<span class="q" data-tip="绿点 = 已绑定 · 黄点 = 超过 7 天未更新 · 红点 = 未绑定；时间为相对时间，从未扫码更新的显示「从未更新」，下次扫码后开始记录"></span></b></span>
+                <span class="set-txt"><b>凭证健康<span class="q" data-tip="绿点 = 已绑定 · 黄点 = 超过 7 天未更新 · 红点 = 未绑定；时间按多久以前显示，没扫码过的写「从未更新」，扫码后开始记录"></span></b></span>
               </span>
               <span class="set-sum"><span class="badge" id="cred-health-badge">-</span></span>
             </summary>
@@ -286,7 +286,7 @@
           <div class="card set-item set-item--flat" id="dev-card" onclick="openDev()">
             <div class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-shield"/></svg></i>
-                <span class="set-txt"><b>设备伪装<span class="q" data-tip="第一次用会随机挑一台常见手机型号，之后固定不变。被游戏官方拦住多半是网络被盯上，换机型救不了急；频繁换反而更像可疑设备，更容易被拦。配套的「设备信息」App 需要另外单独下载"></span></b></span>
+                <span class="set-txt"><b>设备伪装<span class="q" data-tip="首次使用会随机选一个常见手机型号，之后固定。更换机型未必能解除拦截，频繁改反而更容易被判定异常，建议稳定使用。配套的「设备信息」App 需单独下载。"></span></b></span>
                 <span class="set-sum"><span class="badge">高级 · 可选</span></span>
               </span>
             </div>
@@ -495,7 +495,7 @@
     <section class="card card--times sch-times">
       <div class="card-head card__header">
         <h2><svg class="ico"><use href="#i-clock"/></svg> 提醒时间点
-          <span class="q" data-tip="每天到点检查一次并推送；点击时间轴空白处直接添加；拖动圆点改时间（吸附 5 分钟，按住 Shift 精调到 1 分钟，拖动中按 Esc 取消）；修改立即生效，无需重启"></span>
+          <span class="q" data-tip="每天到点检查并推送。点时间轴空白处添加；拖动圆点改时间（按 5 分钟跳），按住 Shift 可精确到 1 分钟，按 Esc 取消。改完立即生效。"></span>
         </h2>
         <span class="spacer"></span>
         <span class="badge" id="d-count">-</span>
@@ -544,7 +544,7 @@
               </span>
               <span class="set-sum" id="mobile-state">未开启</span>
               <span class="set-end">
-                <label class="toggle" id="mobile-toggle-label" title="开启后手机可连接本机"><input type="checkbox" id="mobile-toggle"><i></i></label>
+                <label class="toggle" id="mobile-toggle-label"><input type="checkbox" id="mobile-toggle"><i></i></label>
               </span>
             </summary>
             <div class="set-body" id="mobile-body">
@@ -564,7 +564,7 @@
             <div class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-laptop"/></svg></i>
                 <span class="set-txt"><b>开机自启动
-                  <span class="q" data-tip="打开后开机就会自动在后台运行，屏幕右下角托盘能看到小图标；你的账号、记录等数据不受开关和卸载影响。软件搬家后这里会提示「路径已失效」，关掉再开一次就好"></span></b>
+                  <span class="q" data-tip="开机后自动在后台运行，托盘常驻图标。账号与记录不受开关和卸载影响；若提示「路径已失效」，关闭再开启即可。"></span></b>
                 </span>
               </span>
               <span class="set-sum" id="autostart-state">读取中</span>
@@ -579,7 +579,7 @@
             <div class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-upload"/></svg></i>
                 <span class="set-txt"><b>完成也推送
-                  <span class="q" data-tip="平时只在有事情没做完时才推送；打开后哪怕全做完了也发一条「都完成了」，免得你以为软件没在干活"></span></b>
+                  <span class="q" data-tip="默认仅在有未完成项时推送；开启后即使全部完成，也会发送一条完成通知。"></span></b>
                 </span>
               </span>
               <span class="set-sum" id="sum-alwaysnotify">读取中…</span>
@@ -604,7 +604,7 @@
                 <input type="number" id="catch-up-minutes" min="0" max="720" step="30">
                 <button id="btn-catch-up" class="btn">保存</button>
               </div>
-              <div class="hint">休眠或关机错过时间点后，在窗口内补跑一次。单位：分钟，最大 720；0 = 不补发。</div>
+              <div class="hint">休眠或关机错过巡检时间后，若在下方的分钟数内恢复运行，会自动补跑一次；超时不补。填 0 表示不补发。</div>
             </div>
           </details>
 

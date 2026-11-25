@@ -1636,7 +1636,7 @@ function renderSchedule(d, force){
     const infos = d.accounts_info || [];
     if (!infos.length) {
       gamesBox.textContent = '无';
-      gamesBox.title = 'config.json 里 accounts 的 enabled 全为 false';
+      gamesBox.title = '还没有启用任何游戏';
     } else {
       gamesBox.textContent = infos.length + ' 个';
       gamesBox.title = infos.map(function(it){
@@ -2001,7 +2001,7 @@ function renderAutostart(d){
       hint.textContent = (d && d.message) || '仅支持 Windows';
     } else if (d.stale) {
       hint.hidden = false;
-      hint.innerHTML = '注册表路径已失效：把开关关掉再打开一次即可刷新。';
+      hint.innerHTML = '注册表路径已失效，关闭开关后重新开启即可刷新。';
     } else {
       /* 正常态无增量信息（副标题已说明），不再占一行 */
       hint.hidden = true;
@@ -3273,7 +3273,7 @@ function renderLive(d){
          满格时悬浮说明，防止「游戏内明明更多」的困惑。 */
       const capTip = (g.game === 'zzz' && r.current != null && max != '?' &&
                       r.current >= r.maximum)
-        ? ' title="已满。米游社接口不含溢出部分：游戏内用道具超出 240 的体力无法显示（接口无对应字段）"'
+        ? ' title="体力已满。米游社接口不返回溢出部分，游戏内用道具超出 240 的体力无法显示。"'
         : '';
       return '<div class="live-card" style="--gc:' + gameDotColor(g.game) + '">' + head + '</div>' +
         '<div class="live-res"' + capTip + '><b class="mono">' + r.current +
@@ -5363,6 +5363,7 @@ if (kpiToggle && kpiBarEl) {
     kpiBarEl.classList.toggle('compact', kpiCompact);
     kpiToggle.setAttribute('aria-expanded', String(!kpiCompact));
     kpiToggle.textContent = kpiCompact ? '展开' : '收起';
+    kpiToggle.setAttribute('data-tip', kpiCompact ? '展开顶部摘要' : '收起顶部摘要');
   });
 }
 

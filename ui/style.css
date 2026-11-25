@@ -422,6 +422,7 @@
   .card-body .hint,.card__body .hint{padding:6px 0 0}
   .hint:empty{display:none}
   .hint b{color:var(--fg)}
+  .hint a{color:var(--accent-blue)}
   .hint code{background:var(--subtle);padding:0 4px;border-radius:4px;font-size:12px}
   .row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
   @media (max-width:520px){ .row{grid-template-columns:1fr} }
