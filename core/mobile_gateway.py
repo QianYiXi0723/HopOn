@@ -7,10 +7,13 @@
 from __future__ import annotations
 
 import hmac
+import json
 import secrets
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Dict, Optional
+from urllib.parse import parse_qs, urlparse
 
 _CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"  # 去掉易混淆 0O1I
 
@@ -68,3 +71,104 @@ class PairingManager:
             if n and time.monotonic() - last >= self._cooldown:
                 self._failures.pop(ip, None)
             return False
+
+
+class MobileGatewayServer:
+    """独立端口的手机网关：只暴露白名单端点，绝不复用主控制台 handler。
+
+    主控制台有 /api/push（读 Key）、/api/daemon/*（启停），一旦绑 0.0.0.0
+    同网段任何人都能调——所以这里另起一个只做配对+只读+打卡的服务。
+    """
+
+    def __init__(self, pm: PairingManager, port: int = 8766, *,
+                 snapshot_fn, dailies_fn, checkin_fn) -> None:
+        self.pm = pm
+        self.port = port
+        self.snapshot_fn = snapshot_fn
+        self.dailies_fn = dailies_fn
+        self.checkin_fn = checkin_fn
+        self._httpd = None
+        self._thread = None
+        outer = self
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, fmt, *a):  # 不把配对码/令牌写日志
+                pass
+
+            def _send(self, code, obj):
+                body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _authed(self):
+                h = self.headers.get("Authorization", "")
+                return h.startswith("Bearer ") and outer.pm.verify_token(h[7:])
+
+            def do_GET(self):
+                u = urlparse(self.path)
+                ip = self.client_address[0]
+                if outer.pm.is_rate_limited(ip):
+                    return self._send(429, {"ok": False, "message": "尝试过多，请稍后再试"})
+                if u.path == "/":
+                    code = (parse_qs(u.query).get("code") or [""])[0]
+                    page = (
+                        "<!doctype html><meta charset='utf-8'>"
+                        "<meta name='viewport' content='width=device-width'>"
+                        "<h2>HopOn 配对</h2><p>正在连接…</p>"
+                        f"<script>fetch('/pair?code={code}').then(r=>r.json())"
+                        ".then(j=>document.querySelector('p').textContent="
+                        "j.ok?'配对成功，可关闭本页':'配对码无效或已过期')</script>"
+                    ).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(page)))
+                    self.end_headers()
+                    self.wfile.write(page)
+                    return
+                if u.path == "/pair":
+                    code = (parse_qs(u.query).get("code") or [""])[0]
+                    tok = outer.pm.redeem(code)
+                    if not tok:
+                        outer.pm.note_failure(ip)
+                        return self._send(401, {"ok": False, "message": "配对码无效或已过期"})
+                    return self._send(200, {"ok": True, "token": tok})
+                if u.path in ("/api/mobile/snapshot", "/api/mobile/dailies"):
+                    if not self._authed():
+                        outer.pm.note_failure(ip)
+                        return self._send(401, {"ok": False, "message": "未配对"})
+                    fn = outer.snapshot_fn if u.path.endswith("snapshot") else outer.dailies_fn
+                    return self._send(200, fn())
+                return self._send(404, {"ok": False, "message": "not found"})
+
+            def do_POST(self):
+                u = urlparse(self.path)
+                if u.path != "/api/mobile/checkin":
+                    return self._send(404, {"ok": False, "message": "not found"})
+                if not self._authed():
+                    return self._send(401, {"ok": False, "message": "未配对"})
+                try:
+                    n = int(self.headers.get("Content-Length", "0"))
+                    data = json.loads(self.rfile.read(n) or b"{}")
+                    result = outer.checkin_fn(str(data.get("id", "")), str(data.get("date", "")))
+                    return self._send(200, result)
+                except Exception as exc:  # noqa: BLE001
+                    return self._send(400, {"ok": False, "message": str(exc)})
+
+        self._Handler = H
+
+    def start(self) -> int:
+        self._httpd = ThreadingHTTPServer(("0.0.0.0", self.port), self._Handler)
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._thread.start()
+        return self._httpd.server_address[1]
+
+    def stop(self) -> None:
+        if self._httpd:
+            self._httpd.shutdown()
+            self._httpd.server_close()
+
+    def pair_url(self, ip: str) -> str:
+        return f"http://{ip}:{self.port}/?code={self.pm.issue_code()}"
