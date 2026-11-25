@@ -210,9 +210,13 @@ class MobileGatewayServer:
         return f"http://{ip}:{self.port}/?code={self.pm.issue_code()}"
 
     def issue_pair_qr(self, ip: str) -> dict:
-        """签发一次性配对码并生成二维码；地址藏进二维码，用户不用手填 IP。"""
+        """签发一次性配对码并生成二维码；地址藏进二维码，用户不用手填 IP。
+
+        用自定义协议 hopon:// 而非 http:// — 否则手机系统相机/微信扫到 http
+        链接会用浏览器打开（用户实测踩坑），自定义协议不会，且能唤起 App。
+        """
         code = self.pm.issue_code()
-        url = f"http://{ip}:{self.port}/pair?code={code}"
+        url = f"hopon://pair?ip={ip}&port={self.port}&code={code}"
         qr = ""
         try:
             import base64

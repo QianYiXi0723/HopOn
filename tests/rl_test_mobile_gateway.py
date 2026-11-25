@@ -166,7 +166,9 @@ class TestMobileSnapshotV2(unittest.TestCase):
         gw = MobileGatewayServer(pm, port=8766, snapshot_fn=lambda: {},
                                  dailies_fn=lambda: {}, checkin_fn=lambda *a: {})
         qr = gw.issue_pair_qr("192.168.1.50")
-        self.assertIn("192.168.1.50:8766", qr["url"])
+        self.assertTrue(qr["url"].startswith("hopon://pair?"), "必须是自定义协议，否则手机扫了跳浏览器")
+        self.assertIn("ip=192.168.1.50", qr["url"])
+        self.assertIn("port=8766", qr["url"])
         self.assertIn("code=", qr["url"])
         self.assertEqual(len(qr["code"]), 6)
         self.assertTrue(qr["qr_base64"])
