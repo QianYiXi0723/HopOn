@@ -1352,8 +1352,11 @@ function selectChannel(name){
   document.querySelectorAll('.ch-item').forEach(function(el){
     el.classList.toggle('on', el.dataset.ch === name);
   });
-  document.getElementById('ed-serverchan').hidden = name !== 'serverchan';
-  document.getElementById('ed-qmsg').hidden = name !== 'qmsg';
+  /* ≥1000px（最大化窗口）两渠道并排显示，切换不生效也不该藏任何一个
+     （优化清单 #14）；<1000px 保持原有切换行为 */
+  const sideBySide = window.matchMedia('(min-width:1000px)').matches;
+  document.getElementById('ed-serverchan').hidden = !sideBySide && name !== 'serverchan';
+  document.getElementById('ed-qmsg').hidden = !sideBySide && name !== 'qmsg';
   // 标题固定为「通知绑定」（2026-11-06 用户要求）：当前渠道名由上方分段控件
   // 高亮显示，标题跟随渠道改名属于重复信息，也让卡片标题位置不断跳动。
   document.getElementById('ed-title').innerHTML =
