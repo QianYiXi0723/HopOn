@@ -1174,7 +1174,9 @@
   /* 卡片数据到达闪光：950ms 提亮渐隐（2026-11-14 用户裁决恢复） */
   .rl-flash{animation:rl-flash .95s ease}
   @keyframes rl-flash{from{filter:brightness(1.35)}to{filter:brightness(1)}}
-  .hm-scroll{max-height:346px;overflow-y:auto;border-radius:8px}
+  /* 2026-11-25：去掉卡内 max-height/滚动，热力图按内容自然长高，
+     整页滚动由 .main 统一承担（和定时页/设置页一致，不再画中画） */
+  .hm-scroll{max-height:none;overflow-y:visible;border-radius:8px}
   .hm-scroll .heatmap{border-radius:0}
   .hm-row{display:grid;grid-template-columns:150px repeat(7,1fr);gap:8px;min-width:0;
           flex:0 0 auto;height:44px}   /* 行高固定 44px，不拉伸不压缩 */
