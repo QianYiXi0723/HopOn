@@ -392,47 +392,34 @@
         </div>
         <div class="toolbar">
           <button type="button" id="btn-save" class="btn primary">保存配置</button>
+          <button type="button" id="btn-test" class="btn"
+                  title="使用当前输入的值试发一条，不会写入配置">发送测试推送</button>
         </div>
+        <div id="test-result" hidden></div>
       </div>
     </section>
 
-    <div class="s5 stack">
-      <section class="card">
-        <div class="card-head">
-          <h2><svg class="ico"><use href="#i-mail"/></svg> 推送预览
-            <span class="q" data-tip="按当前启用的游戏与最近一次巡检结果，模拟手机收到的推送样式；仅预览，不发送"></span>
-          </h2>
-          <span class="spacer"></span>
-          <span class="badge" id="pv-channel">-</span>
-        </div>
-        <div class="card-body">
-          <div class="phone-mock">
-            <div class="pv-bubble">
-              <div class="pv-app"><i></i>HopOn</div>
-              <div class="pv-title" id="pv-title">-</div>
-              <div class="pv-body" id="pv-body">-</div>
-            </div>
-          </div>
-          <div class="toolbar">
-            <button type="button" id="btn-test" class="btn"
-                    title="使用当前输入的值试发一条，不会写入配置">发送测试推送</button>
-          </div>
-          <div id="test-result" hidden></div>
-        </div>
-      </section>
-    </div>
-
-    <!-- 最近推送（结构化 push_history.json，成功/失败都记） -->
-    <section class="card s12">
+    <!-- 记录（2026-11-25 合并）：每日巡检动态 + 最近推送，同为只读记录类，
+         用 seg-mini 切换；两个容器 ID 均保留，JS 渲染路径不变 -->
+    <section class="card s12" id="rec-card">
       <div class="card-head">
-        <h2><svg class="ico"><use href="#i-history"/></svg> 最近推送
-          <span class="q" data-tip="真实发到手机上的通知记录（测试和定时推送都算，成功失败都有），最多显示 8 条；太长的会折叠，点右上角箭头展开"></span>
+        <h2><svg class="ico"><use href="#i-history"/></svg> 记录
+          <span class="q" data-tip="巡检历史（最近 7 天：节点绿 = 全部完成、琥珀 = 有未完成、灰 = 无记录）与真实推送记录（成功失败都有，最多 8 条）"></span>
         </h2>
         <span class="spacer"></span>
-        <button type="button" class="btn sm" id="btn-push-refresh">刷新</button>
+        <div class="seg-mini" id="rec-view" role="group" aria-label="记录类型">
+          <button type="button" data-view="log" class="on">每日动态</button>
+          <button type="button" data-view="push">最近推送</button>
+        </div>
+        <button type="button" class="btn sm" id="btn-rec-refresh">刷新</button>
       </div>
       <div class="card-body">
-        <div class="recent" id="pv-recent"><div>读取中…</div></div>
+        <div id="rec-log">
+          <div class="card__body" id="run-log"><div class="emptybox">读取中…</div></div>
+        </div>
+        <div id="rec-push" hidden>
+          <div class="recent" id="pv-recent"><div>读取中…</div></div>
+        </div>
       </div>
     </section>
 
@@ -810,17 +797,7 @@
       </div><!-- /card__body -->
     </section>
 
-    <!-- C 卡：今日巡检动态（时间轴，跨满两行，卡体内滚动） -->
-    <section class="card card--timeline sch-feed">
-      <div class="card-head card__header">
-        <h2><svg class="ico"><use href="#i-list"/></svg> 今日巡检动态
-          <span class="q" data-tip="每日巡检写入的历史记录（最近 7 天）：节点绿 = 全部完成、琥珀 = 有未完成、灰 = 无记录"></span>
-        </h2>
-        <span class="spacer"></span>
-        <button type="button" class="btn sm" id="btn-log-refresh">刷新</button>
-      </div>
-      <div class="card__body" id="run-log"><div class="emptybox">读取中…</div></div>
-    </section>
+  </section>
   </section>
 
   <!-- ======================= 底部日志控制台 ======================= -->

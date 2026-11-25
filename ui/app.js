@@ -23,9 +23,10 @@ function switchTab(name){
   });
 
   if (name === 'query') loadQuery();
-  if (name === 'schedule') { loadSchedule(); startSchedPoll(); loadThresholds(); loadAutostart(); loadAlwaysNotify(); loadQuiet(); loadRunLog(); loadMobile(); } else { stopSchedPoll(); }
+  if (name === 'schedule') { loadSchedule(); startSchedPoll(); loadThresholds(); loadAutostart(); loadAlwaysNotify(); loadQuiet(); loadMobile(); } else { stopSchedPoll(); }
   /* 账号与通知已合并为一页：通知的三路加载并入 account 分支 */
-  if (name === 'account') { loadDevice(); loadAccounts(); refreshNotice(); loadPush(); loadPushPreview(); loadPushRecent(); }
+  /* 记录卡（每日动态/最近推送）已合并在本页：按当前所选视图只加载其一 */
+  if (name === 'account') { loadDevice(); loadAccounts(); refreshNotice(); loadPush(); loadRecView(); }
   if (name === 'history') { loadHistory(); loadLive(false); startHistoryPoll(); loadActivities(); }
   else { stopHistoryPoll(); }
 }
@@ -1455,8 +1456,9 @@ async function savePush(){
     const d = await postJSON('/api/push', collectPush());
     if (!d.ok) { toast(d.message || '保存失败', true); return; }
     renderPush(d);
-    loadPushPreview();   // 徽章随保存刷新（2026-11-18：旧读法保存后停留在旧通道列表）
-    document.getElementById('test-result').hidden = true;
+    /* 推送预览卡已随记录卡合并删除，徽章 loadPushPreview 一并退役 */
+    const tr = document.getElementById('test-result');
+    if (tr) tr.hidden = true;
     toast(d.message || '保存成功');
   } catch (e) {
     toast('保存失败：' + e, true);
@@ -2671,8 +2673,7 @@ document.getElementById('btn-live-refresh')
   .addEventListener('click', function(){ loadLive(true); });
 document.getElementById('btn-act-refresh')
   .addEventListener('click', refreshActivities);
-document.getElementById('btn-push-refresh')
-  .addEventListener('click', loadPushRecent);
+/* 刷新按钮统一到合并后的「记录」卡：见 btn-rec-refresh 绑定 */
 /* 活动卡片是动态渲染的，删除按钮与抽屉把手用事件委托挂在容器上 */
 document.getElementById('act-list').addEventListener('click', function(e){
   if (!e.target.closest) return;
@@ -5377,37 +5378,10 @@ if (groupBtn) {
   });
 }
 
-/* ========================= 推送预览 ========================= */
-/* 文案与手机实发同源：标题/正文一律来自 GET /api/push_preview
-   （后端 core/analyzer.py 的 to_push_payload 同一条组装路径），
-   前端只渲染、绝不自拼 —— tests/rl_test_push_preview.py 守卫这条纪律。 */
-function renderPushPreview(j){
-  const titleEl = document.getElementById('pv-title');
-  const bodyEl = document.getElementById('pv-body');
-  const chEl = document.getElementById('pv-channel');
-  if (!titleEl || !bodyEl) return;
-
-  /* 徽章=服务端单源（2026-11-18 用户实证）：旧读法取勾选框 DOM 状态——
-     保存后不刷新、开页与 renderPush 时序竞争，把已停用的 Server酱 也列上。
-     现与实发同源：后端按 channels 成员且 key 在位给出列表，前端只渲染。 */
-  const ids = (j && j.channels) || [];
-  const channels = ids.map(function(n){ return PUSH_LABELS[n] || n; });
-  if (chEl) chEl.textContent = channels.length
-    ? ('推送到 ' + channels.join(' + ')) : '未启用推送渠道';
-
-  titleEl.textContent = (j && j.title) || '';
-  bodyEl.textContent = (j && j.body) || '';
-}
-
-function loadPushPreview(){
-  fetch('/api/push_preview').then(function(r){ return r.json(); })
-    .then(renderPushPreview)
-    .catch(function(){
-      const t = document.getElementById('pv-title');
-      if (t) t.textContent = '预览暂不可用';
-      const b = document.getElementById('pv-body');
-      if (b) b.textContent = '读取推送预览失败，请稍后重试。';
-    });
+/* 记录卡：按 localStorage 里记的当前视图决定加载哪一块 */
+function loadRecView(){
+  const mode = localStorage.getItem('rl-recview') || 'log';
+  if (mode === 'push') loadPushRecent(); else loadRunLog();
 }
 
 /* ========================= 今日巡检动态 ========================= */
@@ -5469,8 +5443,35 @@ function loadRunLog(){
     });
 }
 
-document.getElementById('btn-log-refresh')
-  .addEventListener('click', loadRunLog);
+/* 记录卡（每日动态 + 最近推送）切换与刷新 */
+(function bindRecCard(){
+  const seg = document.getElementById('rec-view');
+  const btn = document.getElementById('btn-rec-refresh');
+  if (!seg || !btn) return;
+  const paint = function(){
+    const mode = localStorage.getItem('rl-recview') || 'log';
+    seg.querySelectorAll('button').forEach(function(b){
+      b.classList.toggle('on', b.dataset.view === mode);
+    });
+    const log = document.getElementById('rec-log');
+    const push = document.getElementById('rec-push');
+    if (log) log.hidden = mode !== 'log';
+    if (push) push.hidden = mode !== 'push';
+    return mode;
+  };
+  seg.addEventListener('click', function(e){
+    const b = e.target.closest ? e.target.closest('button[data-view]') : null;
+    if (!b || b.classList.contains('on')) return;
+    localStorage.setItem('rl-recview', b.dataset.view);
+    const mode = paint();
+    if (mode === 'push') loadPushRecent(); else loadRunLog();
+  });
+  btn.addEventListener('click', function(){
+    const mode = paint();
+    if (mode === 'push') loadPushRecent(); else loadRunLog();
+  });
+  paint();
+})();
 
 /* ========================= 全局 Tooltip ========================= */
 const tipBox = document.createElement('div');
