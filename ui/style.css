@@ -733,33 +733,25 @@
      现学定时页范式：**两列网格 + 显式行位**，左列 = 账号绑定 / 通知绑定，
      右列 = 凭证健康+设备伪装 / 推送预览，两列底部由 stretch 对齐。
      高度链与定时页同源。 ===================================================================== */
-  #tab-account.on{display:grid;
-    grid-template-columns:minmax(0,1.55fr) minmax(0,1fr) !important;
-    grid-template-rows:auto auto;
-    gap:16px;align-items:stretch}
-  /* 四块显式落位：左列 1、右列 2；上排 1、下排 2。
-     !important 是必须的——.tabpanel.on 的 12 列规则与 .s7/.s5 的
-     grid-column:span N 同时存在，会把这些块重新按 12 栅格摊开、
-     把两列压成 344/222px（2026-11-16 实测） */
-  #tab-account .acct-col.s7{grid-column:1 / 2 !important;grid-row:1 !important}
-  #tab-account .card.s7{grid-column:2 / 3 !important;grid-row:1 !important}
-  #tab-account .s5.stack{grid-column:1 / -1 !important;grid-row:2 !important}
-  /* 落位后栅格宽度类失效，由列宽接管 */
-  #tab-account > .acct-col,#tab-account > .card.s7,#tab-account > .s5.stack{width:auto}
-  /* 窄屏回退（学定时页 681 行同款）：≤1099px 时 .tabpanel.on > *{grid-column:1/-1}
-     会把四块压成整行、两列塌成一列——显式改单列按原序堆叠，
-     顺序还原为：账号绑定 → 凭证健康/设备 → 通知绑定 → 推送预览 */
-  @media (max-width:1099px){
-    #tab-account.on{grid-template-columns:minmax(0,1fr) !important;
-      grid-template-rows:auto auto auto}
-    #tab-account .acct-col.s7{grid-column:1 / -1 !important;grid-row:1 !important}
-    #tab-account .card.s7{grid-column:1 / -1 !important;grid-row:2 !important}
-    #tab-account .s5.stack{grid-column:1 / -1 !important;grid-row:3 !important}
-  }
-  /* 右列两块（凭证+设备）保持原堆叠间距 */
-  #tab-account .s5.stack{display:flex;flex-direction:column;gap:16px;min-width:0}
-  /* 推送预览气泡在窄列/小窗下不被文字换行拉长：卡体内部滚动 */
-  #tab-account .pv-bubble{max-height:420px;overflow-y:auto}
+   /* ============ 账号与通知页布局（2026-11-25：两排居中，各占 2/3）============
+      账号绑定 / 通知绑定 上下两排，各居中占行宽 2/3——不再左右挤在一排、
+      也不拉成海带（宽度由列 66.666% 显式给定，不靠 flex-grow）。
+      窄屏回退整宽，避免 2/3 在小窗口下过窄。 ===================================================================== */
+   #tab-account.on{display:grid;
+     grid-template-columns:minmax(0,1fr) !important;
+     grid-template-rows:auto auto;
+     gap:16px;align-items:start;justify-items:center}
+   #tab-account .acct-col.s7{grid-column:1 !important;grid-row:1 !important;
+     width:66.666%}
+   #tab-account .card.s7{grid-column:1 !important;grid-row:2 !important;
+     width:66.666%}
+   @media (max-width:1099px){
+     #tab-account.on{grid-template-columns:minmax(0,1fr) !important;
+       grid-template-rows:auto auto}
+     #tab-account .acct-col.s7{grid-column:1 / -1 !important;grid-row:1 !important;width:100%}
+     #tab-account .card.s7{grid-column:1 / -1 !important;grid-row:2 !important;width:100%}
+   }
+   #tab-account .acct-col{display:flex;flex-direction:column;gap:16px;min-width:0}
 
 
      收缩 48px（只有把手）/ 展开 200px（把手 48 + 日志体 152） */
