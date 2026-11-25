@@ -321,7 +321,7 @@
        font-size:12px;line-height:1.6;font-weight:400;text-align:left;
        white-space:pre-line;   /* data-tip 里的 \n 渲染成真换行（多行提示） */
        max-width:300px;width:max-content;box-shadow:0 4px 14px rgba(0,0,0,.28);
-       opacity:0;visibility:hidden;pointer-events:none;z-index:999;
+       opacity:0;visibility:hidden;pointer-events:none;z-index:1001;
        transition:opacity .2s ease,visibility .2s ease}
   #tip.on{opacity:1;visibility:visible}
   .opt{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);
@@ -642,9 +642,10 @@
      去掉滚动槽，否则标尺/胶囊右侧会永久多出一条 15px 空白、和标题不对齐 */
   #tab-schedule .card--times .card__body{overflow-y:visible}
 
-  /* 守护进程状态条（折进 A 卡底部）：一条紧凑横排，不占独立卡片 */
-  .daemon-bar{flex:none;display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap;
-    padding:10px 16px;background:var(--subtle);border-radius:0 0 8px 8px}
+  /* 守护进程状态条（折进 A 卡底部）：一条紧凑横排，不占独立卡片。
+     2026-11-26 优化 #16：原 gap 8px 太挤 → 行/列间距加大，允许折两行 */
+  .daemon-bar{flex:none;display:flex;align-items:center;gap:12px 22px;flex-wrap:wrap;
+    padding:14px 16px;background:var(--subtle);border-radius:0 0 8px 8px}
   .daemon-title{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;
     white-space:nowrap}
   .daemon-kv{display:flex;align-items:center;gap:8px;min-width:0}
@@ -1188,13 +1189,13 @@
   .hm-scroll{max-height:none;overflow-y:visible;border-radius:8px}
   .hm-scroll .heatmap{border-radius:0}
   .hm-row{display:grid;grid-template-columns:150px repeat(7,1fr);gap:8px;min-width:0;
-          flex:0 0 auto;height:44px}   /* 行高固定 44px，不拉伸不压缩 */
+          flex:0 0 auto;height:52px}   /* 行高固定 52px，不拉伸不压缩（2026-11-26 44→52） */
   .hm-row.hm-head{flex:0 0 auto;height:auto;position:sticky;top:0;z-index:2;
           background:var(--bg-sub)}   /* 表头吸顶，滚动能看到今天是几号 */
   @media (max-width:760px){ .hm-row{grid-template-columns:96px repeat(7,1fr)} }
   .hm-label{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;
     min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .hm-cell{height:44px;border-radius:4px;display:flex;align-items:center;
+  .hm-cell{height:52px;border-radius:4px;display:flex;align-items:center;
     justify-content:center;font-size:12px;font-weight:600;min-width:0}
   /* 可长按补录的手动格：果冻 hover（Discord 图标三件套——缩放+圆角 morph
      + overshoot 贝塞尔回弹），按住时压得更深；title 兜底触屏。
@@ -1249,6 +1250,18 @@
   .ch-item > div{display:flex;align-items:center;gap:8px;flex:none}
   .ch-item b{font-size:15px;line-height:1.4}
   .ch-item small{display:none}
+  /* 渠道编辑区容器（优化清单 #14）：默认单列=原来的切换行为；
+     ≥1000px 最大化窗口改并排两列，两个渠道同屏可见，吃满 7 列卡宽 */
+  .ch-editors{display:block}
+  @media (min-width:1000px){
+    /* 并排：切换胶囊不再需要（两渠道已同屏），隐藏避免重复语义 */
+    #tab-account .ch-list{display:none}
+    .ch-editors{display:grid;grid-template-columns:1fr 1fr;gap:16px;
+      align-items:start}
+    /* 并排时强制两个编辑区都显示——ed-qmsg 自带 [hidden]，
+       不覆盖的话只能看到一个，等于没并排 */
+    .ch-editors > div{display:block}
+  }
   /* 名字右侧状态指示：6px 圆点 + 11px 状态字（有值=绿「已配置」/ 无值=灰「未配置」） */
   .ch-ind{display:inline-flex;align-items:center;gap:4px;margin-left:6px;vertical-align:1px}
   .ch-dot{width:6px;height:6px;border-radius:50%;background:#94a3b8;flex:none;
@@ -1396,6 +1409,10 @@
   .live-card{background:var(--bg-raise);border-radius:8px;padding:14px 16px;min-width:0;
              position:relative;box-shadow:var(--card-shadow);
              transition:box-shadow .2s ease, background-color .2s ease}
+  /* 与日常概览 .gcard:hover 同款 hover（优化清单 #7）：outline 不用 border（守纪律），
+     z-index 压过卡片避免被邻卡盖住 */
+  .live-card:hover{outline:1px solid var(--accent-blue);outline-offset:-1px;
+                   position:relative;z-index:60}
   /* 游戏身份色条（与 .acard 同机制同色源）：概览卡/实时卡左缘 3px 签名色 */
   .gcard,.live-card{position:relative}
   .gcard::before,.live-card::before{content:"";position:absolute;left:0;top:0;bottom:0;
@@ -1518,8 +1535,9 @@
   .mc-l8{background:var(--ok);color:#fff}
   .mc-day.mc-open{cursor:pointer}
   /* 月报总表长按 → 当天逐游戏明细弹窗（2026-11-18）：点一行=补录/撤销 */
-  /* DOM 里它在 month-modal 之前，同级 z-index 会被月报弹窗盖住——抬一层 */
+  /* DOM 里这三个浮层都在 month-modal 之前，同级 z-index 会被月报盖住——抬一层 */
   #monthday-modal{z-index:1001}
+  #dlfix-modal{z-index:1001}
   .monthday-list{display:flex;flex-direction:column;gap:6px;
     max-height:52vh;overflow:auto;padding:2px}
   .monthday-row{display:flex;align-items:center;gap:9px;padding:9px 12px;
