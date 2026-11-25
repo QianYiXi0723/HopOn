@@ -33,6 +33,12 @@ def check(name, cond, detail=""):
         FAIL += 1; print("  FAIL " + name + (" | " + str(detail) if detail else ""))
 
 
+# 隔离真桌面：diag_export 非法目录/零参时回退 Path.home()/Desktop，
+# 测试若不拦就会往用户真桌面丢诊断包（qa 每跑一次就污染一个）。
+# 把 Path.home 指到临时根，默认落点随之进 _TMP，生产代码一行不改。
+import pathlib as _pl  # noqa: E402
+(_TMP / "Desktop").mkdir(parents=True, exist_ok=True)
+_pl.Path.home = staticmethod(lambda: _TMP)
 import login_ui as L  # noqa: E402
 
 # D1: 指定真实目录 → 落该目录

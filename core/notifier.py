@@ -754,6 +754,11 @@ def build_notifiers(push_config: PushConfig) -> List[BaseNotifier]:
     页面的本地镜像，不依赖任何远程服务配置。
     """
     notifiers: List[BaseNotifier] = [ToastNotifier()]
+    # HOPON_NO_PUSH=1：禁用所有远程通道（E2E 沙箱隔离用，防止测试实例拿到
+    # 真实配置后把假数据推给用户）。正常用户不设该变量，行为完全不变。
+    if os.environ.get("HOPON_NO_PUSH", "").strip() == "1":
+        logger.info("HOPON_NO_PUSH=1：跳过所有远程推送通道")
+        return notifiers
     channels = [item.lower() for item in push_config.channels]
     known = {"bark", "serverchan", "qmsg", "feishu", "dingtalk"}
     if "bark" in channels:

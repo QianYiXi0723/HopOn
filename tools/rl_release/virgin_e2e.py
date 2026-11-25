@@ -112,6 +112,9 @@ def main() -> int:
         # 沙箱安装根钩子：/api/update/install 不再打到真实安装根
         # （2026-11-19 实测事故：硬编码根被 391 文件覆盖=真实实例被换）
         env["HOPON_INSTALL_DIR"] = str(install_root)
+        # 2026-11-26：沙箱禁用所有远程推送，防止假数据周报发到用户真实微信
+        # （曾发 8 条垃圾，见 lesson 0mwwfevg）；并发/关停的子进程同样继承。
+        env["HOPON_NO_PUSH"] = "1"
         shell = subprocess.Popen(
             [str(install_root / "HopOn.exe"), "--allow-multi", "--port", "8899"],
             env=env, cwd=str(install_root))
