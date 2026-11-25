@@ -252,11 +252,20 @@ def main() -> int:
         else:
             print("沙箱保留：" + str(sandbox))
         # 恢复真实实例（E2E 期间为释放互斥停过它）
+        # 2026-11-26 根修：原来用 cmd /c start + capture_output，HopOn 壳拉起的
+        # engine/daemon 继承 stdout/stderr 管道，常驻不退出 → communicate() 永久
+        # 挂死（faulthandler 铁证）。改对标 login_ui.py:4487 的 Popen + DETACHED
+        # + DEVNULL，不建管道、脱离父进程，启动后立即返回。
         try:
             real = (Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "HopOn" / "HopOn.exe")
             if real.is_file():
-                subprocess.run(["cmd", "/c", "start", "", str(real), "--tray"],
-                               capture_output=True, timeout=30)
+                subprocess.Popen(
+                    [str(real), "--tray"],
+                    creationflags=0x00000008,  # DETACHED_PROCESS
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
                 print("真实实例已恢复启动")
         except Exception as exc:
             print("真实实例恢复失败（手动启动）：" + str(exc))
