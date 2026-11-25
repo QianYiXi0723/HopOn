@@ -5929,10 +5929,8 @@ function loadMobile(){
   fetch('/api/mobile/status').then(function(r){ return r.json(); })
     .then(function(d){
       const box = document.getElementById('mobile-toggle');
-      const body = document.getElementById('mobile-body');
       const state = document.getElementById('mobile-state');
       if (box) box.checked = !!(d && d.enabled);
-      if (body) body.hidden = !(d && d.enabled);
       if (state) state.textContent = (d && d.enabled) ? '已开启' : '未开启';
       if (d && d.enabled) loadMobileCode();
     })
@@ -5950,27 +5948,37 @@ function loadMobileCode(){
   // 码 60 秒过期，提前 10 秒换一个，用户看到的始终是当前有效码。
   if (_mobileCodeTimer) clearInterval(_mobileCodeTimer);
   _mobileCodeTimer = setInterval(function(){
-    const body = document.getElementById('mobile-body');
-    if (!body || body.hidden) { clearInterval(_mobileCodeTimer); _mobileCodeTimer = null; return; }
+    const card = document.getElementById('mobile-card');
+    if (!card || !card.open) { clearInterval(_mobileCodeTimer); _mobileCodeTimer = null; return; }
     loadMobileCode();
   }, 50000);
 }
 
 (function bindMobileToggle(){
   const box = document.getElementById('mobile-toggle');
+  const label = document.getElementById('mobile-toggle-label');
+  const card = document.getElementById('mobile-card');
   if (!box) return;
+  // 开关在 <summary> 内，点它会冒泡触发 details 开合——拦掉点击冒泡，
+  // 让"开/关"和"展开/收起抽屉"互不干扰。
+  if (label) {
+    label.addEventListener('click', function(e){ e.stopPropagation(); });
+    label.addEventListener('keydown', function(e){ e.stopPropagation(); });
+  }
   box.addEventListener('change', function(){
-    const body = document.getElementById('mobile-body');
     const state = document.getElementById('mobile-state');
     box.disabled = true;
     postJSON('/api/mobile/toggle', { enable: box.checked })
       .then(function(d){
         box.disabled = false;
         if (!d || !d.ok) { box.checked = !box.checked; toast((d && d.message) || '切换失败'); return; }
-        if (body) body.hidden = !box.checked;
-            if (state) state.textContent = box.checked ? '已开启' : '未开启';
-        if (box.checked) loadMobileCode();
+        if (state) state.textContent = box.checked ? '已开启' : '未开启';
+        if (box.checked && card && card.open) loadMobileCode();
       })
       .catch(function(){ box.disabled = false; box.checked = !box.checked; toast('无法连接本地服务'); });
+  });
+  // 展开抽屉时才拉码（收起态不请求，码放那儿也会过期）。
+  if (card) card.addEventListener('toggle', function(){
+    if (card.open && box.checked) loadMobileCode();
   });
 })();

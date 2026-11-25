@@ -535,8 +535,8 @@
       <div class="card__body">
         <div class="rule-list">
           <!-- 手机连接（M1）：开关+二维码，移进设置卡首位，小窗口也好找 -->
-          <div class="set-item set-item--flat" id="mobile-card">
-            <div class="set-head">
+          <details class="set-item" id="mobile-card">
+            <summary class="set-head">
               <span class="set-lead"><i class="set-ico"><svg class="ico"><use href="#i-link"/></svg></i>
                 <span class="set-txt"><b>手机连接
                   <span class="q" data-tip="开启后手机可以连接这台电脑，查看体力、每日进度并打卡。手机连同一 WiFi，搜索这台电脑并输入下方 6 位码即可；不用时关掉开关"></span></b>
@@ -544,10 +544,10 @@
               </span>
               <span class="set-sum" id="mobile-state">未开启</span>
               <span class="set-end">
-                <label class="toggle" title="开启后手机可连接本机"><input type="checkbox" id="mobile-toggle"><i></i></label>
+                <label class="toggle" id="mobile-toggle-label" title="开启后手机可连接本机"><input type="checkbox" id="mobile-toggle"><i></i></label>
               </span>
-            </div>
-            <div class="set-body" id="mobile-body" hidden>
+            </summary>
+            <div class="set-body" id="mobile-body">
               <div class="mobile-pair">
                 <div class="mobile-code" id="mobile-code">------</div>
                 <div class="mobile-pair-tip">
@@ -556,7 +556,7 @@
                 </div>
               </div>
             </div>
-          </div>
+          </details>
 
           <!-- 2026-11-06 纯介绍型抽屉退役：body 只有说明文字的行不再做抽屉
                （展开的唯一产出是读一段话，却让开关嵌在 summary 里被展开点击
