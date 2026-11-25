@@ -298,6 +298,9 @@
      的静态补偿在小窗/字体场景下漂移，改 flex 居中一劳永逸） */
   .set-txt b{display:inline-flex;align-items:center;gap:4px}
   .set-txt b .q{transform:translateY(-2px)}   /* 实测校正：基线对齐压低 2.2px */
+  /* 账号绑定卡三行（游戏监控/凭证健康/设备伪装）问号离标题太近：
+     与账号绑定卡头一样留 8px（实测原本 0px）。只作用于本卡，不动设置页问号。 */
+  #tab-account .acct-col .set-txt b .q{margin-left:8px}
   .q{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;
      background:var(--muted);color:#fff;font-size:12px;font-weight:700;line-height:1;
      cursor:help;flex:none;user-select:none;font-family:Consolas,monospace;
