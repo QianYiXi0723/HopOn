@@ -5934,18 +5934,26 @@ function loadMobile(){
       if (box) box.checked = !!(d && d.enabled);
       if (body) body.hidden = !(d && d.enabled);
       if (state) state.textContent = (d && d.enabled) ? '已开启' : '未开启';
-      if (d && d.enabled) loadMobileQr();
+      if (d && d.enabled) loadMobileCode();
     })
     .catch(function(){ /* 主控制台在则必有此端点，失败就保持默认关 */ });
 }
 
-function loadMobileQr(){
+var _mobileCodeTimer = null;
+function loadMobileCode(){
   fetch('/api/mobile/pair-qr').then(function(r){ return r.json(); })
     .then(function(d){
-      const img = document.getElementById('mobile-qr');
-      if (img && d && d.ok && d.qr_base64) img.src = 'data:image/png;base64,' + d.qr_base64;
+      const box = document.getElementById('mobile-code');
+      if (box && d && d.ok && d.code) box.textContent = d.code;
     })
-    .catch(function(){ /* 二维码拉取失败不打扰，开关仍在 */ });
+    .catch(function(){ /* 配对码拉取失败不打扰，开关仍在 */ });
+  // 码 60 秒过期，提前 10 秒换一个，用户看到的始终是当前有效码。
+  if (_mobileCodeTimer) clearInterval(_mobileCodeTimer);
+  _mobileCodeTimer = setInterval(function(){
+    const body = document.getElementById('mobile-body');
+    if (!body || body.hidden) { clearInterval(_mobileCodeTimer); _mobileCodeTimer = null; return; }
+    loadMobileCode();
+  }, 50000);
 }
 
 (function bindMobileToggle(){
@@ -5961,7 +5969,7 @@ function loadMobileQr(){
         if (!d || !d.ok) { box.checked = !box.checked; toast((d && d.message) || '切换失败'); return; }
         if (body) body.hidden = !box.checked;
             if (state) state.textContent = box.checked ? '已开启' : '未开启';
-        if (box.checked) loadMobileQr();
+        if (box.checked) loadMobileCode();
       })
       .catch(function(){ box.disabled = false; box.checked = !box.checked; toast('无法连接本地服务'); });
   });

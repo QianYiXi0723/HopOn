@@ -1733,6 +1733,6 @@
   .df-hint{color:var(--muted);font-size:12px;line-height:1.5}
   /* 手机连接（M1） */
   .mobile-pair{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
-  .mobile-pair img{width:180px;height:180px;border:1px solid var(--line);border-radius:10px;background:#fff}
+  .mobile-code{min-width:180px;height:180px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;font-size:38px;font-weight:700;letter-spacing:6px;font-variant-numeric:tabular-nums}
   .mobile-pair-tip{display:flex;flex-direction:column;gap:8px;color:var(--muted)}
   .mobile-pair-title{color:var(--fg);font-size:16px;font-weight:600}
