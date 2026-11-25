@@ -238,6 +238,8 @@
      小窗口保持原样。只作用于这两个 tabpanel 自身，不动 .main 全局 padding。 */
   @media (min-width:1100px){
     #tab-history.on,#tab-query.on{padding-left:32px;padding-right:32px}
+    /* KPI 摘要条同步加倍左右间隔（32→64px），与下方两 tab 对齐 */
+    .kpi-bar{margin-left:32px;margin-right:32px}
   }
   .gdot{display:inline-block;width:8px;height:8px;border-radius:50%;
         margin-right:8px;vertical-align:1px}
