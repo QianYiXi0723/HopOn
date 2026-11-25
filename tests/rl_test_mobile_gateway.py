@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
 """手机局域网配对网关测试（M1 Task 1-3）。unittest 风格，进 run_all_tests 自动发现。"""
 import json
+import sys
 import threading
 import time
 import unittest
 import urllib.error
 import urllib.request
+from pathlib import Path
 
-from core.mobile_gateway import PairingManager, MobileGatewayServer
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # qa 用 python test.py 直跑，需手动加根
+
+from core.mobile_gateway import PairingManager, MobileGatewayServer, build_snapshot, lan_ip
 
 
 class TestPairingManager(unittest.TestCase):
@@ -114,5 +118,34 @@ class TestMobileGateway(unittest.TestCase):
             self.assertTrue(json.loads(r.read())["ok"])
 
 
+class TestMobileData(unittest.TestCase):
+    def test_snapshot_only_whitelist_fields(self):
+        from unittest.mock import patch
+        fake = {"ok": True, "items": [{"id": "genshin", "name": "原神",
+                 "has_credential": True, "nickname": "旅行者",
+                 "cookie": "SECRET", "token": "T"}]}
+        with patch("core.mobile_gateway._accounts_status", return_value=fake):
+            snap = build_snapshot()
+        blob = json.dumps(snap)
+        self.assertNotIn("SECRET", blob)
+        self.assertNotIn("cookie", blob)
+        self.assertNotIn('"token"', blob)
+        self.assertIn("genshin", blob)
+        self.assertTrue(snap["games"][0]["has_credential"])
+
+    def test_lan_ip_returns_address(self):
+        import re
+        self.assertRegex(lan_ip(), r"^\d+\.\d+\.\d+\.\d+$")
+
+
 if __name__ == "__main__":
-    unittest.main()
+    # qa/run.py 的 L1 判据要 "N PASS / M FAIL" 结论行（unittest 默认只输出 OK，
+    # 会被判"无结论行"）——按项目惯例自己统计并打印。
+    import io as _io
+    suite = unittest.defaultTestLoader.loadTestsFromModule(
+        __import__("__main__"))
+    result = unittest.TextTestRunner(stream=_io.StringIO(), verbosity=0).run(suite)
+    total = result.testsRun
+    failed = len(result.failures) + len(result.errors)
+    print(f"mobile_gateway: {total - failed} PASS / {failed} FAIL")
+    raise SystemExit(1 if failed else 0)

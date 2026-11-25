@@ -4711,12 +4711,32 @@ def serve(
         _upd_boot.reconcile_on_boot()
     except Exception:  # noqa: BLE001 - 对账失败不挡启动
         pass
+    # 手机访问网关（2026-11-25，M1）：默认关闭，仅 config.app.mobile_gateway=True 时
+    # 才在独立端口 8766 监听。不复用主控制台 handler——它有 /api/push、/api/daemon/*
+    # 等敏感端点，绝不能暴露到局域网（见旧 tools_server.py 删除原因）。
+    gw = None
+    try:
+        if bool((load_raw_config().get("app") or {}).get("mobile_gateway")):
+            from core.mobile_gateway import (
+                MobileGatewayServer, PairingManager,
+                build_snapshot, build_dailies, do_checkin,
+            )
+            gw = MobileGatewayServer(
+                PairingManager(), port=8766,
+                snapshot_fn=build_snapshot, dailies_fn=build_dailies,
+                checkin_fn=do_checkin,
+            )
+            gw.start()
+            logger.info("手机访问已开启：独立端口 8766（默认关闭）")
+    except Exception:  # noqa: BLE001 - 网关失败不挡主控制台
+        logger.warning("手机访问网关启动失败", exc_info=True)
     return {
         "server": server,
         "port": actual,
         "url": f"http://127.0.0.1:{actual}/",
         "thread": thread,
         "tools": TOOLS_SERVER,
+        "mobile_gateway": gw,
     }
 
 
@@ -4733,6 +4753,12 @@ def stop_server(info: Optional[Dict[str, Any]]) -> None:
         server.server_close()
     except Exception:  # noqa: BLE001
         logger.debug("释放监听端口时出错（已忽略）", exc_info=True)
+    gw = (info or {}).get("mobile_gateway")
+    if gw is not None:
+        try:
+            gw.stop()
+        except Exception:  # noqa: BLE001
+            logger.debug("关闭手机网关时出错（已忽略）", exc_info=True)
 
 
 def console_alive(port: int = 8765, timeout: float = 1.5) -> bool:

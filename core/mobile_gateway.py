@@ -172,3 +172,50 @@ class MobileGatewayServer:
 
     def pair_url(self, ip: str) -> str:
         return f"http://{ip}:{self.port}/?code={self.pm.issue_code()}"
+
+
+import socket  # noqa: E402 - 数据适配函数放文件末尾，保持上方配对核心内聚
+
+
+def lan_ip() -> str:
+    """UDP connect 不发包，只用来选本机局域网地址（抄自旧 tools_server.py）。"""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as p:
+            p.settimeout(0.5)
+            p.connect(("8.8.8.8", 80))
+            return p.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
+def _accounts_status():
+    # 延迟导入避免在纯模块测试时触发 login_ui 的重量级初始化。
+    from login_ui import accounts_status
+    return accounts_status()
+
+
+def build_snapshot():
+    """只产白名单字段：账号 id/name/enabled/has_credential，绝不带 cookie/token。"""
+    raw = _accounts_status()
+    games = [{"id": str(i.get("id", "")), "name": str(i.get("name", "")),
+              "enabled": bool(i.get("enabled")),
+              "has_credential": bool(i.get("has_credential"))}
+             for i in (raw.get("items") or []) if isinstance(i, dict)]
+    return {"ok": True, "version": "m1", "games": games}
+
+
+def build_dailies():
+    from login_ui import custom_dailies_status
+    raw = custom_dailies_status()
+    items = [{"id": str(i.get("id", "")), "name": str(i.get("name", "")),
+              "done": bool(i.get("done")), "times": list(i.get("times") or [])}
+             for i in (raw.get("items") or []) if isinstance(i, dict)]
+    return {"ok": True, "items": items}
+
+
+def do_checkin(item_id: str, date: str):
+    from login_ui import custom_dailies_update
+    payload = {"action": "toggle_done", "id": item_id}
+    if date:
+        payload["date"] = date  # 04:00 日界由后端按此 date 裁定，手机不算日期
+    return custom_dailies_update(payload)
