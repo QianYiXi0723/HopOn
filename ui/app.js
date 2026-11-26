@@ -3439,12 +3439,26 @@ function actUrgencyAttr(it, isHero){
   return '';
 }
 
+/* 活动是否**真的结束了**（2026-11-26 方案 B）：只看 end_time 是否已过。
+   **绝不能拿 status==='已完成' 当结束判据**——星铁接口那个状态表示
+   「玩家任务进度做完了」，不是「活动结束」。实例：奇库寻遗进度 120/120
+   但 end_time 还剩 20 多天，被误收进「已完成」抽屉，用户以为活动过期。
+   end 是后端 format 出来的 'YYYY-MM-DD HH:MM:SS'（本地时间），
+   把空格换成 T 再 parse，避免部分宿主把纯空格格式当非法。*/
+function actEnded(it){
+  const raw = String((it && it.end) || '').trim();
+  if (!raw) return false;              // 无结束时间 = 常驻/未定，不算结束
+  const ms = Date.parse(raw.replace(' ', 'T'));
+  if (!isFinite(ms)) return false;
+  return ms <= Date.now();
+}
+
 /* isHero：最紧急的 1 张 → 2x2 英雄卡（hero class）+ 紧迫感描边；
    heroSlim=true 时只保留描边不占 2x2（英雄卡没内容可展示时不撑大片留白） */
 function actCardHtml(it, isHero, heroSlim){
   const id = escHtml(it.id || '');
   const st = shortRange(it.start), en = shortRange(it.end);
-  const ended = it.status === '已完成';
+  const ended = actEnded(it);
   const timeCls = ended ? 't-end' : (it.not_started ? 't-up' : 't-on');
   /* 紧迫度徽章（2026-11-01 方案 A）：≤24h 红 / ≤3 天琥珀 / 其余灰。
      档位只认后端 hours_left，缺值或非正数一律灰——绝不前端估时间 */
@@ -3618,11 +3632,12 @@ function renderActivities(d){
         : '还没有活动数据，点「刷新」拉取。') + '</div>' +
       '</div>';
   } else {
-    // 后端已排好序；已完成单独进抽屉。剩余时间只认后端 hours_left（>0），
-    // 缺值当 Infinity 沉底，不前端估时间
-    const ongoing = items.filter(function(x){ return x.group !== 'upcoming' && x.status !== '已完成'; });
+    // 后端已排好序；**真正结束**（end_time 已过）的才单独进抽屉。
+    // 2026-11-26 方案 B：不再拿 status==='已完成' 当结束判据——那是
+    // 「玩家任务做完了」，活动可能还剩几周（奇库寻遗即此情形）。
+    const ongoing = items.filter(function(x){ return x.group !== 'upcoming' && !actEnded(x); });
     const upcoming = items.filter(function(x){ return x.group === 'upcoming'; });
-    const finished = items.filter(function(x){ return x.status === '已完成'; });
+    const finished = items.filter(function(x){ return actEnded(x); });
     const hlOf = function(x){ const h = +x.hours_left; return h > 0 ? h : Infinity; };
     /* 显示排序（2026-11-14 用户裁决改版）：
        主键 = hours_left **向上取整到小时**——差 1 秒的两个活动显示粒度相同，
