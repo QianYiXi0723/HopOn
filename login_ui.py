@@ -3435,7 +3435,13 @@ def av_check() -> Dict[str, Any]:
     import subprocess as _sp
 
     _NOWIN = 0x08000000 if os.name == "nt" else 0
-    install_root = Path(__file__).resolve().parent.parent
+    # 安装根必须走 core.paths.install_root()（= app_root，脚本模式=仓库根；
+    # engine 发行版=engine 上级）。2026-11-26 修：原写 Path(__file__).parent.parent，
+    # 脚本模式下多退一级到 E:\Apps，那里当然没有 HopOn.exe → 把「文件全在」
+    # 误报成「缺失 4 个关键文件，疑似被杀软拦截」。core/paths.py 明文禁止
+    # 各处自行 Path(__file__) 推导根目录。
+    from core.paths import install_root as _install_root
+    install_root = _install_root()
     targets = [
         ("HopOn.exe", install_root / "HopOn.exe"),
         ("engine\\python\\pythonw.exe",
