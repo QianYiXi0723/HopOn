@@ -5152,7 +5152,6 @@ function renderMonthModal(d){
         : '" data-game="' + escHtml(cur.game) + '" data-dl-name="' + escHtml(cur.game_name) +
           (c.manual ? '" data-manual="1' : '');
       html += '<div class="mc-day g' + cls + (row.is_today ? ' today' : '') +
-        (editable ? ' editable' : '') +
         (editable ? gameAttrs + '" data-dl-date="' + escHtml(row.date) + '" data-dl-state="' + stateAttr : '') +
         '" data-tip="' + escHtml(row.label + '｜' + tip2) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
     });
@@ -5182,18 +5181,19 @@ function renderMonthModal(d){
         return;
       }
       let done = 0;
-      const parts = d.games.map(function(g){
+      d.games.forEach(function(g){
         const c = (row.games || {})[g.game] || {};
         if (c.known && c.finished) done += 1;
-        return g.game_name + ' ' + monthGameMark(c, row);
       });
       /* 档位 = 完成数本身（段数 = 监控数量，上限 8 档色梯）：
          2026-11-09 用户裁决——图例要能直接看到 8 段 */
       const lv = Math.min(done, levels);
-      const tip = '完成 ' + done + '/' + total + '｜' + parts.join(' · ') + '｜长按补录';
+      /* 2026-11-26 用户裁决：总表悬停太臃肿——日期与逐游戏明细都删掉
+         （长按本来就有当天明细），只留总完成数与补录入口 */
+      const tip = '完成 ' + done + '/' + total + '｜长按补录';
       html += '<div class="mc-day mc-open mc-l' + lv + (row.is_today ? ' today' : '') +
         '" data-mc-date="' + escHtml(row.date) +
-        '" data-tip="' + escHtml(row.label + '｜' + tip) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
+        '" data-tip="' + escHtml(tip) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
     });
     for (let i = lead + d.days.length; i % 7 !== 0; i++) html += '<div class="mc-day blank"></div>';
     html += '</div>';

@@ -82,9 +82,17 @@ def run():
     # ---------- A7 实时卡 hover ----------
     live_hover = rule(CSS, ".live-card:hover")
     check("A7a .live-card:hover 存在", bool(live_hover.strip()), "无此规则")
-    check("A7b .live-card:hover 用 outline 而非 border",
-          "outline" in live_hover and not re.search(r"\bborder\s*:", live_hover),
+    check("A7b .live-card:hover 用描边而非 border",
+          ("outline" in live_hover or "box-shadow" in live_hover)
+          and not re.search(r"\bborder\s*:", live_hover),
           live_hover[:100])
+    # 2026-11-26 需求变更（用户 #3）：outline 会被左缘身份竖线 ::before 压住，
+    # 改用 box-shadow inset 描边——画在内容层之上，不受子元素层级影响。
+    check("A7b2 描边用 outline 或 box-shadow（不得用 border）",
+          not re.search(r"\bborder\s*:", live_hover), live_hover[:100])
+    check("A7d 改用 inset 阴影后仍保留卡片原有投影",
+          "box-shadow" not in live_hover or "--card-shadow" in live_hover,
+          live_hover[:120])
     check("A7c .live-card:hover 抬 z-index 压过卡片",
           (zindex_of(live_hover) or 0) >= 60, live_hover[:100])
 

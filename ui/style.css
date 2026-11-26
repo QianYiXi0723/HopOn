@@ -304,7 +304,7 @@
     font-variant-numeric:tabular-nums}
   /* 问号气泡随标题文字垂直居中（2026-11-13 用户裁决：vertical-align:-3px
      的静态补偿在小窗/字体场景下漂移，改 flex 居中一劳永逸） */
-  .set-txt b{display:inline-flex;align-items:center;gap:4px}
+  .set-txt b{display:inline-flex;align-items:center;gap:6px}
   .set-txt b .q{transform:translateY(-2px)}   /* 实测校正：基线对齐压低 2.2px */
   /* 账号绑定卡三行（游戏监控/凭证健康/设备伪装）问号离标题太近：
      与账号绑定卡头一样留 8px（实测原本 0px）。只作用于本卡，不动设置页问号。 */
@@ -1121,11 +1121,12 @@
          display:flex;flex-direction:column;gap:8px;
          background:var(--bg-raise);box-shadow:var(--card-shadow);
          transition:box-shadow .2s ease, background-color .2s ease}
-  /* 同 .card：outline 不受卡内不透明背景影响 */
+  /* Hover 用内阴影描边（2026-11-26 用户裁决）：原来 outline 画在元素边界外，
+     被左侧身份竖线 ::before 压住，看起来描边「在竖线之下」。box-shadow inset
+     画在内容层之上、不受子元素层级影响；同时符合「禁 border 做 hover」纪律 */
   .gcard:hover, .gcard.active{
-    outline:1px solid var(--accent-blue);outline-offset:-1px;
-    position:relative;z-index:60}
-  .gcard-head{display:flex;align-items:center;gap:8px;min-width:0}
+    box-shadow:inset 0 0 0 1px var(--accent-blue), var(--card-shadow);
+    position:relative;z-index:60}  .gcard-head{display:flex;align-items:center;gap:8px;min-width:0}
   .gcard-ico{width:40px;height:40px;border-radius:8px;object-fit:cover;flex:none}
   .gcard-daily{display:flex;align-items:center;gap:6px;min-height:20px;
                font-size:12px;overflow:hidden}
@@ -1254,8 +1255,12 @@
      ≥1000px 最大化窗口改并排两列，两个渠道同屏可见，吃满 7 列卡宽 */
   .ch-editors{display:block}
   @media (min-width:1000px){
-    /* 并排：切换胶囊不再需要（两渠道已同屏），隐藏避免重复语义 */
-    #tab-account .ch-list{display:none}
+    /* 并排时保留两个渠道名作为「这一列是谁」的标记（2026-11-26 用户要求：
+       并排后左右分不清哪个渠道）。去掉选中/非选中的高亮差异，统一样式；
+       同时禁用点击（并排下切换无意义） */
+    #tab-account .ch-list{margin-bottom:12px}
+    #tab-account .ch-item{pointer-events:none;background:var(--subtle);opacity:1}
+    #tab-account .ch-item.on{background:var(--subtle)}
     .ch-editors{display:grid;grid-template-columns:1fr 1fr;gap:16px;
       align-items:start}
     /* 并排时强制两个编辑区都显示——ed-qmsg 自带 [hidden]，
@@ -1409,13 +1414,14 @@
   .live-card{background:var(--bg-raise);border-radius:8px;padding:14px 16px;min-width:0;
              position:relative;box-shadow:var(--card-shadow);
              transition:box-shadow .2s ease, background-color .2s ease}
-  /* 与日常概览 .gcard:hover 同款 hover（优化清单 #7）：outline 不用 border（守纪律），
-     z-index 压过卡片避免被邻卡盖住 */
-  .live-card:hover{outline:1px solid var(--accent-blue);outline-offset:-1px;
+  /* 与日常概览 .gcard:hover 同款 hover（优化清单 #7）：内阴影描边不用 border，
+     z-index 压过卡片避免被邻卡盖住；用 inset 阴影同时解决「描边被左竖线盖住」 */
+  .live-card:hover{box-shadow:inset 0 0 0 1px var(--accent-blue), var(--card-shadow);
                    position:relative;z-index:60}
   /* 游戏身份色条（与 .acard 同机制同色源）：概览卡/实时卡左缘 3px 签名色 */
   .gcard,.live-card{position:relative}
   .gcard::before,.live-card::before{content:"";position:absolute;left:0;top:0;bottom:0;
+    z-index:0;
     width:3px;border-radius:8px 0 0 8px;background:var(--gc,transparent)}
   .live-card-head{display:flex;align-items:center;gap:8px;
     background:var(--bg-head);
