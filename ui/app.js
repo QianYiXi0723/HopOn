@@ -5140,20 +5140,18 @@ function renderMonthModal(d){
       const mk = monthGameMark(c, row);
       const cls = mk === '✓' ? ' done' : mk === '✗' ? ' miss' : '';
       const isManual = cur.game.indexOf('cd:') === 0;
-      const tip = (c.known
-        ? (c.finished ? (c.manual ? '已补录' : '已完成') : '未完成 ' + (c.unfinished_tasks || 0) + ' 项')
-        : ((c.checks || 0) > 0 && c.err) ? '检查失败：' + c.err
-        : ((c.checks || 0) > 0) ? '查无数据（当日无有效记录）' : '当日未巡检');
       const editable = !row.future && !!(row.games || {})[cur.game];
       const stateAttr = cls === 'done' ? 'ok' : cls === 'miss' ? 'miss' : 'na';
-      const tip2 = editable ? '长按补录/撤销｜' + tip : tip;
       const gameAttrs = isManual
         ? '" data-dl-id="' + escHtml(cur.game.slice(3)) + '" data-dl-name="' + escHtml(cur.game_name)
         : '" data-game="' + escHtml(cur.game) + '" data-dl-name="' + escHtml(cur.game_name) +
           (c.manual ? '" data-manual="1' : '');
+      /* 2026-11-26 用户裁决：单游戏月报删掉「悬停后显示的信息」（data-tip），
+         但保留网格本身的悬停变化效果（editable 的缩放/圆角）。长按补录不变。 */
       html += '<div class="mc-day g' + cls + (row.is_today ? ' today' : '') +
+        (editable ? ' editable' : '') +
         (editable ? gameAttrs + '" data-dl-date="' + escHtml(row.date) + '" data-dl-state="' + stateAttr : '') +
-        '" data-tip="' + escHtml(row.label + '｜' + tip2) + '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
+        '"><span>' + Number(String(row.date).slice(-2)) + '</span></div>';
     });
     for (let i = lead + d.days.length; i % 7 !== 0; i++) html += '<div class="mc-day blank"></div>';
     html += '</div>';

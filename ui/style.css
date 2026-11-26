@@ -494,8 +494,12 @@
   .set-lead{flex:1 1 auto;display:flex;gap:8px;align-items:center;min-width:0}
   .set-ico{font-size:17px;width:22px;text-align:center;flex:0 0 auto;font-style:normal}
   .set-txt{flex:1 1 auto;min-width:0}
-  .set-txt b{display:block;font-size:15px;font-weight:600;line-height:1.35;
-             white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .set-txt b{display:inline-flex;align-items:center;gap:6px;
+             font-size:15px;font-weight:600;line-height:1.35;
+             max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* display 必须是 inline-flex：曾被这里写成 block，导致上方 gap 失效、
+     问号紧贴标题（2026-11-26 用户「四个一个都没改」即此因）。 */
+  .set-txt b > .q{flex:0 0 auto}
   /* 2026-11-01：折叠态只留标题，详细说明一律收进抽屉（.set-body .hint）；
      曾被并行写入复活过一次，恢复时再删——若再见此规则说明又发生回退 */
   /* 参数摘要：标题右侧动态值——2026-10-31 提级（11px 三级灰 → 12px 二级色，
@@ -1121,11 +1125,13 @@
          display:flex;flex-direction:column;gap:8px;
          background:var(--bg-raise);box-shadow:var(--card-shadow);
          transition:box-shadow .2s ease, background-color .2s ease}
-  /* Hover 用内阴影描边（2026-11-26 用户裁决）：原来 outline 画在元素边界外，
-     被左侧身份竖线 ::before 压住，看起来描边「在竖线之下」。box-shadow inset
-     画在内容层之上、不受子元素层级影响；同时符合「禁 border 做 hover」纪律 */
+  /* Hover 描边用 outline（2026-11-26 二次纠正）：outline 按规范绘制在元素
+     及其所有后代之上，是业界处理「border 被子元素遮挡」的标准做法
+     （stackoverflow「CSS hover using Outline not working」/ `*:hover` 实践均如此）。
+     曾误改成 box-shadow:inset —— 那属于背景绘制层，一定被 ::before 竖线压住，
+     是退步。::before 不得设 z-index，否则会自建层叠上下文抢叠 outline。 */
   .gcard:hover, .gcard.active{
-    box-shadow:inset 0 0 0 1px var(--accent-blue), var(--card-shadow);
+    outline:1px solid var(--accent-blue);outline-offset:-1px;
     position:relative;z-index:60}  .gcard-head{display:flex;align-items:center;gap:8px;min-width:0}
   .gcard-ico{width:40px;height:40px;border-radius:8px;object-fit:cover;flex:none}
   .gcard-daily{display:flex;align-items:center;gap:6px;min-height:20px;
@@ -1254,18 +1260,20 @@
   /* 渠道编辑区容器（优化清单 #14）：默认单列=原来的切换行为；
      ≥1000px 最大化窗口改并排两列，两个渠道同屏可见，吃满 7 列卡宽 */
   .ch-editors{display:block}
+  /* 渠道列标签（2026-11-26 用户要求）：并排时各自贴在对应 key 输入框上方、
+     与输入框左边缘对齐。小窗口不并排，标签隐藏、仍靠上方切换胶囊选渠道 */
+  .ch-label{display:none}
+  .ch-label b{font-size:15px;font-weight:700}
+  .ch-label .ch-ind{margin-left:8px}
   @media (min-width:1000px){
-    /* 并排时保留两个渠道名作为「这一列是谁」的标记（2026-11-26 用户要求：
-       并排后左右分不清哪个渠道）。去掉选中/非选中的高亮差异，统一样式；
-       同时禁用点击（并排下切换无意义） */
-    #tab-account .ch-list{margin-bottom:12px}
-    #tab-account .ch-item{pointer-events:none;background:var(--subtle);opacity:1}
-    #tab-account .ch-item.on{background:var(--subtle)}
+    /* 并排：隐藏顶部切换胶囊，改用各列自己的标签（贴 key 输入框上方、左对齐） */
+    #tab-account .ch-list{display:none}
     .ch-editors{display:grid;grid-template-columns:1fr 1fr;gap:16px;
       align-items:start}
     /* 并排时强制两个编辑区都显示——ed-qmsg 自带 [hidden]，
        不覆盖的话只能看到一个，等于没并排 */
     .ch-editors > div{display:block}
+    .ch-label{display:flex;align-items:center;margin:0 0 8px}
   }
   /* 名字右侧状态指示：6px 圆点 + 11px 状态字（有值=绿「已配置」/ 无值=灰「未配置」） */
   .ch-ind{display:inline-flex;align-items:center;gap:4px;margin-left:6px;vertical-align:1px}
@@ -1414,14 +1422,13 @@
   .live-card{background:var(--bg-raise);border-radius:8px;padding:14px 16px;min-width:0;
              position:relative;box-shadow:var(--card-shadow);
              transition:box-shadow .2s ease, background-color .2s ease}
-  /* 与日常概览 .gcard:hover 同款 hover（优化清单 #7）：内阴影描边不用 border，
-     z-index 压过卡片避免被邻卡盖住；用 inset 阴影同时解决「描边被左竖线盖住」 */
-  .live-card:hover{box-shadow:inset 0 0 0 1px var(--accent-blue), var(--card-shadow);
+  /* 与日常概览 .gcard:hover 同款 hover（优化清单 #7）：outline 描边不用 border，
+     z-index 压过卡片避免被邻卡盖住；outline 绘制在后代之上，不会被左竖线遮挡 */
+  .live-card:hover{outline:1px solid var(--accent-blue);outline-offset:-1px;
                    position:relative;z-index:60}
   /* 游戏身份色条（与 .acard 同机制同色源）：概览卡/实时卡左缘 3px 签名色 */
   .gcard,.live-card{position:relative}
   .gcard::before,.live-card::before{content:"";position:absolute;left:0;top:0;bottom:0;
-    z-index:0;
     width:3px;border-radius:8px 0 0 8px;background:var(--gc,transparent)}
   .live-card-head{display:flex;align-items:center;gap:8px;
     background:var(--bg-head);

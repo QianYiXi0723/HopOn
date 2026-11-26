@@ -35,11 +35,16 @@ def check(name, ok, detail=""):
 
 
 def run():
-    # ---------- U1 单游戏月报：悬停效果删除 ----------
-    # 单游戏分支的 mc-day 不应再带 editable 类（editable 才有 scale/圆角 hover）
+    # ---------- U1 单游戏月报：删「悬停显示的信息」，保留网格悬停效果 ----------
+    # 2026-11-26 用户澄清：「我让你删的是单游戏月报悬停后显示的信息，
+    # 而不是悬停后的网格的变化效果」。即删 data-tip，保 editable（hover 缩放）。
     seg = APP[APP.index("if (monthGame) {"): APP.index("} else {", APP.index("if (monthGame) {"))]
-    check("U1a 单游戏月报不再给格子加 editable（去 hover）",
-          "' editable'" not in seg, seg[:160])
+    check("U1a 单游戏月报保留网格悬停效果（editable 仍在）",
+          "' editable'" in seg, seg[:160])
+    check("U1b 单游戏月报不再挂 data-tip（删掉悬停信息）",
+          not any("data-tip" in ln and "/*" not in ln and not ln.strip().startswith("//")
+                  for ln in seg.splitlines()),
+          seg[:200])
 
     # ---------- U2 总表：悬停只留总完成 + 长按补录 ----------
     total_seg = APP[APP.index("/* 总表：GitHub 贡献图范式"):]
@@ -63,8 +68,18 @@ def run():
     check("U3b 抬层足够高（≥60）", z is not None and int(z.group(1)) >= 60, str(z))
 
     # ---------- U6 问号间距 ----------
-    check("U6a 全局 .set-txt b 的问号间距不再是 4px",
-          not re.search(r"\.set-txt b\{[^}]*gap:4px", CSS.replace(" ", "")))
+    # 真因是 display:block 让 gap 失效（不是 gap 数值）——所以必须同时验布局类型
+    set_txt_rules = []
+    for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)):
+        if ".set-txt b" in [s.strip() for s in m.group(1).split(",")]:
+            set_txt_rules.append(" ".join(m.group(2).split()))
+    check("U6a .set-txt b 没有任何 display:block 覆盖（block 会让 gap 失效）",
+          not any("display:block" in r for r in set_txt_rules),
+          " / ".join(set_txt_rules)[:200])
+    check("U6b .set-txt b 最终为 inline-flex 且带 gap",
+          bool(set_txt_rules) and "display:inline-flex" in set_txt_rules[-1]
+          and "gap:" in set_txt_rules[-1],
+          set_txt_rules[-1][:160] if set_txt_rules else "无规则")
 
 
 if __name__ == "__main__":
