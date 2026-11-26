@@ -973,9 +973,11 @@
          padding:10px 12px;font-size:12px;
          background:var(--bg-raise)}
   /* 游戏色条（2026-11-01 方案 A）：左缘 3px 签名色（--gc 由 JS 按游戏写入，
-     与热力图圆点同色）；::before 内绘制零布局位移 */
-  .acard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
-    border-radius:8px 0 0 8px;background:var(--gc,transparent)}
+     与热力图圆点同色）；::before 内绘制零布局位移。
+     2026-11-26 与 .gcard/.live-card 同款修正：上下内缩 10px 避开 8px 卡圆角，
+     色条自身用线宽一半（2px）圆角收端，否则两端像被切断/戳出卡片。 */
+  .acard::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;
+    border-radius:2px;background:var(--gc,transparent)}
   /* 游戏分组：组头 = 色点 + 游戏名 + 数量；组内独立网格，组间留一档呼吸 */
   .act-group{display:flex;flex-direction:column;gap:8px;min-width:0}
   .act-group + .act-group{margin-top:18px}
@@ -1426,10 +1428,15 @@
      z-index 压过卡片避免被邻卡盖住；outline 绘制在后代之上，不会被左竖线遮挡 */
   .live-card:hover{outline:1px solid var(--accent-blue);outline-offset:-1px;
                    position:relative;z-index:60}
-  /* 游戏身份色条（与 .acard 同机制同色源）：概览卡/实时卡左缘 3px 签名色 */
+  /* 游戏身份色条（与 .acard 同机制同色源）：概览卡/实时卡左缘 3px 签名色。
+     2026-11-26 修正（对标业界做法）：卡片是 8px 圆角，色条若是 top:0/bottom:0
+     的方角矩形，四角会顶到弧线外的透明区、视觉上"戳出"卡片。
+     正解两条：①上下各内缩（这里 10px > 卡圆角 8px，确保只落在直边上）；
+     ②色条自身两端用**线宽一半**的圆角（3px → 1.5px），这是引用块竖线的
+     通行处理方式，端点才不会显得被切断。 */
   .gcard,.live-card{position:relative}
-  .gcard::before,.live-card::before{content:"";position:absolute;left:0;top:0;bottom:0;
-    width:3px;border-radius:8px 0 0 8px;background:var(--gc,transparent)}
+  .gcard::before,.live-card::before{content:"";position:absolute;left:0;top:10px;bottom:10px;
+    width:3px;border-radius:2px;background:var(--gc,transparent)}
   .live-card-head{display:flex;align-items:center;gap:8px;
     background:var(--bg-head);
     background:color-mix(in srgb, var(--gc,transparent) 7%, var(--bg-head));
